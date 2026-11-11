@@ -309,6 +309,20 @@ fetch_dist() {
     remote_scp --recurse "$VM_NAME:amogus_doha_custom_rom/dist" "$ROOT/dist-gcp" 2>/dev/null || true
 }
 
+# Derive the release tag from the artifact itself, not from "now".
+build_stamp() {
+    local dist="$1" zip="$2" info ts
+    info=$(find "$dist" -name BUILD_INFO.txt -print -quit)
+    if [ -n "$info" ]; then
+        ts=$(awk -F': ' '/^build:/{print $2; exit}' "$info")
+        if [ -n "$ts" ] && date -u -d "$ts" +%Y%m%d-%H%M >/dev/null 2>&1; then
+            date -u -d "$ts" +%Y%m%d-%H%M
+            return 0
+        fi
+    fi
+    date -u -d "@$(stat -c %Y "$zip")" +%Y%m%d-%H%M
+}
+
 cmd_release() {
     local dist="${DIST_DIR:-$ROOT/dist-gcp}"
     [ -d "$dist" ] || dist="$ROOT/dist"
@@ -320,7 +334,9 @@ cmd_release() {
     command -v gh >/dev/null || die "gh not installed (install GitHub CLI, then gh auth login)"
     gh auth status >/dev/null 2>&1 || die "gh not authenticated (gh auth login)"
 
-    local tag="${TAG:-a16-$(date +%Y%m%d-%H%M)}"
+    local stamp tag
+    stamp=$(build_stamp "$dist" "$zip")
+    tag="${TAG:-a16-$stamp}"
     [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid tag: $tag"
 
     local assets=("$zip") f
@@ -355,7 +371,7 @@ check_rclone() {
 backup_here() {
     cd "$ROOT"
     check_rclone
-    local snap="${SNAPSHOT:-$(date +%Y%m%d-%H%M%S)}"
+    local snap="${SNAPSHOT:-$(date -u +%Y%m%d-%H%M%S)}"
     [[ "$snap" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid snapshot name: $snap"
     local dst="${RCLONE_REMOTE}:${RCLONE_DIR}/${snap}"
     log "backing up to $dst"

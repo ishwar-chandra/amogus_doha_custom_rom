@@ -297,7 +297,7 @@ cmd_collect() {
     zip=$(find "$OUT" -maxdepth 1 -name 'crDroidAndroid-*.zip' -print -quit)
     [ -n "$zip" ] || die "no crDroidAndroid-*.zip in $OUT"
 
-    local id="v${ANDROID_VERSION}-$(date +%Y%m%d-%H%M)"
+    local id="v${ANDROID_VERSION}-$(date -u +%Y%m%d-%H%M)"
     local dest="$DIST_DIR/$id"
     mkdir -p "$dest"
     cp -f "$zip" "$dest/"
@@ -327,7 +327,7 @@ cmd_snapshot() {
     repo=$(repo_cmd) || die "repo launcher missing (run: ./scripts/build.sh deps)"
     require_synced
     mkdir -p "$KIT_ROOT/manifests"
-    local out="$KIT_ROOT/manifests/resolved-$(date +%Y%m%d-%H%M).xml"
+    local out="$KIT_ROOT/manifests/resolved-$(date -u +%Y%m%d-%H%M).xml"
     ( cd "$ANDROID_SRC" && "$repo" manifest -r -o "$out" )
     info "resolved manifest: $out"
     info "commit it if you need this exact build to be reproducible later"

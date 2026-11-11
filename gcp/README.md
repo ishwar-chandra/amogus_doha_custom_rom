@@ -80,7 +80,6 @@ flowchart LR
 ```bash
 ./gcp/doha.sh all \
   --repo ishwar-chandra/amogus_doha_custom_rom \
-  --tag a16-20261111 \
   --remote gdrive \
   --dir doha-a16 \
   --copy-rclone
@@ -94,7 +93,7 @@ flowchart LR
 | `--disk-size 500GB` | boot disk |
 | `--spot` | cheaper, can be preempted |
 | `--repo OWNER/REPO` | GitHub release target |
-| `--tag TAG` | release tag |
+| `--tag TAG` | override the auto-detected release tag |
 | `--remote NAME` | rclone remote (`gdrive`) |
 | `--dir NAME` | Drive folder (`doha-a16`) |
 | `--snapshot NAME` | backup/restore snapshot |
@@ -124,6 +123,8 @@ missing, it stops immediately with instructions instead of failing after the
 build.
 
 ## GitHub release
+
+The release tag is auto-detected from `BUILD_INFO.txt` (or the ROM zip's mtime), so an older artifact does not get stamped with today's date. Override with `--tag` only when needed.
 
 `release` uses the local `dist-gcp/` directory:
 
