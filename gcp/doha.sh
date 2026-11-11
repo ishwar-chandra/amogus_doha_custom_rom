@@ -257,13 +257,16 @@ mkdir -p "$HOME/amogus_doha_custom_rom"
 tar -xzf /tmp/doha-kit.tgz -C "$HOME/amogus_doha_custom_rom"
 '
 
-    if [ "$COPY_RCLONE" = 1 ]; then
-        local conf="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
-        [ -f "$conf" ] || die "local rclone config not found: $conf"
-        log "uploading rclone config (mode 600)"
-        remote_scp "$conf" "$VM_NAME:/tmp/rclone.conf"
-        remote_ssh --command='mkdir -p "$HOME/.config/rclone" && install -m 600 /tmp/rclone.conf "$HOME/.config/rclone/rclone.conf"'
-    fi
+    upload_rclone_config
+}
+
+upload_rclone_config() {
+    [ "$COPY_RCLONE" = 1 ] || return 0
+    local conf="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+    [ -f "$conf" ] || die "local rclone config not found: $conf"
+    log "uploading rclone config (mode 600)"
+    remote_scp "$conf" "$VM_NAME:/tmp/rclone.conf"
+    remote_ssh --command='mkdir -p "$HOME/.config/rclone" && install -m 600 /tmp/rclone.conf "$HOME/.config/rclone/rclone.conf"'
 }
 
 ensure_remote_kit() {
@@ -454,6 +457,7 @@ cmd_backup() {
     if [ "$LOCAL" = 1 ]; then backup_here; return; fi
     cmd_up
     ensure_remote_kit
+    upload_rclone_config
     remote_provision
     preflight_rclone
     remote_backup
@@ -463,6 +467,7 @@ cmd_restore() {
     if [ "$LOCAL" = 1 ]; then restore_here; return; fi
     cmd_up
     ensure_remote_kit
+    upload_rclone_config
     remote_provision
     remote_restore
 }
