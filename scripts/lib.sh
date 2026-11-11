@@ -11,13 +11,14 @@ warn() { printf '  [warn] %s\n' "$*" >&2; }
 die()  { printf '  [fail] %s\n' "$*" >&2; exit 1; }
 
 load_config() {
-    local rom="${ROM:-crdroid-16}"
+    # An explicit ROM=... env wins; otherwise use config/build.env.
+    local rom_override="${ROM:-}"
 
     [ -f "$KIT_ROOT/config/build.env" ] || die "missing config/build.env"
     set -a
     # shellcheck disable=SC1091
     . "$KIT_ROOT/config/build.env"
-    ROM="$rom"
+    [ -n "$rom_override" ] && ROM="$rom_override"
     [ -f "$KIT_ROOT/config/roms/$ROM.env" ] || die "unknown ROM '$ROM' (no config/roms/$ROM.env)"
     # shellcheck disable=SC1091
     . "$KIT_ROOT/config/roms/$ROM.env"
