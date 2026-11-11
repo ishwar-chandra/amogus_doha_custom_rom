@@ -266,6 +266,12 @@ tar -xzf /tmp/doha-kit.tgz -C "$HOME/amogus_doha_custom_rom"
     fi
 }
 
+ensure_remote_kit() {
+    if ! remote_ssh --command='test -f "$HOME/amogus_doha_custom_rom/gcp/doha.sh"' >/dev/null 2>&1; then
+        sync_kit
+    fi
+}
+
 remote_provision() {
     log "provisioning VM"
     remote_in_repo 'bash ./gcp/doha.sh _provision'
@@ -447,7 +453,7 @@ cmd_build() {
 cmd_backup() {
     if [ "$LOCAL" = 1 ]; then backup_here; return; fi
     cmd_up
-    sync_kit
+    ensure_remote_kit
     remote_provision
     preflight_rclone
     remote_backup
@@ -456,7 +462,7 @@ cmd_backup() {
 cmd_restore() {
     if [ "$LOCAL" = 1 ]; then restore_here; return; fi
     cmd_up
-    sync_kit
+    ensure_remote_kit
     remote_provision
     remote_restore
 }
