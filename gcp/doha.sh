@@ -33,7 +33,7 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-MACHINE_TYPES="${MACHINE_TYPES:-e2-standard-12 t2d-standard-12 n2d-standard-12 n2-standard-12 c2-standard-12}"
+MACHINE_TYPES="${MACHINE_TYPES:-e2-standard-12 t2d-standard-12 n2d-standard-12 n2-standard-12 c2-standard-12 g2-standard-12}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
