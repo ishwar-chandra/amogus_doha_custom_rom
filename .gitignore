@@ -5,3 +5,6 @@ __pycache__/
 *.pyo
 .DS_Store
 refs/
+gcp/vm.env
+dist-gcp/
+dist-gcp-build.log
