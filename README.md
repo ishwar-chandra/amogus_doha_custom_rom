@@ -1,154 +1,54 @@
-# doha A16 buildkit
+# amogus_doha custom ROMs
 
-Reproducible Android 16 (crDroid 16.0) builds for the **Motorola Moto G8 Plus**
-(`amogus_doha`, SM6125). The device layer is the stable community port that
-produced the Android 13 crDroid 9 ROM, carried forward with the Android 16
-platform patches the device actually needs.
+Buildkits for the **Motorola Moto G8 Plus** (`amogus_doha`, SM6125).
 
-> **Status:** this is a code-and-patch repository, not a prebuilt ROM. No build
-> has been run in this workspace. `./scripts/build.sh dryrun` validates the
-> configuration, URLs and patch set; the first full build is the real test.
+`main` is the landing/release-index branch only. The build code lives in
+Android-version branches:
 
-## Quick start
+| Branch | Android | Status | Use |
+|---|---|---|---|
+| [`16`](../../tree/16) | **16** (crDroid 16.0) | buildkit ready; first full build pending | the stable target |
+| [`17`](../../tree/17) | **17** (crDroid 17.0) | experimental; A16 patches need rebasing | future work |
+
+## Build Android 16
 
 ```bash
-# 1. Validate without downloading or compiling anything
+git clone -b 16 https://github.com/ishwar-chandra/amogus_doha_custom_rom.git
+cd amogus_doha_custom_rom
+
 ./scripts/build.sh dryrun
-
-# 2. Full pipeline: host deps -> repo init -> manifest -> sync -> patch -> build
-./scripts/build.sh all
-
-# or run steps individually
-./scripts/build.sh deps
-./scripts/build.sh init
-./scripts/build.sh manifest
-./scripts/build.sh sync
-./scripts/build.sh patch
-./scripts/build.sh build
-./scripts/build.sh verify
-./scripts/build.sh collect
+INSTALL_DEPS=1 JOBS=16 ./scripts/build.sh all
 ```
 
-Artifacts land in `dist/v16-<date>-<time>/` with the ROM zip, `boot.img`,
-`dtbo.img`, `vbmeta.img`, `SHA256SUMS` and `BUILD_INFO.txt`.
+The result is in `dist/`. See the `16` branch README for details.
 
-To record the exact SHAs a build resolved to:
+## Build on GCP (one command)
+
+No 32 GB machine needed:
 
 ```bash
-./scripts/build.sh snapshot
-# writes manifests/resolved-<date>-<time>.xml
+git clone -b 16 https://github.com/ishwar-chandra/amogus_doha_custom_rom.git
+cd amogus_doha_custom_rom
+
+./gcp/doha.sh all --repo ishwar-chandra/amogus_doha_custom_rom
 ```
 
-## Pinning
+That creates a 12 vCPU / 48 GB Ubuntu 24.04 VM, builds, publishes the GitHub
+release and backs the source, `out/`, ccache and artifacts up to Google Drive.
+See the `16` branch `gcp/README.md`.
 
-Pinned to exact commits:
+## Android 17
 
-- device tree, vendor blobs, `amogus`/`common`/`targets`, kernel
-- MindTheGapps (`baklava`)
-- every project the patch set touches: AOSP CarrierConfig tag `r4`,
-  `vendor/apn`, `system/core`, `packages/modules/Connectivity`,
-  `device/lineage/sepolicy`, `hardware/nxp/nfc`
-- all 28 supporting moto-common / Aldair402 / AOSPA repositories
-
-Not pinned: the crDroid `16.0` base branch itself (900+ projects). That is
-intentional: the base moves, the port does not. `sync` writes
-`work/state/resolved-manifest.xml`; `snapshot` writes a committable copy under
-`manifests/`. Use the snapshot if you need to rebuild the exact tree months
-later.
-
-## GCP: one command
-
-If you do not have a 32 GB build machine, `gcp/doha.sh` creates a 12 vCPU /
-48 GB Ubuntu 24.04 VM, builds, publishes the release and backs the whole
-build state up to Google Drive:
+Check out `17`:
 
 ```bash
-./gcp/doha.sh all --repo YOUR_GITHUB/REPO
+git clone -b 17 https://github.com/ishwar-chandra/amogus_doha_custom_rom.git
 ```
 
-It needs `gcloud`, `gh` (authenticated) and an rclone `gdrive` remote on the
-VM. See [gcp/README.md](gcp/README.md) for flags and restore.
+It is a starting point, not a boot-tested ROM. The 4.14 kernel and A16 patch
+set need rebasing; see `docs/ANDROID_17.md` on that branch.
 
-## Host requirements
+## Releases
 
-| Resource | Requirement |
-|---|---|
-| OS | Ubuntu 22.04/24.04/26.04, native or WSL2 on the Linux filesystem |
-| Disk | ~300 GB free (200 GB source + 100 GB `out/`); 350 GB comfortable |
-| RAM | 32 GB preferred; 16 GB works with swap. Soong peaks around 20 GB |
-| CPU | 8+ threads useful; a clean build is 2–3 h, incremental ~20–40 min |
-| Network | ~100 GB first sync |
-
-The build does **not** run on 4 GB/8 GB machines. `dryrun` warns below 250 GB
-free and below 16 GB RAM.
-
-## What this repo deliberately does
-
-**Keeps**
-
-- The A13-derived hardware layer: `amogus_doha` device tree, vendor blobs,
-  `amogus`/`common` trees, and the 4.14.357 LTS kernel with the doha fixes.
-- All 17 Android 16 platform patches needed to build and boot a 4.14 kernel:
-  BPF gates, thermal HAL, SELinux, kernel headers, `libqsap_sdk`, touch
-  modules, WPA3, NFC, fingerprint, camera CCI, `close_range()` tethering.
-- MindTheGapps baked into the system image (`vendor/gapps`, branch `baklava`).
-- The CarrierConfig BSNL VoLTE fix (carrier id 1549), the confirmed framework
-  root cause of SIM1 call failure.
-- A missing-only BSNL IMS APN injector, so it does not duplicate rows that
-  newer `vendor/apn` trees already ship.
-- The `system/core` Basic Play Integrity property patch.
-
-**Drops**
-
-- The failed ext4-system rewrite (`v1.3.0-test1`) — it did not boot.
-- Infamick/Samsung/Magisk utility tweaks and the unmeasured zram/swappiness
-  profile. The kernel already enables zram/PSI/schedutil; no magic is claimed.
-- The ginkgo “K2” kernel experiment — the LTS doha kernel already carries
-  4.14.357.
-- The modem `mcfg`/`mbn`/`omc` pull from the A13 phone. The modem firmware is
-  not changed by a ROM, and the A13/A16 vendor trees have identical radio
-  blobs; only add these if a hash diff proves a difference.
-- Scrubbing `persist.dbg.volte_avail_ovr` — it is identical in the working A13
-  and A16 trees; removing it changes a working variable without evidence.
-- Unused Qualcomm platform stacks and the stale `vendor/crdroid` layout.
-
-## Structure
-
-```
-config/                 build, ROM, device and pin definitions
-manifest/               repo manifest inputs (core/supporting lists, remotes)
-patches/a16/            the 17 Android 16 port patches, by project path
-patches/carrierconfig/  BSNL VoLTE CarrierConfig patch
-scripts/build.sh        single entry point, resumable steps
-scripts/lib.sh          config loading, patch application, logging
-scripts/tools/          manifest generator, APN injector, build verifier
-docs/                   architecture, patch map, VoLTE, integrity, flashing, tests
-```
-
-## Provenance
-
-- Device/vendor/targets: **Aldair402** (`android_device_motorola_amogus_doha`
-  branch `2.1`, vendor `14`, targets `master`).
-- Android 16 platform patches and LTS kernel: **christiaan**
-  (`christiaan/lineage-23-amogus_doha`, kernel
-  `christiaan/android_kernel_motorola_msm-4.14` branch `lts`).
-- crDroid 16.0 sources: **crDroidAndroid**.
-- MindTheGapps: **MindTheGapps/vendor_gapps** branch `baklava`.
-- Stable Android 13 reference: XDA 4711795, crDroid 9.20, and the
-  moto-common branch-13 trees.
-
-The patches are copied from the public Christiaan repository and keep their
-original metadata. See `NOTICE`.
-
-## Documentation
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — why the device layer is
-  unchanged and what the patches do.
-- [docs/PATCHES.md](docs/PATCHES.md) — every patch, the failure it prevents.
-- [docs/BSNL_VOLTE.md](docs/BSNL_VOLTE.md) — the confirmed SIM1 root cause and
-  the APN decision.
-- [docs/PLAY_INTEGRITY.md](docs/PLAY_INTEGRITY.md) — BASIC/DEVICE/STRONG and
-  signing.
-- [docs/FLASHING.md](docs/FLASHING.md) — A/B recovery, clean flash, rollback.
-- [docs/VERIFICATION.md](docs/VERIFICATION.md) — post-build gates and the
-  device test matrix.
+Published builds are under [Releases](../../releases). The default branch is
+`main`; download from a release or switch to `16`.
