@@ -345,8 +345,8 @@ cmd_release() {
             -o -name SHA256SUMS -o -name BUILD_INFO.txt \) -print
     )
 
-    local title="crDroid 16.0 amogus_doha ${tag}"
-    local notes="Automated crDroid 16.0 (Android 16) build for the Motorola Moto G8 Plus. Buildkit $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)."
+    local title="crDroid 12.13 amogus_doha ${tag}"
+    local notes="Automated crDroid 12.13 (Android 16) build for the Motorola Moto G8 Plus. Buildkit $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)."
 
     if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
         log "release $tag exists; uploading with --clobber"

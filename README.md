@@ -1,6 +1,6 @@
 # doha A16 buildkit
 
-Reproducible Android 16 (crDroid 16.0) builds for the **Motorola Moto G8 Plus**
+Reproducible Android 16 (crDroid 12.13) builds for the **Motorola Moto G8 Plus**
 (`amogus_doha`, SM6125). The device layer is the stable community port that
 produced the Android 13 crDroid 9 ROM, carried forward with the Android 16
 platform patches the device actually needs.
@@ -132,7 +132,7 @@ docs/                   architecture, patch map, VoLTE, integrity, flashing, tes
 - Android 16 platform patches and LTS kernel: **christiaan**
   (`christiaan/lineage-23-amogus_doha`, kernel
   `christiaan/android_kernel_motorola_msm-4.14` branch `lts`).
-- crDroid 16.0 sources: **crDroidAndroid**.
+- crDroid 12.13 sources: **crDroidAndroid**.
 - MindTheGapps: **MindTheGapps/vendor_gapps** branch `baklava`.
 - Stable Android 13 reference: XDA 4711795, crDroid 9.20, and the
   moto-common branch-13 trees.

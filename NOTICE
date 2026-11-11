@@ -8,7 +8,7 @@ patches. It does not claim authorship of the upstream work.
   `github.com/christiaan/android_kernel_motorola_msm-4.14`).
 - **doha device tree, vendor blobs, targets framework:** Aldair402 and the
   moto-common contributors.
-- **crDroid 16.0:** the crDroidAndroid team, built on LineageOS and AOSP.
+- **crDroid 12.13 (Android 16):** the crDroidAndroid team, built on LineageOS and AOSP.
 - **MindTheGapps:** the MindTheGapps contributors.
 - **Stable Android 13 reference:** XDA thread 4711795, crDroid 9.20, and the
   moto-common branch-13 trees.

@@ -18,7 +18,7 @@ Usage: ./scripts/build.sh <command>
 
   dryrun    validate config, files, scripts, URLs and the manifest generator
   deps      check host packages; download the repo launcher
-  init      repo init crDroid 16.0 (idempotent)
+  init      repo init crDroid 16.0 / Android 16 (idempotent)
   manifest  generate .repo/local_manifests/doha.xml from manifest/*.list
   sync      repo sync (resumable, 3 retries)
   patch     apply the A16 port patches + CarrierConfig + GApps/APN fixes

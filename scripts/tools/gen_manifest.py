@@ -4,7 +4,7 @@
 Usage:
   gen_manifest.py BASE_MANIFEST REMOTES CORE SUPPORTING PATHS OUT
 
-The base manifest is `repo manifest -o` output from crDroid 16.0. It is used
+The base manifest is `repo manifest -o` output from crDroid Android 16 (16.0). It is used
 only to discover project names for paths we override, so we can emit valid
 <remove-project> elements before re-adding them at our pinned revisions.
 """

@@ -1,5 +1,5 @@
 # path|remote|name|branch|pin|linkfile(src|dest)
-# Only projects crDroid 16.0 does not provide itself. The generated manifest
+# Only projects the crDroid Android 16 base does not provide itself. The generated manifest
 # emits <remove-project> for any path that already exists in the base manifest.
 device/motorola/amogus|moto|android_device_motorola_amogus|14|de72dd4f7dbf63caa93e338bf24d962c18601b2c|
 device/motorola/amogus-kernel|moto|android_device_motorola_amogus-kernel|13|1fb2d561ea614612b850df790baa93422dd314aa|

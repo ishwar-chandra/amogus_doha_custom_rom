@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TD
-  A[crDroid 16.0 / Android 16<br/>LineageOS 23.2 base] --> B[Device layer<br/>Aldair402 2.1 + vendor 14]
+  A[crDroid 12.13 / Android 16<br/>LineageOS 23.2 base] --> B[Device layer<br/>Aldair402 2.1 + vendor 14]
   B --> C[Kernel 4.14.357-openela<br/>christiaan lts]
   C --> D[17 A16 platform patches]
   D --> E[MindTheGapps baked in]
