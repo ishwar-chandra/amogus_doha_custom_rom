@@ -44,15 +44,17 @@ australia-southeast1 australia-southeast2"
 
 find_zone() {
     local list candidates best
-    echo "Querying GCP for 12 vCPU machine types (this can take a minute)..." >&2
-    list=$(gcloud compute machine-types list \
-        --project="$PROJECT" \
-        --filter='guestCpus=12' \
-        --format='value(zone.basename(),name)' \
-        --quiet 2>/dev/null) || {
-        echo "Could not list machine types. Check: gcloud auth list; gcloud config list" >&2
+    echo "Querying GCP for 12 vCPU machine types (can take a minute)..." >&2
+    if ! list=$(timeout "${FIND_TIMEOUT:-180}" gcloud compute machine-types list \
+            --project="$PROJECT" \
+            --filter='guestCpus=12' \
+            --format='value(zone.basename(),name)' \
+            --quiet 2>/dev/null); then
+        echo "Machine-type query failed or timed out after ${FIND_TIMEOUT:-180}s." >&2
+        echo "Pick manually, for example:" >&2
+        echo "  ZONE=us-central1-a MACHINE_TYPE=e2-standard-12 $0 create" >&2
         exit 1
-    }
+    fi
     [ -n "$list" ] || { echo "No 12 vCPU machine types visible in $PROJECT" >&2; exit 1; }
 
     declare -A RANK=()

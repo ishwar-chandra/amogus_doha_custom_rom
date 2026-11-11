@@ -112,3 +112,11 @@ Delete the VM when the build is finished; a stopped VM still bills for the
 - The VM has no service account/scopes; it only needs outbound network.
 - GCP’s free-trial quotas vary. If `create` fails with
   `QUOTA_EXCEEDED`, try another zone or reduce `DISK_SIZE`.
+
+If `find` is slow on your network, skip it:
+
+```bash
+ZONE=us-central1-a MACHINE_TYPE=e2-standard-12 ./gcp/create-vm.sh create
+```
+
+Set `FIND_TIMEOUT=300` to allow a longer machine-type query.
