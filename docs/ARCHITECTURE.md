@@ -83,8 +83,17 @@ exact commits in `config/pins.env`.
 
 ## Reproducibility
 
-- The base tracks the crDroid `16.0` branch. The exact resolved manifest is
-  saved as `work/state/base-manifest.xml`; publish it with a build if you need
-  bit-for-bit reproducibility.
-- Device, vendor, targets, kernel and supporting trees are pinned.
+- Device, vendor, targets, kernel, all 28 supporting repos and every project
+  the patch set touches are pinned to exact commits
+  (`config/pins.env`, `manifest/*.list`).
+- MindTheGapps is pinned to the `baklava` head recorded in `pins.env`.
+- AOSP `CarrierConfig` is pinned to tag `android-16.0.0_r4`.
+- The crDroid `16.0` base branch itself is not pinned: it contains 900+
+  projects and is expected to move. After `sync`, the exact resolved SHAs are
+  written to `work/state/resolved-manifest.xml`. `./scripts/build.sh snapshot`
+  writes a committable copy under `manifests/`.
 - Patch files are versioned in this repo.
+
+This gives a deliberate split: the hardware/port layer is immutable, while
+the ROM base can receive security updates. If a base update breaks a patch,
+`patch` stops before compiling with the exact failing project and log.

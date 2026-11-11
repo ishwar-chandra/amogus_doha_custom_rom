@@ -4,6 +4,12 @@ kernel/motorola/msm-4.14
 vendor/motorola/amogus_doha
 vendor/motorola/amogus
 vendor/gapps
+packages/apps/CarrierConfig
+vendor/apn
+system/core
+packages/modules/Connectivity
+device/lineage/sepolicy
+hardware/nxp/nfc
 device/motorola/amogus
 device/motorola/amogus-kernel
 device/motorola/common

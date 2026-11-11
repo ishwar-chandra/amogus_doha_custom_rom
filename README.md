@@ -32,6 +32,30 @@ platform patches the device actually needs.
 Artifacts land in `dist/v16-<date>-<time>/` with the ROM zip, `boot.img`,
 `dtbo.img`, `vbmeta.img`, `SHA256SUMS` and `BUILD_INFO.txt`.
 
+To record the exact SHAs a build resolved to:
+
+```bash
+./scripts/build.sh snapshot
+# writes manifests/resolved-<date>-<time>.xml
+```
+
+## Pinning
+
+Pinned to exact commits:
+
+- device tree, vendor blobs, `amogus`/`common`/`targets`, kernel
+- MindTheGapps (`baklava`)
+- every project the patch set touches: AOSP CarrierConfig tag `r4`,
+  `vendor/apn`, `system/core`, `packages/modules/Connectivity`,
+  `device/lineage/sepolicy`, `hardware/nxp/nfc`
+- all 28 supporting moto-common / Aldair402 / AOSPA repositories
+
+Not pinned: the crDroid `16.0` base branch itself (900+ projects). That is
+intentional: the base moves, the port does not. `sync` writes
+`work/state/resolved-manifest.xml`; `snapshot` writes a committable copy under
+`manifests/`. Use the snapshot if you need to rebuild the exact tree months
+later.
+
 ## Host requirements
 
 | Resource | Requirement |

@@ -25,6 +25,7 @@ Usage: ./scripts/build.sh <command>
   build     lunch + make bacon
   verify    inspect the built images (GApps, VoLTE keys, APNs, RIL, props)
   collect   copy zip/images/checksums into dist/
+  snapshot  save the exact resolved manifest (all projects) under manifests/
   all       run every step in order
   status    show step markers and tree size
 
@@ -133,6 +134,10 @@ cmd_sync() {
         info "repo sync (attempt $attempt/3)"
         if "$repo" sync -c -j"$SYNC_JOBS" --no-tags --no-clone-bundle \
                 --force-sync --force-checkout --retry-fetches=5; then
+            # Record the exact SHAs this build resolved to. The base branch
+            # is intentionally branch-tracked; this file is the full snapshot.
+            "$repo" manifest -r -o "$STATE/resolved-manifest.xml" 2>/dev/null \
+                || warn "could not write the resolved manifest snapshot"
             mark sync
             return 0
         fi
@@ -322,6 +327,17 @@ cmd_collect() {
     mark collect
 }
 
+cmd_snapshot() {
+    local repo
+    repo=$(repo_cmd) || die "repo launcher missing (run: ./scripts/build.sh deps)"
+    require_synced
+    mkdir -p "$KIT_ROOT/manifests"
+    local out="$KIT_ROOT/manifests/resolved-$(date +%Y%m%d-%H%M).xml"
+    ( cd "$ANDROID_SRC" && "$repo" manifest -r -o "$out" )
+    info "resolved manifest: $out"
+    info "commit it if you need this exact build to be reproducible later"
+}
+
 cmd_status() {
     local s
     echo "ROM=$ROM ($ROM_NAME)  DEVICE=$DEVICE  VARIANT=$BUILD_VARIANT"
@@ -354,6 +370,40 @@ cmd_dryrun() {
     info "A16 patches: $n"
     [ "$n" -ge 17 ] || { warn "expected 17 A16 patches"; fail=1; }
     [ -f "$PATCHES/carrierconfig/bsnl-volte.patch" ] || { warn "CarrierConfig patch missing"; fail=1; }
+
+    if ! python3 - "$MANIFEST_DIR/core.list" "$MANIFEST_DIR/supporting.list" <<'PY'
+import os, re, sys
+
+HEX = re.compile(r'^[0-9a-f]{40}$')
+
+def expand(v):
+    return re.sub(r'@([A-Z0-9_]+)@', lambda m: os.environ.get(m.group(1), m.group(0)), v)
+
+bad = []
+for path in sys.argv[1:]:
+    for raw in open(path):
+        line = raw.strip()
+        if not line or line.startswith('#'):
+            continue
+        f = [expand(x.strip()) for x in line.split('|')]
+        pin = f[4] if len(f) > 4 else ''
+        rev = f[3] if len(f) > 3 else ''
+        if pin:
+            if not HEX.match(pin):
+                bad.append(f'{path}: {f[0]} pin is not a 40-hex SHA: {pin}')
+        elif path.endswith('supporting.list'):
+            bad.append(f'{path}: {f[0]} has no pin')
+        elif path.endswith('core.list') and not rev.startswith('refs/tags/'):
+            bad.append(f'{path}: {f[0]} has no pin (revision={rev})')
+if bad:
+    print('\n'.join(bad))
+    raise SystemExit(1)
+print('all manifest projects pinned (or tag-pinned)')
+PY
+    then
+        warn "manifest pin check failed"
+        fail=1
+    fi
 
     # Generator smoke test against a synthetic base manifest.
     local tmp
@@ -422,6 +472,7 @@ main() {
         build)    cmd_build ;;
         verify)   cmd_verify ;;
         collect)  cmd_collect ;;
+        snapshot) cmd_snapshot ;;
         status)   cmd_status ;;
         all)      cmd_all ;;
         -h|--help|help) usage ;;
