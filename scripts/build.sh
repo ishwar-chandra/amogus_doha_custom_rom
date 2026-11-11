@@ -271,7 +271,12 @@ cmd_build() {
         LUNCH_RELEASE="${aosp_target_release:-$LUNCH_RELEASE}"
     fi
 
-    local target="lineage_${DEVICE}-${LUNCH_RELEASE}-${BUILD_VARIANT}"
+    local target
+    if [ -n "${LUNCH_RELEASE:-}" ]; then
+        target="lineage_${DEVICE}-${LUNCH_RELEASE}-${BUILD_VARIANT}"
+    else
+        target="lineage_${DEVICE}-${BUILD_VARIANT}"
+    fi
     info "lunch $target"
     lunch "$target" </dev/null || true
 
