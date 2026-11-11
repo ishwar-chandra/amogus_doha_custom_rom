@@ -7,8 +7,8 @@ Android-version branches:
 
 | Branch | Android | Status | Use |
 |---|---|---|---|
-| [`16`](../../tree/16) | **16** (crDroid 16.0) | buildkit ready; first full build pending | the stable target |
-| [`17`](../../tree/17) | **17** (crDroid 17.0) | experimental; A16 patches need rebasing | future work |
+| [`16`](../../tree/16) | **16** (crDroid 12.13) | buildkit ready; first full build pending | the stable target |
+| [`17`](../../tree/17) | **17** (crDroid 13.1) | experimental; A16 patches need rebasing | future work |
 
 ## Build Android 16
 
