@@ -1,0 +1,112 @@
+diff --git a/service/src/com/android/server/BpfNetMaps.java b/service/src/com/android/server/BpfNetMaps.java
+index a96819380c..3f5a42d72e 100644
+--- a/service/src/com/android/server/BpfNetMaps.java
++++ b/service/src/com/android/server/BpfNetMaps.java
+@@ -284,7 +284,9 @@ public class BpfNetMaps {
+             return SingleWriterBpfMap.getSingleton(LOCAL_NET_BLOCKED_UID_MAP_PATH,
+                     U32.class, Bool.class);
+         } catch (ErrnoException e) {
+-            throw new IllegalStateException("Cannot open local_net_blocked_uid map", e);
++            Log.e(TAG, "Cannot open local_net_blocked_uid map, "
++                    + "local network blocking unsupported on this kernel", e);
++            return null;
+         }
+     }
+ 
+@@ -294,7 +296,9 @@ public class BpfNetMaps {
+             return SingleWriterBpfMap.getSingleton(LOCAL_NET_ACCESS_MAP_PATH,
+                     LocalNetAccessKey.class, Bool.class);
+         } catch (ErrnoException e) {
+-            throw new IllegalStateException("Cannot open local_net_access map", e);
++            Log.e(TAG, "Cannot open local_net_access map, "
++                    + "local network access control unsupported on this kernel", e);
++            return null;
+         }
+     }
+ 
+@@ -356,7 +360,7 @@ public class BpfNetMaps {
+                 sLocalNetAccessMap = getLocalNetAccessMap();
+             }
+             try {
+-                sLocalNetAccessMap.clear();
++                if (sLocalNetAccessMap != null) sLocalNetAccessMap.clear();
+             } catch (ErrnoException e) {
+                 throw new IllegalStateException("Failed to initialize local_net_access map", e);
+             }
+@@ -365,7 +369,7 @@ public class BpfNetMaps {
+                 sLocalNetBlockedUidMap = getLocalNetBlockedUidMap();
+             }
+             try {
+-                sLocalNetBlockedUidMap.clear();
++                if (sLocalNetBlockedUidMap != null) sLocalNetBlockedUidMap.clear();
+             } catch (ErrnoException e) {
+                 throw new IllegalStateException("Failed to initialize local_net_blocked_uid map",
+                         e);
+@@ -932,6 +936,11 @@ public class BpfNetMaps {
+         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
+                 address, protocol, remotePort);
+ 
++        if (sLocalNetAccessMap == null) {
++            Log.e(TAG, "local_net_access map unsupported, skip addLocalNetAccess for "
++                    + localNetAccessKey);
++            return;
++        }
+         try {
+             sLocalNetAccessMap.updateEntry(localNetAccessKey, new Bool(isAllowed));
+         } catch (ErrnoException e) {
+@@ -966,6 +975,11 @@ public class BpfNetMaps {
+         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
+                 address, protocol, remotePort);
+ 
++        if (sLocalNetAccessMap == null) {
++            Log.e(TAG, "local_net_access map unsupported, skip removeLocalNetAccess for "
++                    + localNetAccessKey);
++            return;
++        }
+         try {
+             sLocalNetAccessMap.deleteEntry(localNetAccessKey);
+         } catch (ErrnoException e) {
+@@ -1001,6 +1015,9 @@ public class BpfNetMaps {
+         }
+         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
+                 address, protocol, remotePort);
++        if (sLocalNetAccessMap == null) {
++            return true;
++        }
+         try {
+             final Bool value = sLocalNetAccessMap.getValue(localNetAccessKey);
+             return value == null ? true : value.val;
+@@ -1018,6 +1035,11 @@ public class BpfNetMaps {
+     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+     public void addUidToLocalNetBlockMap(final int uid) {
+         throwIfPre25Q2("addUidToLocalNetBlockMap is not available on pre-B devices");
++        if (sLocalNetBlockedUidMap == null) {
++            Log.e(TAG, "local_net_blocked_uid map unsupported, skip addUidToLocalNetBlockMap for "
++                    + uid);
++            return;
++        }
+         try {
+             sLocalNetBlockedUidMap.updateEntry(new U32(uid), new Bool(true));
+         } catch (ErrnoException e) {
+@@ -1032,6 +1054,9 @@ public class BpfNetMaps {
+     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+     public boolean isUidBlockedFromUsingLocalNetwork(final int uid) {
+         throwIfPre25Q2("isUidBlockedFromUsingLocalNetwork is not available on pre-B devices");
++        if (sLocalNetBlockedUidMap == null) {
++            return false;
++        }
+         try {
+             final Bool value = sLocalNetBlockedUidMap.getValue(new U32(uid));
+             return value == null ? false : value.val;
+@@ -1049,6 +1074,11 @@ public class BpfNetMaps {
+     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+     public void removeUidFromLocalNetBlockMap(final int uid) {
+         throwIfPre25Q2("removeUidFromLocalNetBlockMap is not available on pre-B devices");
++        if (sLocalNetBlockedUidMap == null) {
++            Log.e(TAG, "local_net_blocked_uid map unsupported, skip "
++                    + "removeUidFromLocalNetBlockMap for " + uid);
++            return;
++        }
+         try {
+             sLocalNetBlockedUidMap.deleteEntry(new U32(uid));
+         } catch (ErrnoException e) {

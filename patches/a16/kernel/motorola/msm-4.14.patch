@@ -1,0 +1,47 @@
+diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
+index 709a1f6cf8c9..8402cf4b3554 100644
+--- a/include/uapi/linux/nl80211.h
++++ b/include/uapi/linux/nl80211.h
+@@ -4273,6 +4273,7 @@ enum nl80211_mfp {
+ enum nl80211_wpa_versions {
+ 	NL80211_WPA_VERSION_1 = 1 << 0,
+ 	NL80211_WPA_VERSION_2 = 1 << 1,
++	NL80211_WPA_VERSION_3 = 1 << 2,
+ };
+ 
+ /**
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 63090ccdb0c9..4f0c393c01aa 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -7152,8 +7152,15 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
+ 	}
+ 
+ 	// Restrict boot process writes on boot time (120s)
+-	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC)
++	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC) {
++		/*
++		 * Report success so the write is silently ignored. Leaving
++		 * ret unset returned a stale register value as the byte count,
++		 * and init.qcom.post_boot.sh aborted on its first write here.
++		 */
++		ret = 0;
+ 		goto unlock_mutex;
++	}
+ 
+ 	/*
+ 	 * Cache the old values so that they can be restored
+diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
+index 3a3b7cd9d9fb..973e163811d5 100644
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -8235,7 +8235,8 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
+ static bool nl80211_valid_wpa_versions(u32 wpa_versions)
+ {
+ 	return !(wpa_versions & ~(NL80211_WPA_VERSION_1 |
+-				  NL80211_WPA_VERSION_2));
++				  NL80211_WPA_VERSION_2 |
++				  NL80211_WPA_VERSION_3));
+ }
+ 
+ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)

@@ -1,0 +1,8 @@
+# path|remote|name|revision|pin|comment
+# The hardware layer that carries the stable A13 device support forward.
+device/motorola/amogus_doha|aldair|android_device_motorola_amogus_doha|2.1|@PIN_DEVICE@|A16 doha device tree
+device/motorola/targets|aldair|android_device_motorola_targets|master|@PIN_TARGETS@|product framework
+kernel/motorola/msm-4.14|christiaan|android_kernel_motorola_msm-4.14|lts|@PIN_KERNEL@|4.14.357-openela + doha fixes
+vendor/motorola/amogus_doha|aldair|android_vendor_motorola_amogus_doha|14|@PIN_VENDOR_DOHA@|doha blobs
+vendor/motorola/amogus|aldair|android_vendor_motorola_amogus|15|@PIN_VENDOR_AMOGUS@|common sm6125 blobs
+vendor/gapps|mtg|vendor_gapps|baklava||MindTheGapps for Android 16

@@ -1,0 +1,35 @@
+diff --git a/include/kernel/source.mk b/include/kernel/source.mk
+index 41e309b..315295b 100644
+--- a/include/kernel/source.mk
++++ b/include/kernel/source.mk
+@@ -40,3 +40,30 @@ else ifeq ($(PRODUCT_USES_MTK_HARDWARE),true)
+ else
+   $(warning Target's hardware is not supported...)
+ endif
++
++# PRODUCT_VENDOR_KERNEL_HEADERS is normally only set by kernel/prebuilt.mk
++# for devices using a prebuilt kernel. Devices building the kernel from
++# source (this file) never had it set at all, so
++# device/motorola/amogus/Android.mk's `KERNEL_OBJ/usr` rule (which
++# unconditionally does `cp -a $(PRODUCT_VENDOR_KERNEL_HEADERS)/. $@/include`)
++# silently expanded to `cp -a /.` when the variable was empty.
++#
++# device/motorola/amogus-kernel/kernel-headers already exists and is a
++# real, pre-sanitized, curated headers export checked into the tree --
++# this is what should have been used from the start, rather than
++# hand-building a headers export from raw kernel source (which pulled in
++# generic/libc-overlapping content, e.g. asm-generic/signal.h's struct
++# sigaction, that conflicts with bionic's own definitions; this curated
++# set doesn't have that problem).
++#
++# Hardcoded rather than derived from $(DEVICE) (confirmed wrong here --
++# $(DEVICE) is the specific model codename, amogus_doha, but the
++# "-kernel" companion dir uses the hardware-family name, amogus;
++# $(DEVICE)-kernel/kernel-headers does not exist) or
++# $(PLATFORM_COMMON_PATH) (set in device/motorola/amogus/device.mk,
++# which this fork's actual product-inheritance chain for amogus_doha
++# does not appear to pull in before this file is evaluated -- not
++# reliably available here). This fork only supports this one device, so
++# hardcoding the confirmed-correct path is the pragmatic choice over
++# further chasing Make product-config inheritance order.
++PRODUCT_VENDOR_KERNEL_HEADERS := device/motorola/amogus-kernel/kernel-headers

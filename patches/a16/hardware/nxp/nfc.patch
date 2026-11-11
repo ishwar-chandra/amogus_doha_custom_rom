@@ -1,0 +1,15 @@
+diff --git a/snxxx/halimpl/hal/phNxpNciHal.cc b/snxxx/halimpl/hal/phNxpNciHal.cc
+index 2df281b..f75fa38 100644
+--- a/snxxx/halimpl/hal/phNxpNciHal.cc
++++ b/snxxx/halimpl/hal/phNxpNciHal.cc
+@@ -1320,6 +1320,10 @@ retry:
+     if (nxpncihal_ctrl.retry_cnt++ < MAX_RETRY_COUNT) {
+       NXPLOG_NCIHAL_D(
+           "write_unlocked failed - NFCC Maybe in Standby Mode - Retry");
++      /* doha (PN553 on nq-nci): NFCC NACKs the first I2C write while
++       * waking from standby. Without a delay all retries land inside the
++       * wake-up window and the HAL abort()s. Same 10ms as the pn8x HAL. */
++      usleep(1000 * 10);
+       goto retry;
+     } else {
+       NXPLOG_NCIHAL_E(

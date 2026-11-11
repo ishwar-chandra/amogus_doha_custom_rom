@@ -1,0 +1,45 @@
+diff --git a/android.hardware.thermal@2.0-service.qti.rc b/android.hardware.thermal@2.0-service.qti.rc
+index 4c9186c..24a4dff 100644
+--- a/android.hardware.thermal@2.0-service.qti.rc
++++ b/android.hardware.thermal@2.0-service.qti.rc
+@@ -26,7 +26,7 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-service android.thermal-hal /vendor/bin/hw/android.hardware.thermal@2.0-service.qti
++service vendor.thermal-hal-doha /vendor/bin/hw/android.hardware.thermal@2.0-service.qti
+ 	interface android.hardware.thermal@1.0::IThermal default
+ 	interface android.hardware.thermal@2.0::IThermal default
+ 	class hal
+diff --git a/thermalConfig.cpp b/thermalConfig.cpp
+index 8d8f5e9..0e2706b 100644
+--- a/thermalConfig.cpp
++++ b/thermalConfig.cpp
+@@ -385,9 +385,9 @@ namespace implementation {
+ 		},
+ 		{
+ 			TemperatureType::SKIN,
+-			{ "xo-therm-adc" },
++			{ "xo_therm" },
+ 			"skin",
+-			40000,
++			@SKIN_THROTTLE_MC@,
+ 			95000,
+ 			40000,
+ 			true,
+@@ -410,15 +410,6 @@ namespace implementation {
+ 			4000,
+ 			true,
+ 		},
+-		{
+-			TemperatureType::BCL_PERCENTAGE,
+-			{ "soc" },
+-			"soc",
+-			10,
+-			2,
+-			10,
+-			false,
+-		},
+ 	};
+ 
+ 	std::vector<std::string> cpu_sensors_lito =

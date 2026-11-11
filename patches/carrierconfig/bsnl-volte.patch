@@ -1,0 +1,12 @@
+diff --git a/assets/carrier_config_carrierid_1549_Bharat-Sanchar-Nigam-Ltd-(BSNL).xml b/assets/carrier_config_carrierid_1549_Bharat-Sanchar-Nigam-Ltd-(BSNL).xml
+index b999bba..af28dd6 100644
+--- a/assets/carrier_config_carrierid_1549_Bharat-Sanchar-Nigam-Ltd-(BSNL).xml
++++ b/assets/carrier_config_carrierid_1549_Bharat-Sanchar-Nigam-Ltd-(BSNL).xml
+@@ -1,5 +1,7 @@
+ <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+ <carrier_config>
++    <boolean name="carrier_volte_available_bool" value="true" />
++    <boolean name="editable_enhanced_4g_lte_bool" value="true" />
+     <string-array name="roaming_operator_string_array" num="2">
+         <item value="404"/>
+         <item value="405"/>

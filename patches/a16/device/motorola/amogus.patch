@@ -1,0 +1,85 @@
+diff --git a/Android.bp b/Android.bp
+index 885256c..b8a43bd 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -1,5 +1,4 @@
+ soong_namespace {
+     imports: [
+-        "hardware/qcom/bootctrl",
+     ],
+ }
+diff --git a/Android.mk b/Android.mk
+index 1a6f520..7ff828b 100644
+--- a/Android.mk
++++ b/Android.mk
+@@ -4,10 +4,12 @@ LOCAL_PATH := $(call my-dir)
+ 
+ include $(call all-subdir-makefiles)
+ 
++ifneq ($(PRODUCT_VENDOR_KERNEL_HEADERS),)
+ $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr: $(wildcard $(PRODUCT_VENDOR_KERNEL_HEADERS)/*)
+ 	rm -rf $@
+ 	mkdir -p $@/include
+ 	cp -a $(PRODUCT_VENDOR_KERNEL_HEADERS)/. $@/include
++endif
+ 
+ include $(CLEAR_VARS)
+ LOCAL_MODULE := amogus_folders
+diff --git a/device.mk b/device.mk
+index 9caa77f..6a57fdb 100644
+--- a/device.mk
++++ b/device.mk
+@@ -19,6 +19,12 @@ PLATFORM_COMMON_PATH := device/motorola/amogus
+ AB_OTA_UPDATER := true
+ PRODUCT_SHIPPING_API_LEVEL := 29
+ 
++# This device carries forward a real 4.14 (non-GKI) kernel past the point
++# where AOSP's bundled compatibility matrices still ship 4.14 kernel-config
++# requirements at FCM level 5 (the level PRODUCT_SHIPPING_API_LEVEL=29 maps
++# to) -- checkvintf's kernel/FCM pairing check would otherwise always fail.
++PRODUCT_OTA_ENFORCE_VINTF_KERNEL_REQUIREMENTS := false
++
+ AB_OTA_PARTITIONS += \
+     boot \
+     dtbo \
+diff --git a/proprietary-files.txt b/proprietary-files.txt
+index 52c0155..32abba9 100644
+--- a/proprietary-files.txt
++++ b/proprietary-files.txt
+@@ -671,6 +671,7 @@ vendor/lib/libqcmaputils.so
+ vendor/lib/libqcrilFramework.so
+ vendor/lib/libqcrildatactl.so
+ vendor/lib/libqrtr.so
++vendor/lib/libqsap_sdk.so
+ vendor/lib/libqsocket.so
+ vendor/lib/libril-qc-hal-qmi.so
+ vendor/lib/libril-qc-logger.so
+@@ -721,6 +722,7 @@ vendor/lib64/libqcmaputils.so
+ vendor/lib64/libqcrilFramework.so
+ vendor/lib64/libqcrildatactl.so
+ vendor/lib64/libqrtr.so
++vendor/lib64/libqsap_sdk.so
+ vendor/lib64/libqsocket.so
+ vendor/lib64/libril-qc-hal-qmi.so
+ vendor/lib64/libril-qc-logger.so
+diff --git a/sepolicy/file.te b/sepolicy/file.te
+index 4e0bc64..20473d5 100644
+--- a/sepolicy/file.te
++++ b/sepolicy/file.te
+@@ -1 +1 @@
+-type vendor_sensor_data_file, file_type, data_file_type;
++type vendor_sensor_data_file, file_type, data_file_type, vendor_file_type;
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+index 03c9a0c..074e972 100644
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -18,3 +18,9 @@
+ 
+ # Sensors
+ /vendor/etc/sensors(/.*)? u:object_r:vendor_sensor_data_file:s0
++
++# Thermal HAL: legacy-um's file_contexts only labels the AIDL-variant
++# binary name (android.hardware.thermal-service.qti); doha ships the
++# older HIDL @2.0 QTI implementation instead, which falls through to
++# the generic vendor_file label with no init->HAL domain transition.
++/vendor/bin/hw/android\.hardware\.thermal@2\.0-service\.qti u:object_r:hal_thermal_default_exec:s0

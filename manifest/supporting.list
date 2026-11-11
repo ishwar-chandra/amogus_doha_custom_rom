@@ -1,0 +1,31 @@
+# path|remote|name|branch|pin|linkfile(src|dest)
+# Only projects crDroid 16.0 does not provide itself. The generated manifest
+# emits <remove-project> for any path that already exists in the base manifest.
+device/motorola/amogus|moto|android_device_motorola_amogus|14|@PIN_AMOGUS@|
+device/motorola/amogus-kernel|moto|android_device_motorola_amogus-kernel|13|@PIN_AMOGUS_KERNEL@|
+device/motorola/common|aldair|android_device_motorola_common|16|@PIN_COMMON@|hardware/qcom/os_pickup_ext.mk|vendor/qcom/opensource/Android.mk
+device/qcom/common|aospa|android_device_qcom_common|uvite||
+device/qcom/qssi|aospa|android_device_qcom_qssi|uvite||
+device/qcom/sepolicy_vndr|aospa|android_device_qcom_sepolicy_vndr|uvite||
+device/sony/sepolicy|moto|android_device_sony_sepolicy|master||
+external/fastrpc|aospa|android_external_fastrpc|uvite||
+hardware/motorola|moto|android_hardware_motorola|master||
+hardware/qcom/bootctrl|moto|platform_hardware_qcom_bootctrl|master||
+system/qcom|moto|android_system_qcom|master||
+prebuilts/clang/host/linux-x86/clang-r383902|moto|platform_prebuilts_clang_host_linux-x86_clang-r383902|master||
+vendor/goodix|moto|platform_vendor_goodix|master||
+vendor/egistec/interfaces|moto|platform_vendor_egistec_interfaces|master||
+vendor/sony/timekeep|moto|android_vendor_sony_timekeep|master||
+vendor/motorola/common|moto|android_vendor_motorola_common|14||
+vendor/qcom/common|aospa-vendor|proprietary_vendor_qcom_common|uvite||
+vendor/qcom/opensource/audio/sm8150|aldair|platform_vendor_qcom_opensource_audio_sm8150|master||
+vendor/qcom/opensource/audio/st-hal|moto|platform_vendor_qcom_opensource_audio_st-hal|master||
+vendor/qcom/opensource/data-ipa-cfg-mgr|moto|platform_vendor_qcom_opensource_data-ipa-cfg-mgr|master||
+vendor/qcom/opensource/data-ipa-cfg-mgr-legacy|moto|platform_vendor_qcom_opensource_data-ipa-cfg-mgr-legacy-um|master||
+vendor/qcom/opensource/dataservices|moto|platform_vendor_qcom_opensource_dataservices|master||
+vendor/qcom/opensource/display-commonsys-intf|moto|platform_vendor_qcom_opensource_display-commonsys-intf|master||
+vendor/qcom/opensource/display/sm8150|moto|platform_vendor_qcom_opensource_display_sm8150|master||
+vendor/qcom/opensource/gps/legacy|aldair|platform_vendor_qcom_opensource_gps-legacy|master||
+vendor/qcom/opensource/media/sm8150|moto|platform_vendor_qcom_opensource_media_sm8150|master||
+vendor/qcom/opensource/recovery-ext|moto|platform_vendor_qcom_opensource_recovery-ext|master||
+vendor/qcom/opensource/thermal|moto|platform_vendor_qcom_opensource_thermal|master||
