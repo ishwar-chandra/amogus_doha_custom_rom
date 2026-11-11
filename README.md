@@ -56,6 +56,19 @@ intentional: the base moves, the port does not. `sync` writes
 `manifests/`. Use the snapshot if you need to rebuild the exact tree months
 later.
 
+## GCP: one command
+
+If you do not have a 32 GB build machine, `gcp/doha.sh` creates a 12 vCPU /
+48 GB Ubuntu 24.04 VM, builds, publishes the release and backs the whole
+build state up to Google Drive:
+
+```bash
+./gcp/doha.sh all --repo YOUR_GITHUB/REPO
+```
+
+It needs `gcloud`, `gh` (authenticated) and an rclone `gdrive` remote on the
+VM. See [gcp/README.md](gcp/README.md) for flags and restore.
+
 ## Host requirements
 
 | Resource | Requirement |

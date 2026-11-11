@@ -1,122 +1,155 @@
-# GCP builder
+# One-command GCP build, release, backup and restore
 
-Creates a 12 vCPU / 48 GB VM, installs the Android 16 build dependencies, and
-runs the whole buildkit remotely.
+Everything lives in **`gcp/doha.sh`**. No other GCP scripts.
 
-## OS and sizing
+## What it does
 
-| Item | Choice | Why |
-|---|---|---|
-| OS | **Ubuntu 24.04 LTS** (`ubuntu-2404-lts-amd64`) | current LTS, Python 3.12, glibc 2.39; the repo’s dependency list is tested on 22.04/24.04 |
-| Shape | **e2-standard-12** first | exactly 12 vCPU / 48 GB, cheapest 12/48 shape |
-| Fallbacks | `t2d-standard-12`, `n2d-standard-12`, `n2-standard-12`, `c2-standard-12` | same 12/48, used when e2 is unavailable in a zone |
-| Disk | **500 GB `pd-balanced`** | ~200 GB source + ~120 GB `out/` + 50 GB ccache + 32 GB swap + headroom |
-| Swap | 32 GB file | Soong peaks around 20 GB; swap is an OOM safety net |
-| Zone | auto | cheapest approximate region order, first zone with an available shape |
-
-The disk type can be changed with `DISK_TYPE=pd-standard` (cheaper/slower) or
-`DISK_TYPE=pd-ssd` (faster/more expensive). Use `DISK_SIZE=600GB` if you want
-more headroom.
-
-## One-time setup
-
-`gcloud` is already installed and authenticated. Verify:
-
-```bash
-gcloud config list
-gcloud auth list
+```mermaid
+flowchart LR
+  A[create VM] --> B[sync kit]
+  B --> C[provision]
+  C --> D[build]
+  D --> E{success?}
+  E -- yes --> F[fetch dist]
+  F --> G[GitHub release]
+  G --> H[Drive backup]
+  E -- no --> I[stop + log]
 ```
 
-## Create
+- **VM:** 12 vCPU / 48 GB, cheapest available shape (`e2-standard-12` first,
+  then `t2d`, `n2d`, `n2`, `c2`), cheapest approximate region order.
+- **OS:** Ubuntu 24.04 LTS (`ubuntu-2404-lts-amd64`).
+- **Disk:** 500 GB `pd-balanced` + 32 GB swap. Enough for ~200 GB source,
+  ~120 GB `out/`, 50 GB ccache and headroom.
+- **Build:** runs `scripts/build.sh all` inside `tmux`, so SSH drops do not
+  kill it.
+- **Release:** only after a successful build, via `gh release create`.
+- **Backup:** only after a successful build, to
+  `gdrive:doha-a16/<timestamp>/` with `work/android`, `work/ccache`, `dist`
+  and the kit.
+- **Restore:** latest or named snapshot to a new VM, or `--local`.
+
+## Prerequisites
+
+- `gcloud` installed and authenticated.
+- `gh` installed and `gh auth login` done (for release).
+- `rclone` configured **on the VM** with a remote named `gdrive`, or pass
+  `--copy-rclone` to upload your local
+  `~/.config/rclone/rclone.conf`.
+- The buildkit repo pushed to GitHub if you want the release step to use it;
+  `--repo OWNER/REPO` defaults to
+  `ishwar-chandra/amogus_doha_custom_rom`.
+
+## Commands
 
 ```bash
-# show the selected zone/shape without creating anything
-./gcp/create-vm.sh find
+# Full pipeline: create -> build -> release -> backup
+./gcp/doha.sh all
 
-# create the VM + SSH firewall rule
-./gcp/create-vm.sh create
+# Create the VM only
+./gcp/doha.sh up
+
+# Build and fetch dist/ without releasing/backing up
+./gcp/doha.sh build
+
+# Publish the last fetched dist-gcp/
+./gcp/doha.sh release
+
+# Backup the VM now
+./gcp/doha.sh backup
+
+# Restore latest snapshot to a VM (creates the VM if needed)
+./gcp/doha.sh restore
+
+# Restore into this machine
+./gcp/doha.sh restore --local
+
+# List snapshots
+./gcp/doha.sh snapshots
+
+# SSH / status / stop / start / delete
+./gcp/doha.sh ssh
+./gcp/doha.sh status
+./gcp/doha.sh stop
+./gcp/doha.sh start
+./gcp/doha.sh down
 ```
 
-The script writes `gcp/vm.env` (project, zone, VM name, shape) and ignores it
-in git.
-
-If your project has no 12 vCPU quota in the auto-selected region, creation
-fails with a quota error. Pick a region that has quota:
+## Important flags
 
 ```bash
-ZONE=us-central1-a ./gcp/create-vm.sh create
+./gcp/doha.sh all \
+  --repo ishwar-chandra/amogus_doha_custom_rom \
+  --tag a16-20261111 \
+  --remote gdrive \
+  --dir doha-a16 \
+  --copy-rclone
 ```
 
-Or choose a specific shape:
+| Flag | Meaning |
+|---|---|
+| `--project ID` | GCP project |
+| `--zone ZONE` | force a zone |
+| `--machine-type TYPE` | force a shape |
+| `--disk-size 500GB` | boot disk |
+| `--spot` | cheaper, can be preempted |
+| `--repo OWNER/REPO` | GitHub release target |
+| `--tag TAG` | release tag |
+| `--remote NAME` | rclone remote (`gdrive`) |
+| `--dir NAME` | Drive folder (`doha-a16`) |
+| `--snapshot NAME` | backup/restore snapshot |
+| `--copy-rclone` | upload local rclone config to the VM |
+| `--no-release` | skip GitHub release |
+| `--no-backup` | skip Drive backup |
+| `--local` | backup/restore on this machine |
+
+## Rclone setup (recommended before the first `all`)
+
+On the VM:
 
 ```bash
-MACHINE_TYPE=n2-standard-12 ZONE=europe-west1-b ./gcp/create-vm.sh create
+./gcp/doha.sh ssh
+rclone config          # create a remote named "gdrive" (Google Drive)
+exit
 ```
 
-## Build
+Or upload your local config once:
 
 ```bash
-./gcp/build-remote.sh
+./gcp/doha.sh all --copy-rclone
 ```
 
-That script:
+`all` checks the remote **before** starting the multi-hour build. If it is
+missing, it stops immediately with instructions instead of failing after the
+build.
 
-1. tars the buildkit and copies it to `~/amogus_doha_custom_rom`
-2. installs packages and the 32 GB swap file
-3. runs `./scripts/build.sh all` inside `tmux`
-4. downloads `dist/` to `dist-gcp/` and the log to `dist-gcp-build.log`
+## GitHub release
 
-The build survives an SSH disconnect because it runs in `tmux`. To reattach:
+`release` uses the local `dist-gcp/` directory:
+
+- ROM zip
+- `boot.img`, `dtbo.img`, `vbmeta.img`
+- `SHA256SUMS`, `BUILD_INFO.txt`
+
+If the tag exists, assets are uploaded with `--clobber`. A missing/unauthenticated
+`gh` fails the release step but does not delete the build; the Drive backup
+still runs.
+
+## Costs and cleanup
+
+- `e2-standard-12` is roughly $0.45–0.55/hour.
+- 500 GB `pd-balanced` is roughly $0.07/hour.
+- A 3–5 hour build is a few dollars of trial credit.
+- Delete the VM when done:
+  ```bash
+  ./gcp/doha.sh down
+  ```
+  A stopped VM still bills for the disk.
+
+If `create` fails with `QUOTA_EXCEEDED`, pick a zone with 12 vCPU quota:
 
 ```bash
-./gcp/create-vm.sh ssh
-tmux attach -t doha
+./gcp/doha.sh up --zone us-central1-a --machine-type e2-standard-12
 ```
 
-If you re-run `build-remote.sh` while the build is active, use:
-
-```bash
-SKIP_SYNC=1 ./gcp/build-remote.sh
-```
-
-so the remote source tree is not replaced mid-build.
-
-## Stop / delete
-
-```bash
-./gcp/create-vm.sh stop      # disk still billed
-./gcp/create-vm.sh start
-./gcp/create-vm.sh status
-./gcp/create-vm.sh delete    # VM + boot disk
-```
-
-Delete the VM when the build is finished; a stopped VM still bills for the
-500 GB disk.
-
-## Cost notes
-
-- `e2-standard-12` is the cheapest 12/48 option; `t2d`/`n2d` are close,
-  `n2` and `c2` cost more.
-- 500 GB `pd-balanced` is a few cents per hour; `pd-standard` is cheaper but
-  slower.
-- A 3–5 hour build is a few dollars of trial credit; `SPOT=1` cuts the compute
-  price substantially but can be preempted. Do not use spot for a first
-  unattended build.
-- Stop/delete the VM when idle. The boot disk is the main idle cost.
-
-## Notes
-
-- The SSH firewall defaults to `0.0.0.0/0` on port 22 with the
-  `doha-builder` target tag. Narrow it with
-  `SSH_SOURCE_RANGE=<your-ip>/32 ./gcp/create-vm.sh create`.
-- The VM has no service account/scopes; it only needs outbound network.
-- GCP’s free-trial quotas vary. If `create` fails with
-  `QUOTA_EXCEEDED`, try another zone or reduce `DISK_SIZE`.
-
-If `find` is slow on your network, skip it:
-
-```bash
-ZONE=us-central1-a MACHINE_TYPE=e2-standard-12 ./gcp/create-vm.sh create
-```
-
-Set `FIND_TIMEOUT=300` to allow a longer machine-type query.
+If the machine-type query is slow, skip it with `--zone` + `--machine-type`.
