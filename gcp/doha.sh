@@ -142,6 +142,10 @@ ensure_project() {
     export PROJECT
 }
 
+on_gce() {
+    curl -fsS --max-time 2         -H 'Metadata-Flavor: Google'         http://metadata.google.internal/computeMetadata/v1/instance/name         >/dev/null 2>&1
+}
+
 save_vm_env() {
     cat > "$VM_ENV" <<EOF
 PROJECT=$PROJECT
@@ -446,6 +450,10 @@ remote_restore() {
 }
 
 cmd_build() {
+    if on_gce; then
+        build_on_vm
+        return
+    fi
     cmd_up
     sync_kit
     remote_provision
@@ -458,7 +466,7 @@ cmd_build() {
 }
 
 cmd_backup() {
-    if [ "$LOCAL" = 1 ]; then backup_here; return; fi
+    if [ "$LOCAL" = 1 ] || on_gce; then backup_here; return; fi
     cmd_up
     ensure_remote_kit
     upload_rclone_config
@@ -468,7 +476,7 @@ cmd_backup() {
 }
 
 cmd_restore() {
-    if [ "$LOCAL" = 1 ]; then restore_here; return; fi
+    if [ "$LOCAL" = 1 ] || on_gce; then restore_here; return; fi
     cmd_up
     ensure_remote_kit
     upload_rclone_config
@@ -526,7 +534,7 @@ rclone_setup_here() {
 }
 
 cmd_rclone_setup() {
-    if [ "$LOCAL" = 1 ]; then
+    if [ "$LOCAL" = 1 ] || on_gce; then
         rclone_setup_here
         return 0
     fi
