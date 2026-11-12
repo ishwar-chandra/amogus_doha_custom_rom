@@ -32,6 +32,7 @@ vendor/qcom/opensource/audio/sm8150
 vendor/qcom/opensource/audio/st-hal
 vendor/qcom/opensource/data-ipa-cfg-mgr
 vendor/qcom/opensource/data-ipa-cfg-mgr-legacy
+vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um
 vendor/qcom/opensource/dataservices
 vendor/qcom/opensource/display-commonsys-intf
 vendor/qcom/opensource/display/sm8150

@@ -251,6 +251,12 @@ fix_build_tree() {
         info "removed A16-blocked legacy Android.mk: system/qcom/softap/sdk"
     fi
 
+    local ipa_um="$ANDROID_SRC/vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um"
+    if [ -d "$ipa_um" ]; then
+        rm -rf "$ipa_um"
+        info "removed duplicate IPA namespace: data-ipa-cfg-mgr-legacy-um"
+    fi
+
     local sep="$ANDROID_SRC/device/qcom/sepolicy_vndr/SEPolicy.mk"
     local common="$ANDROID_SRC/hardware/qcom-caf/common/os_pickup_sepolicy_vndr.mk"
     if [ -f "$common" ] && [ -e "$sep" ] && [ ! -L "$sep" ]; then
