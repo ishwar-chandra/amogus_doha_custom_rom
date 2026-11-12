@@ -87,8 +87,12 @@ def main() -> int:
             attrs["upstream"] = f"refs/heads/{branch}"
         project = ET.SubElement(root, "project", attrs)
         if link:
-            src, dest = (part.strip() for part in link.split("|", 1))
-            ET.SubElement(project, "linkfile", {"src": src, "dest": dest})
+            for spec in link.split(";"):
+                spec = spec.strip()
+                if not spec:
+                    continue
+                src, dest = (part.strip() for part in spec.split("|", 1))
+                ET.SubElement(project, "linkfile", {"src": src, "dest": dest})
 
     for row in core:
         add_project(row)
