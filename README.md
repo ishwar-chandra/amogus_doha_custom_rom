@@ -5,9 +5,9 @@ Reproducible Android 16 (crDroid 12.13) builds for the **Motorola Moto G8 Plus**
 produced the Android 13 crDroid 9 ROM, carried forward with the Android 16
 platform patches the device actually needs.
 
-> **Status:** this is a code-and-patch repository, not a prebuilt ROM. No build
-> has been run in this workspace. `./scripts/build.sh dryrun` validates the
-> configuration, URLs and patch set; the first full build is the real test.
+> **Status:** active Android 16 (crDroid 12.13) port. `./scripts/build.sh dryrun`
+> validates the configuration, URLs and patch set. Full builds are run on the
+> GCP VM; a local build needs the disk and RAM below.
 
 ## Quick start
 
@@ -17,6 +17,9 @@ platform patches the device actually needs.
 
 # 2. Full pipeline: host deps -> repo init -> manifest -> sync -> patch -> build
 ./scripts/build.sh all
+
+# 3. Show which steps completed and the tree size
+./scripts/build.sh status
 
 # or run steps individually
 ./scripts/build.sh deps
@@ -56,31 +59,60 @@ intentional: the base moves, the port does not. `sync` writes
 `manifests/`. Use the snapshot if you need to rebuild the exact tree months
 later.
 
-## GCP: one command
+## GCP build
 
-If you do not have a 32 GB build machine, `gcp/doha.sh` creates a 12 vCPU /
-48 GB Ubuntu 24.04 VM, builds, publishes the release and backs the whole
-build state up to Google Drive:
+`gcp/doha.sh` creates a 12 vCPU / 48 GB Ubuntu 24.04 VM with a 700 GB
+`pd-standard` disk, runs the build inside `tmux`, fetches `dist/`, optionally
+publishes a GitHub release, and backs the build to Google Drive.
 
 ```bash
+# one-time: get a token from a browser machine with `rclone authorize "drive"`
+./gcp/doha.sh rclone-setup
+
+# create VM -> build -> release -> incremental backup
 ./gcp/doha.sh all --repo YOUR_GITHUB/REPO
+
+# inspect without touching the build
+./gcp/doha.sh status
+./gcp/doha.sh ssh
+
+# build only, no release/backup
+./gcp/doha.sh build
+
+# incremental backup: first run full, later runs changed files only
+./gcp/doha.sh backup
+
+# restore `current` or a named snapshot
+./gcp/doha.sh restore
+./gcp/doha.sh restore --local
 ```
 
-It needs `gcloud`, `gh` (authenticated) and an rclone `gdrive` remote on the
-VM. See [gcp/README.md](gcp/README.md) for flags and restore.
+Requirements: `gcloud` authenticated, `gh` authenticated for releases, and an
+rclone `gdrive` remote on the VM. `rclone-setup` configures it from the token
+only; `--copy-rclone` remains available for an existing config.
+
+When `gcp/doha.sh` runs **on the VM**, `build`, `backup`, `restore` and
+`rclone-setup` automatically run locally instead of looking for another
+machine.
+
+Backups are incremental: `gdrive:doha-a16/current/` is updated in place.
+Changed files replace the old file; unchanged files are not re-uploaded. An
+explicit `--snapshot NAME` still creates a full snapshot. See
+[gcp/README.md](gcp/README.md) for every flag and the restore workflow.
 
 ## Host requirements
 
 | Resource | Requirement |
 |---|---|
 | OS | Ubuntu 22.04/24.04/26.04, native or WSL2 on the Linux filesystem |
-| Disk | ~300 GB free (200 GB source + 100 GB `out/`); 350 GB comfortable |
+| Disk | 400 GB free minimum (250 GB checkout + 150 GB `out/`); 500 GB comfortable. The GCP VM uses 700 GB |
 | RAM | 32 GB preferred; 16 GB works with swap. Soong peaks around 20 GB |
-| CPU | 8+ threads useful; a clean build is 2–3 h, incremental ~20–40 min |
-| Network | ~100 GB first sync |
+| CPU | 8+ threads useful; a clean build is 2–4 h, incremental ~20–40 min |
+| Network | ~250 GB checkout; first sync is the long pole |
 
 The build does **not** run on 4 GB/8 GB machines. `dryrun` warns below 250 GB
-free and below 16 GB RAM.
+free and below 16 GB RAM. A full `work/android` is ~220–250 GB before `out/`;
+`.repo` is most of that, so do not size the disk from the checkout alone.
 
 ## What this repo deliberately does
 
@@ -122,6 +154,7 @@ patches/carrierconfig/  BSNL VoLTE CarrierConfig patch
 scripts/build.sh        single entry point, resumable steps
 scripts/lib.sh          config loading, patch application, logging
 scripts/tools/          manifest generator, APN injector, build verifier
+gcp/doha.sh             GCP VM, build, release, rclone setup, backup/restore
 docs/                   architecture, patch map, VoLTE, integrity, flashing, tests
 ```
 

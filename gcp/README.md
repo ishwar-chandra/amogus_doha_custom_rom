@@ -26,9 +26,9 @@ flowchart LR
 - **Release:** only after a successful build, via `gh release create`.
 - **Backup:** incremental mirror at `gdrive:doha-a16/current/` with
   `work/android`, `work/ccache`, `dist` and the kit. First run uploads
-  everything; later runs upload only new/changed files and replace changed
-  files in place. No second copy of old versions is kept. An explicit
-  `--snapshot NAME` still creates a full snapshot.
+  everything; later runs upload only new/changed files and replace the old
+  file in place. No duplicate snapshot or history directory is kept. An
+  explicit `--snapshot NAME` still creates a full snapshot.
 - **Restore:** `current` by default, or a named snapshot, to a new VM or
   `--local`.
 
@@ -67,6 +67,9 @@ flowchart LR
 # Restore into this machine
 ./gcp/doha.sh restore --local
 
+# Configure Drive from an `rclone authorize "drive"` token
+./gcp/doha.sh rclone-setup
+
 # List snapshots
 ./gcp/doha.sh snapshots
 
@@ -93,7 +96,7 @@ flowchart LR
 | `--project ID` | GCP project |
 | `--zone ZONE` | force a zone |
 | `--machine-type TYPE` | force a shape |
-| `--disk-size 500GB` | boot disk |
+| `--disk-size 700GB` | boot disk (default 700 GB) |
 | `--spot` | cheaper, can be preempted |
 | `--repo OWNER/REPO` | GitHub release target |
 | `--tag TAG` | override the auto-detected release tag |
@@ -139,6 +142,10 @@ RCLONE_TOKEN='{"access_token":"...","token_type":"Bearer","refresh_token":"...",
 missing, it stops immediately with instructions instead of failing after the
 build.
 
+When run on the GCP VM itself, `build`, `backup`, `restore` and
+`rclone-setup` automatically use the local machine. They do not query GCP or
+try to create a second VM.
+
 ## GitHub release
 
 The release tag is auto-detected from `BUILD_INFO.txt` (or the ROM zip's mtime), so an older artifact does not get stamped with today's date. Override with `--tag` only when needed.
@@ -156,7 +163,7 @@ still runs.
 ## Costs and cleanup
 
 - `e2-standard-12` is roughly $0.45–0.55/hour.
-- 500 GB `pd-balanced` is roughly $0.07/hour.
+- 700 GB `pd-standard` is roughly $0.04/hour (about $28/month if left running).
 - A 3–5 hour build is a few dollars of trial credit.
 - Delete the VM when done:
   ```bash
