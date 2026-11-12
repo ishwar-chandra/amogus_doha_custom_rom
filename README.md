@@ -185,3 +185,5 @@ original metadata. See `NOTICE`.
 - [docs/FLASHING.md](docs/FLASHING.md) — A/B recovery, clean flash, rollback.
 - [docs/VERIFICATION.md](docs/VERIFICATION.md) — post-build gates and the
   device test matrix.
+- [docs/FUTURE_TASKS.md](docs/FUTURE_TASKS.md) — OTA, signing, backup, disk
+  and hardware follow-up checklist.
