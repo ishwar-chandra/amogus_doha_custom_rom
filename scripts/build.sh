@@ -240,7 +240,24 @@ cmd_patch() {
         warn "vendor/apn not synced; skipping APN database check"
     fi
 
+    fix_build_tree
     mark patch
+}
+
+fix_build_tree() {
+    local blocked="$ANDROID_SRC/system/qcom/softap/sdk/Android.mk"
+    if [ -e "$blocked" ]; then
+        rm -f "$blocked"
+        info "removed A16-blocked legacy Android.mk: system/qcom/softap/sdk"
+    fi
+
+    local sep="$ANDROID_SRC/device/qcom/sepolicy_vndr/SEPolicy.mk"
+    local common="$ANDROID_SRC/hardware/qcom-caf/common/os_pickup_sepolicy_vndr.mk"
+    if [ -f "$common" ] && [ -e "$sep" ] && [ ! -L "$sep" ]; then
+        rm -f "$sep"
+        ln -s ../../../hardware/qcom-caf/common/os_pickup_sepolicy_vndr.mk "$sep"
+        info "linked device/qcom/sepolicy_vndr/SEPolicy.mk to common"
+    fi
 }
 
 cmd_build() {
