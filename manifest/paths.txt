@@ -18,6 +18,7 @@ device/qcom/qssi
 device/qcom/sepolicy_vndr
 device/sony/sepolicy
 external/fastrpc
+hardware/qcom-caf/common
 hardware/motorola
 hardware/qcom/bootctrl
 system/qcom

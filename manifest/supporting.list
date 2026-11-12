@@ -9,6 +9,7 @@ device/qcom/qssi|doha-aospa|android_device_qcom_qssi|uvite|dc16714f7004f6b47114e
 device/qcom/sepolicy_vndr|doha-aospa|android_device_qcom_sepolicy_vndr|uvite|c974f7ceff57e022156f4783454747703a51c5a8|
 device/sony/sepolicy|doha-moto|android_device_sony_sepolicy|master|f80fb521f326f5a8e1b19451594bf6ddbd727b82|
 external/fastrpc|doha-aospa|android_external_fastrpc|uvite|a83e9c19925dcaf77fa42aefaa0be8eed74e4974|
+hardware/qcom-caf/common|doha-lineage|android_hardware_qcom-caf_common|lineage-23.2|@PIN_HARDWARE_QCOM_CAF_COMMON@|
 hardware/motorola|doha-moto|android_hardware_motorola|master|f805e9ef6f64e0dad5b9ee47cc6e094a2b3db9b0|
 hardware/qcom/bootctrl|doha-moto|platform_hardware_qcom_bootctrl|master|bf0e3210326e5237bdd978f8205c31e7341f2e04|
 system/qcom|doha-moto|android_system_qcom|master|ddd4779b4684d61dd63a6e71f3be00820ea831fd|
