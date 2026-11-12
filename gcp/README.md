@@ -102,21 +102,35 @@ flowchart LR
 | `--no-backup` | skip Drive backup |
 | `--local` | backup/restore on this machine |
 
-## Rclone setup (recommended before the first `all`)
+## Rclone setup (token only)
 
-On the VM:
-
-```bash
-./gcp/doha.sh ssh
-rclone config          # create a remote named "gdrive" (Google Drive)
-exit
-```
-
-Or upload your local config once:
+On a machine with a browser, run:
 
 ```bash
-./gcp/doha.sh all --copy-rclone
+rclone authorize "drive"
 ```
+
+Log in to the Google account that owns the Drive, then copy the JSON token it
+prints. On the machine running this kit:
+
+```bash
+./gcp/doha.sh rclone-setup
+```
+
+Paste the token when prompted. That command:
+
+1. writes `/usr/bin/rclone`-compatible config on the VM
+2. creates the `gdrive` remote with `scope=drive`
+3. verifies with `rclone listremotes` and `rclone lsf gdrive:`
+
+Non-interactive:
+
+```bash
+RCLONE_TOKEN='{"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}' \
+  ./gcp/doha.sh rclone-setup
+```
+
+`--local` configures this machine instead of the VM.
 
 `all` checks the remote **before** starting the multi-hour build. If it is
 missing, it stops immediately with instructions instead of failing after the
