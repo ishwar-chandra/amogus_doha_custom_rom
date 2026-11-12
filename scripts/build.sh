@@ -264,11 +264,10 @@ cmd_build() {
         info "ccache: $CCACHE_DIR ($CCACHE_MAXSIZE)"
     fi
 
-    # envsetup.sh is not nounset-clean.
+    # envsetup.sh and lunch are not nounset-clean.
     set +u +o pipefail
     # shellcheck disable=SC1091
     . build/envsetup.sh
-    set -u -o pipefail
 
     if [ -f vendor/lineage/vars/aosp_target_release ]; then
         # shellcheck disable=SC1091
@@ -284,6 +283,7 @@ cmd_build() {
     fi
     info "lunch $target"
     lunch "$target" </dev/null || true
+    set -u -o pipefail
 
     [ "${TARGET_PRODUCT:-}" = "lineage_${DEVICE}" ] \
         || die "lunch did not resolve $target (TARGET_PRODUCT=${TARGET_PRODUCT:-unset})"
