@@ -220,7 +220,12 @@ cmd_patch() {
         # device/qcom/sepolicy_vndr/legacy-um; this repo maps it to
         # device/qcom/sepolicy_vndr (AOSPA tree). Same files, one level up.
         case "$project" in
-            device/qcom/sepolicy_vndr/legacy-um) project=device/qcom/sepolicy_vndr ;;
+            device/qcom/sepolicy_vndr/legacy-um)
+                # Christiaan's manifest maps this to the AOSPA root, but this
+                # port also syncs the real legacy-um project as a nested tree.
+                [ -e "$ANDROID_SRC/device/qcom/sepolicy_vndr/legacy-um/.git" ] \
+                    || project=device/qcom/sepolicy_vndr
+                ;;
         esac
         apply_patch_to "$project" "$patch"
     done < <(find "$PATCHES/a16" -name '*.patch' | sort)
