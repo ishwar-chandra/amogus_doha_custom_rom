@@ -388,19 +388,42 @@ check_rclone() {
 backup_here() {
     cd "$ROOT"
     check_rclone
-    local snap="${SNAPSHOT:-$(date -u +%Y%m%d-%H%M%S)}"
+    local snap="${SNAPSHOT:-current}"
     [[ "$snap" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid snapshot name: $snap"
     local dst="${RCLONE_REMOTE}:${RCLONE_DIR}/${snap}"
-    log "backing up to $dst"
+    local hist="${RCLONE_REMOTE}:${RCLONE_DIR}/history/$(date -u +%Y%m%d-%H%M%S)"
+    local mode=copy
+    local extra=()
+    if [ "$snap" = current ]; then
+        mode=sync
+        extra=(--backup-dir "$hist")
+        log "incremental backup to $dst"
+    else
+        log "full snapshot to $dst"
+    fi
 
-    rclone_copy "$ROOT/work/android" "$dst/work/android"
-    rclone_copy "$ROOT/work/ccache" "$dst/work/ccache"
-    rclone_copy "$ROOT/dist" "$dst/dist"
-    rclone_copy "$ROOT" "$dst/kit" \
-        --exclude 'work/**' --exclude 'dist/**' --exclude '.git/**' --exclude 'gcp/vm.env'
+    sync_dir() {
+        local src="$1" dest="$2"
+        shift 2
+        if [ -d "$src" ]; then
+            rclone "$mode" "$src" "$dst/$dest" "${RCLONE_OPTS[@]}" "${extra[@]}" "$@" \
+                || die "rclone $mode failed: $src"
+        else
+            warn "skip missing $src"
+        fi
+    }
+
+    sync_dir "$ROOT/work/android" work/android
+    sync_dir "$ROOT/work/ccache" work/ccache
+    sync_dir "$ROOT/dist" dist
+    sync_dir "$ROOT" kit \
+        --exclude 'work/**' --exclude 'dist/**' \
+        --exclude '.git/**' --exclude 'gcp/vm.env'
 
     {
         echo "snapshot: $snap"
+        echo "mode: $mode"
+        [ "$mode" = sync ] && echo "history: $hist"
         echo "created: $(date -u +%FT%TZ)"
         echo "host: $(hostname)"
         echo "kernel: $(uname -r)"
@@ -410,7 +433,7 @@ backup_here() {
         git -C "$ROOT" log -1 --format='buildkit %H %s' 2>/dev/null || true
         cat "$ROOT/dist-gcp/BUILD_INFO.txt" 2>/dev/null || true
     } > /tmp/SNAPSHOT_INFO.txt
-    rclone copyto /tmp/SNAPSHOT_INFO.txt "$dst/SNAPSHOT_INFO.txt"
+    rclone copyto /tmp/SNAPSHOT_INFO.txt "$dst/SNAPSHOT_INFO.txt" "${RCLONE_OPTS[@]}"
     log "backup complete: $dst"
 }
 
@@ -419,8 +442,14 @@ restore_here() {
     check_rclone
     local snap="$SNAPSHOT"
     if [ -z "$snap" ]; then
-        snap=$(rclone lsf "${RCLONE_REMOTE}:${RCLONE_DIR}/" --dirs-only \
-            | sed 's:/$::' | sort | tail -1)
+        local dirs
+        dirs=$(rclone lsf "${RCLONE_REMOTE}:${RCLONE_DIR}/" --dirs-only \
+            | sed 's:/$::')
+        if grep -qx current <<< "$dirs"; then
+            snap=current
+        else
+            snap=$(sort -r <<< "$dirs" | head -1)
+        fi
     fi
     [ -n "$snap" ] || die "no snapshot under ${RCLONE_REMOTE}:${RCLONE_DIR}/"
     local src="${RCLONE_REMOTE}:${RCLONE_DIR}/${snap}"

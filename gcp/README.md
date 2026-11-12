@@ -19,15 +19,18 @@ flowchart LR
 - **VM:** 12 vCPU / 48 GB, cheapest available shape (`e2-standard-12` first,
   then `t2d`, `n2d`, `n2`, `c2`), cheapest approximate region order.
 - **OS:** Ubuntu 24.04 LTS (`ubuntu-2404-lts-amd64`).
-- **Disk:** 500 GB `pd-standard` + 32 GB swap. Enough for ~200 GB source,
-  ~120 GB `out/`, 50 GB ccache and headroom.
+- **Disk:** 700 GB `pd-standard` + 32 GB swap. AOSP 16 needs ~250 GB checkout
+  plus ~150 GB `out/`; the extra room covers ccache and snapshots.
 - **Build:** runs `scripts/build.sh all` inside `tmux`, so SSH drops do not
   kill it.
 - **Release:** only after a successful build, via `gh release create`.
-- **Backup:** only after a successful build, to
-  `gdrive:doha-a16/<timestamp>/` with `work/android`, `work/ccache`, `dist`
-  and the kit.
-- **Restore:** latest or named snapshot to a new VM, or `--local`.
+- **Backup:** incremental mirror at `gdrive:doha-a16/current/` with
+  `work/android`, `work/ccache`, `dist` and the kit. First run uploads
+  everything; later runs upload only new/changed files. Overwritten/deleted
+  files move to `history/<timestamp>/`. An explicit `--snapshot NAME` still
+  creates a full snapshot.
+- **Restore:** `current` by default, or a named snapshot, to a new VM or
+  `--local`.
 
 ## Prerequisites
 
