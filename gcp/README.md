@@ -24,7 +24,8 @@ flowchart LR
 - **Build:** runs `scripts/build.sh all` inside `tmux`, so SSH drops do not
   kill it.
 - **Release:** only after a successful build, via `gh release create`.
-- **Backup:** incremental mirror at `gdrive:doha-a16/current/` with
+- **Backup:** runs automatically after a successful `build` or `all`;
+  incremental mirror at `gdrive:doha-a16/current/` with
   `work/android`, `work/ccache`, `dist` and the kit. First run uploads
   everything; later runs upload only new/changed files and replace the old
   file in place. No duplicate snapshot or history directory is kept. An
@@ -52,7 +53,7 @@ flowchart LR
 # Create the VM only
 ./gcp/doha.sh up
 
-# Build and fetch dist/ without releasing/backing up
+# Build, fetch dist/, then back up automatically on success
 ./gcp/doha.sh build
 
 # Publish the last fetched dist-gcp/

@@ -477,6 +477,7 @@ remote_restore() {
 cmd_build() {
     if on_gce; then
         build_on_vm
+        [ "$DO_BACKUP" = 1 ] && backup_here
         return
     fi
     cmd_up
@@ -488,6 +489,7 @@ cmd_build() {
         die "build failed; see $ROOT/dist-gcp-build.log"
     fi
     fetch_dist
+    [ "$DO_BACKUP" = 1 ] && remote_backup
 }
 
 cmd_backup() {
