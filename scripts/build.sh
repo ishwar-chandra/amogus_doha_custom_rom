@@ -257,6 +257,8 @@ fix_build_tree() {
         info "removed duplicate IPA namespace: data-ipa-cfg-mgr-legacy-um"
     fi
 
+    : > "$ANDROID_SRC/device/motorola/amogus_doha/kernel-headers"
+
     local sep="$ANDROID_SRC/device/qcom/sepolicy_vndr/SEPolicy.mk"
     local common="$ANDROID_SRC/hardware/qcom-caf/common/os_pickup_sepolicy_vndr.mk"
     if [ -f "$common" ] && [ -e "$sep" ] && [ ! -L "$sep" ]; then
@@ -283,6 +285,7 @@ cmd_build() {
     # PRODUCT_ENFORCE_PACKAGES_EXIST fails with a huge missing list.
     export TARGET_PRODUCT="lineage_${DEVICE}"
     export TARGET_DEVICE="$DEVICE"
+    export ALLOW_MISSING_DEPENDENCIES=true
 
     mkdir -p "$CCACHE_DIR"
     if command -v ccache >/dev/null 2>&1; then
