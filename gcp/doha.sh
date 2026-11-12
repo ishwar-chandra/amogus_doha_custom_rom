@@ -530,8 +530,7 @@ cmd_rclone_setup() {
         rclone_setup_here
         return 0
     fi
-    ensure_project
-    require_vm
+    cmd_up
     if ! remote_ssh --command='command -v rclone >/dev/null' >/dev/null 2>&1; then
         ensure_remote_kit
         remote_provision
