@@ -278,6 +278,12 @@ cmd_build() {
         die "SIGNING=release but vendor/lineage-priv/keys/keys.mk is missing (see docs/PLAY_INTEGRITY.md)"
     fi
 
+    # Kati must see TARGET_DEVICE/TARGET_PRODUCT while parsing the device
+    # Android.mk files; otherwise conditional modules disappear and
+    # PRODUCT_ENFORCE_PACKAGES_EXIST fails with a huge missing list.
+    export TARGET_PRODUCT="lineage_${DEVICE}"
+    export TARGET_DEVICE="$DEVICE"
+
     mkdir -p "$CCACHE_DIR"
     if command -v ccache >/dev/null 2>&1; then
         export USE_CCACHE=1
