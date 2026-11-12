@@ -19,7 +19,7 @@ flowchart LR
 - **VM:** 12 vCPU / 48 GB, cheapest available shape (`e2-standard-12` first,
   then `t2d`, `n2d`, `n2`, `c2`), cheapest approximate region order.
 - **OS:** Ubuntu 24.04 LTS (`ubuntu-2404-lts-amd64`).
-- **Disk:** 500 GB `pd-balanced` + 32 GB swap. Enough for ~200 GB source,
+- **Disk:** 500 GB `pd-standard` + 32 GB swap. Enough for ~200 GB source,
   ~120 GB `out/`, 50 GB ccache and headroom.
 - **Build:** runs `scripts/build.sh all` inside `tmux`, so SSH drops do not
   kill it.

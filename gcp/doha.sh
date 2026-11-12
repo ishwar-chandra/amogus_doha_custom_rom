@@ -27,7 +27,7 @@ VM_ENV="$ROOT/gcp/vm.env"
 PROJECT="${PROJECT:-}"
 VM_NAME="${VM_NAME:-doha-a16-builder}"
 DISK_SIZE="${DISK_SIZE:-500GB}"
-DISK_TYPE="${DISK_TYPE:-pd-balanced}"
+DISK_TYPE="${DISK_TYPE:-pd-standard}"
 IMAGE_FAMILY="${IMAGE_FAMILY:-ubuntu-2404-lts-amd64}"
 IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
@@ -195,11 +195,14 @@ find_zone() {
         done <<< "$list" | sort -n -k1,1
     )
     best=$(printf '%s\n' "$candidates" | head -1)
-    [ -n "$best" ] || {
-        echo "No preferred 12/48 shape. Available 12 vCPU types:" >&2
-        printf '%s\n' "$list" | awk '{print $2}' | sort -u | sed 's/^/  /' >&2
-        die "set --machine-type/--zone"
-    }
+    if [ -z "$best" ]; then
+        # Some projects expose only GPU 12/48 shapes (quota 0) but still
+        # allow a custom E2 12/48. Use it as the fallback.
+        ZONE="${ZONE:-us-central1-a}"
+        MACHINE_TYPE="e2-custom-12-49152"
+        log "no predefined 12/48 available; using $MACHINE_TYPE in $ZONE"
+        return 0
+    fi
     IFS=$'\t' read -r _ ZONE MACHINE_TYPE <<< "$best"
     log "selected $MACHINE_TYPE in $ZONE"
 }
