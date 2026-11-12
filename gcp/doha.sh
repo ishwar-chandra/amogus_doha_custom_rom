@@ -391,12 +391,9 @@ backup_here() {
     local snap="${SNAPSHOT:-current}"
     [[ "$snap" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid snapshot name: $snap"
     local dst="${RCLONE_REMOTE}:${RCLONE_DIR}/${snap}"
-    local hist="${RCLONE_REMOTE}:${RCLONE_DIR}/history/$(date -u +%Y%m%d-%H%M%S)"
     local mode=copy
-    local extra=()
     if [ "$snap" = current ]; then
         mode=sync
-        extra=(--backup-dir "$hist")
         log "incremental backup to $dst"
     else
         log "full snapshot to $dst"
@@ -406,7 +403,7 @@ backup_here() {
         local src="$1" dest="$2"
         shift 2
         if [ -d "$src" ]; then
-            rclone "$mode" "$src" "$dst/$dest" "${RCLONE_OPTS[@]}" "${extra[@]}" "$@" \
+            rclone "$mode" "$src" "$dst/$dest" "${RCLONE_OPTS[@]}" "$@" \
                 || die "rclone $mode failed: $src"
         else
             warn "skip missing $src"
@@ -423,7 +420,6 @@ backup_here() {
     {
         echo "snapshot: $snap"
         echo "mode: $mode"
-        [ "$mode" = sync ] && echo "history: $hist"
         echo "created: $(date -u +%FT%TZ)"
         echo "host: $(hostname)"
         echo "kernel: $(uname -r)"

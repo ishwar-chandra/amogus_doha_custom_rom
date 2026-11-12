@@ -26,9 +26,9 @@ flowchart LR
 - **Release:** only after a successful build, via `gh release create`.
 - **Backup:** incremental mirror at `gdrive:doha-a16/current/` with
   `work/android`, `work/ccache`, `dist` and the kit. First run uploads
-  everything; later runs upload only new/changed files. Overwritten/deleted
-  files move to `history/<timestamp>/`. An explicit `--snapshot NAME` still
-  creates a full snapshot.
+  everything; later runs upload only new/changed files and replace changed
+  files in place. No second copy of old versions is kept. An explicit
+  `--snapshot NAME` still creates a full snapshot.
 - **Restore:** `current` by default, or a named snapshot, to a new VM or
   `--local`.
 
