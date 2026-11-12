@@ -31,7 +31,7 @@ load_config() {
     : "${ANDROID_SRC:=$KIT_ROOT/work/android}"
     : "${DIST_DIR:=$KIT_ROOT/dist}"
     : "${JOBS:=$(nproc)}"
-    : "${SYNC_JOBS:=4}"
+    : "${SYNC_JOBS:=$(nproc)}"
     : "${BUILD_VARIANT:=userdebug}"
     : "${BUNDLE_GAPPS:=true}"
     : "${GAPPS_BRANCH:=baklava}"
