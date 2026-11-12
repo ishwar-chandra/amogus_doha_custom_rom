@@ -8,3 +8,5 @@ refs/
 gcp/vm.env
 dist-gcp/
 dist-gcp-build.log
+/device_dump
+/device_dump_*
