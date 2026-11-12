@@ -260,7 +260,6 @@ sync_kit() {
     remote_scp "$tarball" "$VM_NAME:/tmp/doha-kit.tgz"
     remote_ssh --command='
 set -e
-rm -rf "$HOME/amogus_doha_custom_rom"
 mkdir -p "$HOME/amogus_doha_custom_rom"
 tar -xzf /tmp/doha-kit.tgz -C "$HOME/amogus_doha_custom_rom"
 '
