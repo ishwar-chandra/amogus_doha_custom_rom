@@ -1,17 +1,17 @@
 # path|remote|name|revision|pin|comment
 # The hardware layer that carries the stable A13 device support forward.
-device/motorola/amogus_doha|aldair|android_device_motorola_amogus_doha|2.1|@PIN_DEVICE@|A16 doha device tree
-device/motorola/targets|aldair|android_device_motorola_targets|master|@PIN_TARGETS@|product framework
-kernel/motorola/msm-4.14|christiaan|android_kernel_motorola_msm-4.14|lts|@PIN_KERNEL@|4.14.357-openela + doha fixes
-vendor/motorola/amogus_doha|aldair|android_vendor_motorola_amogus_doha|14|@PIN_VENDOR_DOHA@|doha blobs
-vendor/motorola/amogus|aldair|android_vendor_motorola_amogus|15|@PIN_VENDOR_AMOGUS@|common sm6125 blobs
-vendor/gapps|mtg|vendor_gapps|baklava|@PIN_GAPPS@|MindTheGapps for Android 16
+device/motorola/amogus_doha|doha-aldair|android_device_motorola_amogus_doha|2.1|@PIN_DEVICE@|A16 doha device tree
+device/motorola/targets|doha-aldair|android_device_motorola_targets|master|@PIN_TARGETS@|product framework
+kernel/motorola/msm-4.14|doha-christiaan|android_kernel_motorola_msm-4.14|lts|@PIN_KERNEL@|4.14.357-openela + doha fixes
+vendor/motorola/amogus_doha|doha-aldair|android_vendor_motorola_amogus_doha|14|@PIN_VENDOR_DOHA@|doha blobs
+vendor/motorola/amogus|doha-aldair|android_vendor_motorola_amogus|15|@PIN_VENDOR_AMOGUS@|common sm6125 blobs
+vendor/gapps|doha-mtg|vendor_gapps|baklava|@PIN_GAPPS@|MindTheGapps for Android 16
 
 # Projects that are patched by patches/a16: pin them so the patch context
 # cannot drift under a moving base branch.
-packages/apps/CarrierConfig|aosp|platform/packages/apps/CarrierConfig|refs/tags/android-16.0.0_r4||BSNL CarrierConfig target
-vendor/apn|lineage|android_vendor_apn|main|@PIN_VENDOR_APN@|APN database
-system/core|crdroid|android_system_core|16.0|@PIN_SYSTEM_CORE@|fastboot lock-state patch target
-packages/modules/Connectivity|crdroid|android_packages_modules_Connectivity|16.0|@PIN_CONNECTIVITY@|BpfNetMaps patch target
-device/lineage/sepolicy|lineage|android_device_lineage_sepolicy|lineage-23.2|@PIN_LINEAGE_SEPOLICY@|sepolicy patch target
-hardware/nxp/nfc|lineage|android_hardware_nxp_nfc|lineage-23.2|@PIN_NXP_NFC@|NFC patch target
+packages/apps/CarrierConfig|doha-aosp|platform/packages/apps/CarrierConfig|refs/tags/android-16.0.0_r4||BSNL CarrierConfig target
+vendor/apn|doha-lineage|android_vendor_apn|main|@PIN_VENDOR_APN@|APN database
+system/core|doha-crdroid|android_system_core|16.0|@PIN_SYSTEM_CORE@|fastboot lock-state patch target
+packages/modules/Connectivity|doha-crdroid|android_packages_modules_Connectivity|16.0|@PIN_CONNECTIVITY@|BpfNetMaps patch target
+device/lineage/sepolicy|doha-lineage|android_device_lineage_sepolicy|lineage-23.2|@PIN_LINEAGE_SEPOLICY@|sepolicy patch target
+hardware/nxp/nfc|doha-lineage|android_hardware_nxp_nfc|lineage-23.2|@PIN_NXP_NFC@|NFC patch target
