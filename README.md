@@ -9,6 +9,40 @@ platform patches the device actually needs.
 > validates the configuration, URLs and patch set. Full builds are run on the
 > GCP VM; a local build needs the disk and RAM below.
 
+## Choose a workflow
+
+| What you want | Command | Needs |
+|---|---|---|
+| Local build only | `./scripts/build.sh all` | Linux, 400 GB free; no gcloud, GitHub or rclone |
+| GCP build only | `./gcp/doha.sh build --no-backup` | `gcloud` |
+| GCP build + Drive backup | `./gcp/doha.sh build` | `gcloud` + rclone `gdrive:` |
+| GCP build + public release | `./gcp/doha.sh all --no-backup` | `gcloud` + `gh` + public repo |
+| Full pipeline | `./gcp/doha.sh all --repo OWNER/REPO` | gcloud + gh + rclone |
+| Build now, release later | `./gcp/doha.sh build --no-backup`, then `./gcp/doha.sh release` | gcloud, then gh |
+| Restore a backup | `./gcp/doha.sh restore` | rclone |
+
+```mermaid
+flowchart TD
+  S[Start] --> C{Use GCP?}
+  C -- no --> L[scripts/build.sh all]
+  C -- yes --> G[gcp/doha.sh]
+  G --> B{Have rclone gdrive:?}
+  B -- no --> NB[add --no-backup]
+  B -- yes --> YB[backup enabled]
+  NB --> R{Have gh + public repo?}
+  YB --> R
+  R -- no --> NR[add --no-release]
+  R -- yes --> A[gcp/doha.sh all]
+```
+
+> [!WARNING]
+> Defaults are **not** optional: `all` checks rclone **before** the build and
+> stops if `gdrive:` is missing. If GitHub is unavailable, the build completes
+> but the release step fails; backup still runs and the command exits non-zero.
+>
+> `--local` does **not** disable backup. It means “run backup/restore on this
+> machine instead of the VM.”
+
 ## Quick start
 
 ```bash
@@ -69,27 +103,42 @@ publishes a GitHub release, and backs the build to Google Drive.
 # one-time: get a token from a browser machine with `rclone authorize "drive"`
 ./gcp/doha.sh rclone-setup
 
-# create VM -> build -> release -> incremental backup
+# full pipeline: create VM -> build -> public release -> incremental backup
 ./gcp/doha.sh all --repo YOUR_GITHUB/REPO
+
+# GCP build, fetch dist/, then automatic backup on success
+./gcp/doha.sh build
+
+# no rclone configured: build without backup
+./gcp/doha.sh build --no-backup
+
+# build + backup, no GitHub release
+./gcp/doha.sh all --no-release
+
+# no GitHub and no rclone
+./gcp/doha.sh all --no-release --no-backup
 
 # inspect without touching the build
 ./gcp/doha.sh status
 ./gcp/doha.sh ssh
 
-# build only, no release/backup
-./gcp/doha.sh build
-
-# incremental backup: first run full, later runs changed files only
+# backup/restore separately
 ./gcp/doha.sh backup
-
-# restore `current` or a named snapshot
 ./gcp/doha.sh restore
 ./gcp/doha.sh restore --local
 ```
 
-Requirements: `gcloud` authenticated, `gh` authenticated for releases, and an
-rclone `gdrive` remote on the VM. `rclone-setup` configures it from the token
-only; `--copy-rclone` remains available for an existing config.
+Requirements are per step, not all-or-nothing:
+
+| Step | Needs |
+|---|---|
+| Build | `gcloud` |
+| Backup | rclone `gdrive:` configured on the VM |
+| Release | `gh` authenticated + public GitHub repo |
+| Restore | a completed backup |
+
+`rclone-setup` configures the remote from a token only; `--copy-rclone` is for
+an existing config.
 
 When `gcp/doha.sh` runs **on the VM**, `build`, `backup`, `restore` and
 `rclone-setup` automatically run locally instead of looking for another

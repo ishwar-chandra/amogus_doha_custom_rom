@@ -33,6 +33,28 @@ flowchart LR
 - **Restore:** `current` by default, or a named snapshot, to a new VM or
   `--local`.
 
+## Pick a mode
+
+| Goal | Command | gcloud | gh | rclone |
+|---|---|:---:|:---:|:---:|
+| Build on the VM only | `./gcp/doha.sh build --no-backup` | yes | no | no |
+| Build + Drive backup | `./gcp/doha.sh build` | yes | no | yes |
+| Build + public release | `./gcp/doha.sh all --no-backup` | yes | yes | no |
+| Full pipeline | `./gcp/doha.sh all --repo OWNER/REPO` | yes | yes | yes |
+| No GitHub, but backup | `./gcp/doha.sh all --no-release` | yes | no | yes |
+| No GitHub and no rclone | `./gcp/doha.sh all --no-release --no-backup` | yes | no | no |
+| Local only | `../scripts/build.sh all` | no | no | no |
+
+> [!WARNING]
+> `all` checks rclone **before** starting the build. With no `gdrive:` remote,
+> it stops immediately unless you pass `--no-backup`.
+>
+> If `gh` or the GitHub repo is unavailable, the build still finishes; the
+> release step fails, backup still runs, and the command exits non-zero.
+>
+> `--local` does not mean “skip backup”. It means run backup/restore on this
+> machine instead of the VM.
+
 ## Prerequisites
 
 - `gcloud` installed and authenticated.
@@ -105,9 +127,9 @@ flowchart LR
 | `--dir NAME` | Drive folder (`doha-a16`) |
 | `--snapshot NAME` | backup/restore snapshot |
 | `--copy-rclone` | upload local rclone config to the VM |
-| `--no-release` | skip GitHub release |
-| `--no-backup` | skip Drive backup |
-| `--local` | backup/restore on this machine |
+| `--no-release` | skip GitHub release; build and backup continue |
+| `--no-backup` | skip Drive backup; build and release continue |
+| `--local` | run backup/restore on this machine, not the VM |
 
 ## Rclone setup (token only)
 
