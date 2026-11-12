@@ -68,6 +68,7 @@ Commands:
   backup     snapshot work/android, work/ccache and dist/ to Drive
   restore    restore a snapshot to the VM (or --local to this machine)
   snapshots  list Drive snapshots
+  rclone-setup  configure Google Drive from an `rclone authorize` token
   ssh        open a shell on the VM
   status     show VM status
   stop       stop the VM (disk still billed)
@@ -496,6 +497,55 @@ cmd_all() {
 }
 
 # ---------- small commands ----------
+prompt_rclone_token() {
+    local token="${RCLONE_TOKEN:-}"
+    if [ -z "$token" ]; then
+        cat >&2 <<'EOF'
+On a machine with a browser, run:
+  rclone authorize "drive"
+
+Then paste the JSON token it prints (starts with {"access_token"...):
+EOF
+        read -r -s token
+        echo >&2
+    fi
+    [ -n "$token" ] || die "empty rclone token"
+    python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$token" \
+        || die "token is not valid JSON"
+    printf '%s' "$token"
+}
+
+rclone_setup_here() {
+    command -v rclone >/dev/null || die "rclone not installed"
+    local token
+    token=$(prompt_rclone_token)
+    rclone config delete gdrive >/dev/null 2>&1 || true
+    rclone config create gdrive drive scope=drive token="$token" --non-interactive >/dev/null
+    rclone listremotes
+    rclone lsf "gdrive:" --max-depth 1 | head
+}
+
+cmd_rclone_setup() {
+    if [ "$LOCAL" = 1 ]; then
+        rclone_setup_here
+        return 0
+    fi
+    ensure_project
+    require_vm
+    if ! remote_ssh --command='command -v rclone >/dev/null' >/dev/null 2>&1; then
+        ensure_remote_kit
+        remote_provision
+    fi
+    local token tmp
+    token=$(prompt_rclone_token)
+    tmp=$(mktemp)
+    chmod 600 "$tmp"
+    printf '%s' "$token" > "$tmp"
+    remote_scp "$tmp" "$VM_NAME:/tmp/rclone-token"
+    rm -f "$tmp"
+    remote_ssh --command='set -e; rclone config delete gdrive >/dev/null 2>&1 || true; T=$(cat /tmp/rclone-token); rclone config create gdrive drive scope=drive token="$T" --non-interactive >/dev/null; rm -f /tmp/rclone-token; rclone listremotes; rclone lsf "gdrive:" --max-depth 1 | head'
+}
+
 cmd_snapshots() {
     check_rclone
     rclone lsf "${RCLONE_REMOTE}:${RCLONE_DIR}/" --dirs-only | sed 's:/$::' | sort
@@ -581,6 +631,7 @@ case "$COMMAND" in
     backup)    cmd_backup ;;
     restore)   cmd_restore ;;
     snapshots) cmd_snapshots ;;
+    rclone-setup) cmd_rclone_setup ;;
     ssh)       cmd_ssh ;;
     status)    cmd_status ;;
     stop)      cmd_stop ;;
