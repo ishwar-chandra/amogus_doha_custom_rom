@@ -31,6 +31,22 @@ device or in a real release.
       clean flash; later same-key updates can use OTA.
 - [ ] Remove or disable the OTA entry if a release is withdrawn.
 
+## Widevine L1 / DRM
+
+- [ ] Record the stock baseline: `dumpsys media.drm`, Widevine security
+      level (L1/L3), and `ro.boot.verifiedbootstate` on the stock ROM.
+- [ ] Preserve the stock `persist` partition and TEE firmware; do not wipe
+      or replace them while testing.
+- [ ] Port the matching stock Widevine stack: vendor service,
+      `libwvhidl`, `libwvdrmengine`, `liboemcrypto`, Keymaster/KeyMint HAL,
+      VINTF entries and SELinux policy.
+- [ ] Test the custom ROM on the same unit and check whether the TEE still
+      reports L1 after unlocking/custom AVB.
+- [ ] Document the result: L1 retained, or L3 fallback with the exact reason.
+- [ ] Do not extract or redistribute Widevine keys/keyboxes; do not promise
+      L1 on an unlocked custom ROM.
+- [ ] Keep Play Integrity separate: L1 does not provide STRONG integrity.
+
 ## Release and backup
 
 - [ ] Verify `gcp/doha.sh restore` from the first successful GDrive backup.
