@@ -534,11 +534,21 @@ cmd_logs() {
 }
 
 # ---------- VM-internal commands ----------
+install_rclone_latest() {
+    log "installing latest rclone from rclone.org"
+    if ! curl -fsSL https://rclone.org/install.sh | $SUDO bash; then
+        warn "rclone.org installer failed; falling back to the distro package"
+        $SUDO apt-get install -y rclone
+    fi
+    rclone version | head -2
+}
+
 _provision() {
     if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; else SUDO=; fi
     mapfile -t packages < <(grep -vE '^\s*(#|$)' "$ROOT/config/packages.list")
     $SUDO apt-get update
-    DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "${packages[@]}" tmux htop rclone
+    DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "${packages[@]}" tmux htop
+    install_rclone_latest
 
     if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
         if [ ! -f /swapfile ]; then
