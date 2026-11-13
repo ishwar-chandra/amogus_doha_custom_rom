@@ -830,6 +830,7 @@ case "$COMMAND" in
     start)     cmd_start ;;
     down)      cmd_down ;;
     logs)      cmd_logs ;;
+    _chain)     _chain ;;
     _provision) _provision ;;
     _backup)    _backup ;;
     _restore)   _restore ;;
