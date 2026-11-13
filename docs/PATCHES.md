@@ -5,6 +5,22 @@ All patches live in `patches/a16/<project path>.patch` and are applied with
 `christiaan/lineage-23-amogus_doha` patch set, which is the only complete
 Android 16 port for this device.
 
+## Patch placeholders
+
+A patch may contain `@NAME@` placeholders for build settings.
+`scripts/lib.sh:render_patch` substitutes them before the patch is applied;
+an unknown placeholder aborts the patch step.
+
+| Placeholder | Config value | Meaning |
+|---|---|---|
+| `@SKIN_THROTTLE_MC@` | `SKIN_THROTTLE_C` in `config/build.env` (default 40) | Skin temperature in millidegrees at which the thermal HAL reports throttling |
+
+Upstream `christiaan` substitutes this token in its own `build.sh`; this kit
+must do the same, otherwise the literal token reaches the compiler and the
+build dies at 90% with `error: expected expression` in
+`vendor/qcom/opensource/thermal/thermalConfig.cpp`. `cmd_patch` also runs
+`assert_no_placeholders` as a fail-fast guard.
+
 | Patch | Project | Prevents |
 |---|---|---|
 | `device/motorola/amogus.patch` | `device/motorola/amogus` | bootctrl namespace error; `cp -a /.` kernel headers; VINTF kernel rejection; `libqsap_sdk` build; thermal HAL label; sensor file type |

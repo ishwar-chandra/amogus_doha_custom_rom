@@ -16,8 +16,10 @@ flowchart LR
   E -- no --> I[stop + log]
 ```
 
-- **VM:** 12 vCPU / 48 GB, cheapest available shape (`e2-standard-12` first,
-  then `t2d`, `n2d`, `n2`, `c2`), cheapest approximate region order.
+- **VM:** 16 vCPU / 64 GB, fastest shape first (`c2d-standard-16`, then
+  `c2d-standard-8`, `t2d-standard-16`, `n2`, `n2d`, `e2`), cheapest
+  approximate region order. The `e2` family is the slowest per core and was
+  the reason the first full build took 10+ hours.
 - **OS:** Ubuntu 24.04 LTS (`ubuntu-2404-lts-amd64`).
 - **Disk:** 700 GB `pd-standard` + 32 GB swap. AOSP 16 needs ~250 GB checkout
   plus ~150 GB `out/`; the extra room covers ccache and snapshots.

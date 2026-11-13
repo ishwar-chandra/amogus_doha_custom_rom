@@ -33,7 +33,7 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-MACHINE_TYPES="${MACHINE_TYPES:-e2-standard-12 t2d-standard-12 n2d-standard-12 n2-standard-12 c2-standard-12 g2-standard-12}"
+MACHINE_TYPES="${MACHINE_TYPES:-c2d-standard-16 c2d-standard-8 t2d-standard-16 n2-standard-16 n2d-standard-16 e2-standard-12 t2d-standard-12 n2d-standard-12 n2-standard-12 c2-standard-12 g2-standard-12}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
@@ -45,6 +45,7 @@ COPY_RCLONE="${COPY_RCLONE:-0}"
 DO_RELEASE="${DO_RELEASE:-1}"
 DO_BACKUP="${DO_BACKUP:-1}"
 LOCAL="${LOCAL:-0}"
+KEEP_VM="${KEEP_VM:-0}"
 
 # Cheapest approximate GCP regions first.
 REGION_ORDER="us-central1 us-east1 us-west1 us-east4 us-south1 us-west2 us-west3 us-west4
@@ -79,9 +80,9 @@ Commands:
 Flags:
   --project ID          GCP project (default: gcloud config)
   --zone ZONE           force a zone
-  --machine-type TYPE   force a shape (default: e2-standard-12 first)
+  --machine-type TYPE   force a shape (default: fastest 16 vCPU first)
   --disk-size 500GB     boot disk size
-  --disk-type TYPE      pd-balanced (default), pd-standard, pd-ssd
+  --disk-type TYPE      pd-standard (default), pd-balanced, pd-ssd
   --spot                spot VM (cheaper, can be preempted)
   --repo OWNER/REPO     GitHub release repo
   --tag TAG             release tag (default: a16-YYYYMMDD-HHMM)
@@ -92,6 +93,7 @@ Flags:
   --no-release          skip GitHub release
   --no-backup           skip Drive backup
   --local               backup/restore on this machine, not the VM
+  --keep-vm             do not delete the VM after the build (it keeps billing)
 EOF
 }
 
@@ -102,16 +104,16 @@ case "$COMMAND" in -h|--help|help) usage; exit 0 ;; esac
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --project)        PROJECT="$2"; shift 2 ;;
-        --project=*)      PROJECT="${1#*=}"; shift ;;
-        --zone)           ZONE="$2"; shift 2 ;;
-        --zone=*)         ZONE="${1#*=}"; shift ;;
-        --machine-type)   MACHINE_TYPE="$2"; shift 2 ;;
-        --machine-type=*) MACHINE_TYPE="${1#*=}"; shift ;;
-        --disk-size)      DISK_SIZE="$2"; shift 2 ;;
-        --disk-size=*)    DISK_SIZE="${1#*=}"; shift ;;
-        --disk-type)      DISK_TYPE="$2"; shift 2 ;;
-        --disk-type=*)    DISK_TYPE="${1#*=}"; shift ;;
+        --project)        PROJECT="$2"; FLAG_PROJECT="$2"; shift 2 ;;
+        --project=*)      PROJECT="${1#*=}"; FLAG_PROJECT="$PROJECT"; shift ;;
+        --zone)           ZONE="$2"; FLAG_ZONE="$2"; shift 2 ;;
+        --zone=*)         ZONE="${1#*=}"; FLAG_ZONE="$ZONE"; shift ;;
+        --machine-type)   MACHINE_TYPE="$2"; FLAG_MACHINE_TYPE="$2"; shift 2 ;;
+        --machine-type=*) MACHINE_TYPE="${1#*=}"; FLAG_MACHINE_TYPE="$MACHINE_TYPE"; shift ;;
+        --disk-size)      DISK_SIZE="$2"; FLAG_DISK_SIZE="$2"; shift 2 ;;
+        --disk-size=*)    DISK_SIZE="${1#*=}"; FLAG_DISK_SIZE="$DISK_SIZE"; shift ;;
+        --disk-type)      DISK_TYPE="$2"; FLAG_DISK_TYPE="$2"; shift 2 ;;
+        --disk-type=*)    DISK_TYPE="${1#*=}"; FLAG_DISK_TYPE="$DISK_TYPE"; shift ;;
         --spot)           SPOT=1; shift ;;
         --repo)           GH_REPO="$2"; shift 2 ;;
         --repo=*)         GH_REPO="${1#*=}"; shift ;;
@@ -127,12 +129,23 @@ while [ $# -gt 0 ]; do
         --no-release)     DO_RELEASE=0; shift ;;
         --no-backup)      DO_BACKUP=0; shift ;;
         --local)          LOCAL=1; shift ;;
+        --keep-vm)        KEEP_VM=1; shift ;;
         --yes)            YES=1; shift ;;
         *) die "unknown flag: $1 (try --help)" ;;
     esac
 done
 
-[ -f "$VM_ENV" ] && { . "$VM_ENV"; } || true
+# gcp/vm.env remembers the last VM. It must not silently override an explicit
+# CLI flag, so it only fills in values the user did not pass.
+if [ -f "$VM_ENV" ]; then
+    # shellcheck disable=SC1090
+    . "$VM_ENV"
+    [ -n "${FLAG_PROJECT:-}" ] && PROJECT="$FLAG_PROJECT"
+    [ -n "${FLAG_ZONE:-}" ] && ZONE="$FLAG_ZONE"
+    [ -n "${FLAG_MACHINE_TYPE:-}" ] && MACHINE_TYPE="$FLAG_MACHINE_TYPE"
+    [ -n "${FLAG_DISK_SIZE:-}" ] && DISK_SIZE="$FLAG_DISK_SIZE"
+    [ -n "${FLAG_DISK_TYPE:-}" ] && DISK_TYPE="$FLAG_DISK_TYPE"
+fi
 
 # ---------- shared helpers ----------
 ensure_project() {
@@ -178,13 +191,15 @@ require_vm() {
 # ---------- VM lifecycle ----------
 find_zone() {
     local list candidates best
-    log "querying GCP for 12 vCPU shapes (timeout ${FIND_TIMEOUT}s)"
+    log "querying GCP for 12/16 vCPU shapes (timeout ${FIND_TIMEOUT}s)"
+    # 16 vCPU shapes are preferred (faster per-clock), but the list must also
+    # contain the 12 vCPU fallbacks used before.
     if ! list=$(timeout "$FIND_TIMEOUT" gcloud compute machine-types list \
-            --project="$PROJECT" --filter='guestCpus=12' \
+            --project="$PROJECT" --filter='guestCpus>=12' \
             --format='value(zone.basename(),name)' --quiet 2>/dev/null); then
         die "machine-type query failed/timed out; use --zone/--machine-type"
     fi
-    [ -n "$list" ] || die "no 12 vCPU machine types visible in $PROJECT"
+    [ -n "$list" ] || die "no 12+ vCPU machine types visible in $PROJECT"
 
     declare -A rank=()
     local i=0 r
@@ -309,7 +324,7 @@ build_on_vm() {
     if tmux has-session -t doha 2>/dev/null; then
         log "build already running; waiting"
     else
-        tmux new-session -d -s doha "set -o pipefail; INSTALL_DEPS=1 JOBS=\$(nproc) ./scripts/build.sh all 2>&1 | tee build.log; echo \$? > build.status"
+        tmux new-session -d -s doha "set -o pipefail; INSTALL_DEPS=1 JOBS=\$(nproc) SYNC_JOBS=8 ./scripts/build.sh all 2>&1 | tee build.log; echo \$? > build.status"
     fi
     while tmux has-session -t doha 2>/dev/null; do sleep 20; done
     local rc
@@ -485,10 +500,12 @@ cmd_build() {
     preflight_rclone
     if ! remote_in_repo 'bash ./gcp/doha.sh _build'; then
         fetch_dist
+        destroy_vm
         die "build failed; see $ROOT/dist-gcp-build.log"
     fi
     fetch_dist
     [ "$DO_BACKUP" = 1 ] && remote_backup
+    destroy_vm
 }
 
 cmd_backup() {
@@ -517,6 +534,7 @@ cmd_all() {
     preflight_rclone
     if ! remote_in_repo 'bash ./gcp/doha.sh _build'; then
         fetch_dist
+        destroy_vm
         die "build failed; see $ROOT/dist-gcp-build.log"
     fi
     fetch_dist
@@ -527,6 +545,7 @@ cmd_all() {
 
     [ "$release_rc" = 0 ] || log "release failed (rc=$release_rc)"
     [ "$backup_rc" = 0 ] || log "backup failed (rc=$backup_rc)"
+    destroy_vm
     [ "$release_rc" = 0 ] && [ "$backup_rc" = 0 ]
 }
 
@@ -607,6 +626,17 @@ cmd_down() {
     gcloud compute instances delete "$VM_NAME" --zone="$ZONE" --project="$PROJECT" \
         --delete-disks=boot --quiet
     rm -f "$VM_ENV"
+}
+
+# Delete the VM and its boot disk. A stopped VM still bills for its disk, so
+# a builder that is no longer needed must be destroyed, not stopped.
+destroy_vm() {
+    [ "$KEEP_VM" = 1 ] && { log "keeping $VM_NAME (--keep-vm)"; return 0; }
+    log "destroying $VM_NAME and its boot disk (a stopped VM still bills for disk)"
+    gcloud compute instances delete "$VM_NAME" --zone="$ZONE" --project="$PROJECT" \
+        --delete-disks=boot --quiet 2>/dev/null || true
+    rm -f "$VM_ENV"
+    log "VM destroyed; disk billing stopped"
 }
 
 cmd_logs() {

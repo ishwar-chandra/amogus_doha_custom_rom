@@ -172,6 +172,18 @@ if 'carrier_volte_available_bool' not in s:
 PY
 }
 
+# The A16 thermal patch rewrites the SKIN sensor entry with @SKIN_THROTTLE_MC@.
+# render_patch substitutes it, but a tree patched by an earlier kit revision
+# still carries the raw token, so the file is repaired here as well.
+fix_thermal_placeholders() {
+    local project="vendor/qcom/opensource/thermal"
+    local file="$ANDROID_SRC/$project/thermalConfig.cpp"
+    [ -f "$file" ] || return 0
+    grep -q '@SKIN_THROTTLE_MC@' "$file" || return 0
+    sed -i "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" "$file"
+    info "thermal: substituted @SKIN_THROTTLE_MC@ -> $((SKIN_THROTTLE_C * 1000))"
+}
+
 patch_gapps() {
     [ "$BUNDLE_GAPPS" = true ] || { info "GApps disabled"; return 0; }
     local mk="$ANDROID_SRC/vendor/gapps/arm64/arm64-vendor.mk"
@@ -232,6 +244,7 @@ cmd_patch() {
 
     patch_carrierconfig
     patch_gapps
+    fix_thermal_placeholders
 
     if [ -d "$ANDROID_SRC/vendor/apn" ]; then
         python3 "$KIT_ROOT/scripts/tools/fix_apn.py" "$ANDROID_SRC/vendor/apn" \
@@ -241,6 +254,7 @@ cmd_patch() {
     fi
 
     fix_build_tree
+    assert_no_placeholders
     mark patch
 }
 
