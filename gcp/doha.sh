@@ -13,7 +13,7 @@
 #
 # Flags (env vars work too):
 #   --project ID          --zone ZONE          --machine-type TYPE
-#   --disk-size 500GB     --disk-type pd-balanced
+#   --disk-size 600GB     --disk-type pd-standard
 #   --spot                --repo OWNER/REPO    --tag TAG
 #   --remote gdrive       --dir doha-a16       --snapshot NAME
 #   --copy-rclone         --no-release         --no-backup
@@ -26,20 +26,22 @@ VM_ENV="$ROOT/gcp/vm.env"
 # ---------- defaults ----------
 PROJECT="${PROJECT:-}"
 VM_NAME="${VM_NAME:-doha-a16-builder}"
-DISK_SIZE="${DISK_SIZE:-500GB}"
+DISK_SIZE="${DISK_SIZE:-600GB}"
+# 600 GB exceeds the 250 GB SSD_TOTAL_GB quota, and pd-balanced bills
+# against SSD_TOTAL_GB (measured), so the boot disk must be pd-standard.
+# Raise SSD_TOTAL_GB to >=600 to switch this back to pd-balanced.
 DISK_TYPE="${DISK_TYPE:-pd-standard}"
 IMAGE_FAMILY="${IMAGE_FAMILY:-ubuntu-2404-lts-amd64}"
 IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-# 12 vCPU only. No GCP predefined shape has exactly 12 vCPUs (the families
-# jump 8 -> 16), so the builder must use a custom shape. CPUS_ALL_REGIONS is
-# 12, so 16 vCPU is impossible, and per-family quota rules out c2 (0), c3 (8),
-# e2 (8) and n2d (8). Custom shapes are billed against the generic CPUS
-# limit. Fastest base first: t2a (AMD Turin ~3.9 GHz), t2d (AMD Milan
-# ~3.0 GHz), n2 (Intel Ice Lake ~3.0-3.8 GHz), e2 (Skylake ~2.2 GHz) last.
-MACHINE_TYPES="${MACHINE_TYPES:-t2a-custom-12-65536 t2d-custom-12-65536 n2-custom-12-65536 e2-custom-12-49152}"
+# 12 vCPU only: the project's CPUS_ALL_REGIONS quota is 12. Custom types
+# must resolve via machineTypes.get; this project exposes them only for
+# n1/n2/e2, so c2d/t2d/c3 custom names 404. n2-custom-12 is therefore the
+# only 12 vCPU option (Intel Ice Lake ~3.0-3.5 GHz); c2d-standard-8 (AMD
+# Milan) and e2-custom-8 are fallbacks when n2 capacity is exhausted.
+MACHINE_TYPES="${MACHINE_TYPES:-n2-custom-12-65536 c2d-standard-8 e2-custom-8-32768}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
@@ -87,8 +89,8 @@ Commands:
 Flags:
   --project ID          GCP project (default: gcloud config)
   --zone ZONE           force a zone
-  --machine-type TYPE   force a shape (default: fastest 16 vCPU first)
-  --disk-size 500GB     boot disk size
+  --machine-type TYPE   force a shape (default: fastest x86 12 vCPU first)
+  --disk-size 600GB     boot disk size
   --disk-type TYPE      pd-standard (default), pd-balanced, pd-ssd
   --spot                spot VM (cheaper, can be preempted)
   --repo OWNER/REPO     GitHub release repo
@@ -206,7 +208,7 @@ find_zone() {
         MACHINE_TYPE="$mt"
         break
     done
-    MACHINE_TYPE="${MACHINE_TYPE:-e2-custom-12-49152}"
+    MACHINE_TYPE="${MACHINE_TYPE:-n2-custom-12-65536}"
     log "selected $MACHINE_TYPE in $ZONE (fallback will try other shapes/zones on stockout)"
 }
 
@@ -244,14 +246,37 @@ create_vm_with_fallback() {
     local spot_args=()
     [ "$SPOT" = 1 ] && spot_args=(--spot)
 
-    # Requested shape first, then the faster custom bases, then the slow one.
-    # All are 12 vCPU custom shapes: no predefined GCP shape has 12 vCPUs.
-    local shapes="$MACHINE_TYPE t2a-custom-12-65536 t2d-custom-12-65536 n2-custom-12-65536 e2-custom-12-49152"
+    # Requested shape first, then the configured fallbacks (fastest first).
+    # The 12 vCPU entries need CPUS_ALL_REGIONS; e2 is an 8 vCPU last resort
+    # because its per-family quota is 8.
+    local shapes="" s
+    for s in $MACHINE_TYPE $MACHINE_TYPES; do
+        case " $shapes " in
+            *" $s "*) ;;
+            *) shapes="$shapes $s" ;;
+        esac
+    done
     # Requested zone first, then zones that commonly have spare capacity.
     local zones="$ZONE us-central1-b us-central1-c us-central1-f us-east1-b us-east1-c us-west1-b"
 
-    local shape zone attempt=0 first=1
+    local shape zone attempt=0 first=1 fam rest cpus mem
+    local mt_args=()
     for shape in $shapes; do
+        # Custom types are not machine-type resources: the API rejects
+        # --machine-type=t2d-custom-12-65536. Translate the FAMILY-custom-
+        # VCPUS-MEMMB name into the custom flags instead.
+        case "$shape" in
+            *-custom-[0-9]*-[0-9]*)
+                fam="${shape%%-custom-*}"
+                rest="${shape#*-custom-}"
+                cpus="${rest%%-*}"
+                mem="${rest#*-}"
+                mt_args=(--custom-cpu="$cpus" --custom-memory="${mem}MB" --custom-vm-type="$fam")
+                ;;
+            *)
+                mt_args=(--machine-type="$shape")
+                ;;
+        esac
         for zone in $zones; do
             # The requested shape/zone combination is tried first.
             if [ "$first" = 1 ]; then
@@ -261,7 +286,7 @@ create_vm_with_fallback() {
             log "creating $VM_NAME: $shape in $zone (attempt $attempt)"
             if gcloud compute instances create "$VM_NAME" \
                     --project="$PROJECT" --zone="$zone" \
-                    --machine-type="$shape" \
+                    "${mt_args[@]}" \
                     --image-family="$IMAGE_FAMILY" --image-project="$IMAGE_PROJECT" \
                     --boot-disk-size="$DISK_SIZE" --boot-disk-type="$DISK_TYPE" \
                     --tags=doha-builder --labels=app=doha-a16 --quiet \
@@ -332,19 +357,92 @@ EOF
 }
 
 # ---------- build / release ----------
+# The whole remote chain (provision -> rclone check -> build) runs detached
+# in tmux. chain.status is the only completion signal, so a dropped SSH
+# channel can neither kill the chain nor look like a build failure.
+_chain() {
+    cd "$ROOT"
+    local rc=0
+    bash ./gcp/doha.sh _provision || rc=$?
+    if [ "$rc" -eq 0 ] && [ "${REQUIRE_RCLONE:-0}" = 1 ]; then
+        if rclone listremotes 2>/dev/null | grep -qx "${RCLONE_REMOTE}:"; then
+            log "rclone remote '${RCLONE_REMOTE}:' ready"
+        else
+            warn "rclone remote '${RCLONE_REMOTE}:' is not configured"
+            rc=1
+        fi
+    fi
+    if [ "$rc" -eq 0 ]; then
+        INSTALL_DEPS=1 JOBS="$(nproc)" SYNC_JOBS=8 ./scripts/build.sh all || rc=$?
+    fi
+    printf '%s\n' "$rc" > chain.status
+}
+
+# Start (or resume) the chain in tmux on the remote VM. Returns immediately;
+# use wait_remote_chain for completion.
+start_remote_chain() {
+    local env=""
+    [ "$DO_BACKUP" = 1 ] && env="REQUIRE_RCLONE=1 RCLONE_REMOTE=$(printf '%q' "$RCLONE_REMOTE") "
+    if remote_ssh --command='tmux has-session -t doha 2>/dev/null' 2>/dev/null; then
+        log "chain already running on the VM; resuming"
+        return 0
+    fi
+    remote_ssh --command="cd \"\$HOME/amogus_doha_custom_rom\" && rm -f chain.status && tmux new-session -d -s doha \"${env}bash ./gcp/doha.sh _chain 2>&1 | tee build.log\"" \
+        || die "could not start the remote chain"
+    log "chain started in tmux session doha"
+}
+
+# Poll a short SSH command; a disconnected channel is retried, not fatal.
+wait_remote_chain() {
+    local state misses=0
+    while :; do
+        state="$(remote_ssh --command='d="$HOME/amogus_doha_custom_rom"; if [ -f "$d/chain.status" ]; then cat "$d/chain.status"; elif tmux has-session -t doha 2>/dev/null; then echo RUNNING; else echo GONE; fi' 2>/dev/null)" || state=""
+        case "$state" in
+            RUNNING|"") ;;
+            GONE) warn "chain ended without writing chain.status"; return 1 ;;
+            *) log "chain exit: $state"; return "$state" ;;
+        esac
+        sleep 20
+        misses=$((misses + 1))
+        if [ "$misses" -ge 30 ]; then
+            gcloud compute instances describe "$VM_NAME" --zone="$ZONE" --project="$PROJECT" >/dev/null 2>&1 \
+                || { warn "VM disappeared while waiting for the chain"; return 1; }
+            misses=0
+        fi
+    done
+}
+
+# Local variant used when this script runs on the VM itself.
 build_on_vm() {
     cd "$ROOT"
-    rm -f build.status
+    local require=0 rc
+    [ "$DO_BACKUP" = 1 ] && require=1
     if tmux has-session -t doha 2>/dev/null; then
-        log "build already running; waiting"
+        log "chain already running; waiting"
     else
-        tmux new-session -d -s doha "set -o pipefail; INSTALL_DEPS=1 JOBS=\$(nproc) SYNC_JOBS=8 ./scripts/build.sh all 2>&1 | tee build.log; echo \$? > build.status"
+        rm -f chain.status
+        tmux new-session -d -s doha "REQUIRE_RCLONE=$require RCLONE_REMOTE=$(printf '%q' "$RCLONE_REMOTE") bash ./gcp/doha.sh _chain 2>&1 | tee build.log"
     fi
     while tmux has-session -t doha 2>/dev/null; do sleep 20; done
-    local rc
-    rc="$(cat build.status 2>/dev/null || echo 1)"
-    log "build exit: $rc"
+    rc="$(cat chain.status 2>/dev/null || echo 1)"
+    log "chain exit: $rc"
     return "$rc"
+}
+
+# One remote chain run from the local machine: start, wait, fetch.
+run_remote_chain() {
+    if remote_ssh --command='tmux has-session -t doha 2>/dev/null' 2>/dev/null; then
+        log "chain already running on the VM; resuming"
+    else
+        sync_kit
+        start_remote_chain
+    fi
+    if ! wait_remote_chain; then
+        fetch_dist
+        destroy_vm
+        die "build failed; see $ROOT/dist-gcp-build.log"
+    fi
+    fetch_dist
 }
 
 fetch_dist() {
@@ -509,15 +607,7 @@ cmd_build() {
         return
     fi
     cmd_up
-    sync_kit
-    remote_provision
-    preflight_rclone
-    if ! remote_in_repo 'bash ./gcp/doha.sh _build'; then
-        fetch_dist
-        destroy_vm
-        die "build failed; see $ROOT/dist-gcp-build.log"
-    fi
-    fetch_dist
+    run_remote_chain
     [ "$DO_BACKUP" = 1 ] && remote_backup
     destroy_vm
 }
@@ -543,15 +633,7 @@ cmd_restore() {
 
 cmd_all() {
     cmd_up
-    sync_kit
-    remote_provision
-    preflight_rclone
-    if ! remote_in_repo 'bash ./gcp/doha.sh _build'; then
-        fetch_dist
-        destroy_vm
-        die "build failed; see $ROOT/dist-gcp-build.log"
-    fi
-    fetch_dist
+    run_remote_chain
 
     local release_rc=0 backup_rc=0
     [ "$DO_RELEASE" = 1 ] && { cmd_release || release_rc=$?; }
@@ -670,8 +752,42 @@ install_rclone_latest() {
     rclone version | head -2
 }
 
+# Ubuntu's archive hostname round-robins across backends and apt can latch
+# onto a ~100 KB/s one, stalling provisioning for an hour. Benchmark the
+# IPv4 backends once and pin the fastest in /etc/hosts; force IPv4 so apt
+# does not stall on AAAA records. Idempotent: replaces any previous pin.
+pin_fast_apt_mirror() {
+    local sudo_cmd="" host suite ip speed best_ip="" best_speed=0
+    [ "$(id -u)" -ne 0 ] && sudo_cmd=sudo
+
+    host="$(awk '/^URIs:/{print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null \
+        | sed -e 's#^[a-z]*://##' -e 's#/.*$##')"
+    [ -n "$host" ] || return 0
+    suite="$(awk '/^Suites:/{print $2; exit}' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null)"
+    [ -n "$suite" ] || suite=noble
+
+    printf 'Acquire::ForceIPv4 "true";\n' | $sudo_cmd tee /etc/apt/apt.conf.d/99-doha >/dev/null
+
+    for ip in $(getent ahostsv4 "$host" | awk '{print $1}' | sort -u); do
+        speed="$(curl -o /dev/null -s -w '%{speed_download}' --max-time 5 \
+            -H "Host: $host" "http://$ip/ubuntu/dists/$suite/main/binary-amd64/Packages.gz" 2>/dev/null || echo 0)"
+        speed="${speed%.*}"
+        if [ -n "$speed" ] && [ "$speed" -gt "$best_speed" ]; then
+            best_speed="$speed"
+            best_ip="$ip"
+        fi
+    done
+    [ -n "$best_ip" ] || { warn "apt mirror: no reachable backend for $host"; return 0; }
+
+    $sudo_cmd awk -v h="$host" '$2 != h' /etc/hosts > /tmp/hosts.doha
+    printf '%s %s\n' "$best_ip" "$host" | $sudo_cmd tee -a /tmp/hosts.doha >/dev/null
+    $sudo_cmd cp /tmp/hosts.doha /etc/hosts
+    log "apt mirror: $host -> $best_ip (${best_speed} B/s)"
+}
+
 _provision() {
     if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; else SUDO=; fi
+    pin_fast_apt_mirror
     mapfile -t packages < <(grep -vE '^\s*(#|$)' "$ROOT/config/packages.list")
     $SUDO apt-get update
     DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y "${packages[@]}" tmux htop
@@ -696,7 +812,6 @@ _provision() {
     nproc; free -h; df -h /
 }
 
-_build()   { build_on_vm; }
 _backup()  { backup_here; }
 _restore() { restore_here; }
 
@@ -716,7 +831,6 @@ case "$COMMAND" in
     down)      cmd_down ;;
     logs)      cmd_logs ;;
     _provision) _provision ;;
-    _build)     _build ;;
     _backup)    _backup ;;
     _restore)   _restore ;;
     *) usage; die "unknown command: $COMMAND" ;;
