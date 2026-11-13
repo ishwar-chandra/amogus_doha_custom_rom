@@ -779,9 +779,13 @@ pin_fast_apt_mirror() {
     done
     [ -n "$best_ip" ] || { warn "apt mirror: no reachable backend for $host"; return 0; }
 
-    $sudo_cmd awk -v h="$host" '$2 != h' /etc/hosts > /tmp/hosts.doha
-    printf '%s %s\n' "$best_ip" "$host" | $sudo_cmd tee -a /tmp/hosts.doha >/dev/null
-    $sudo_cmd cp /tmp/hosts.doha /etc/hosts
+    # Rewrite as root in one shell: fs.protected_regular=2 blocks root from
+    # appending to a user-owned file in /tmp.
+    $sudo_cmd bash -c '
+        h="$1"; ip="$2"
+        { awk -v h="$h" "\$2 != h" /etc/hosts; printf "%s %s\n" "$ip" "$h"; } > /etc/hosts.doha.new
+        mv /etc/hosts.doha.new /etc/hosts
+    ' _ "$host" "$best_ip"
     log "apt mirror: $host -> $best_ip (${best_speed} B/s)"
 }
 
