@@ -33,7 +33,10 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-MACHINE_TYPES="${MACHINE_TYPES:-c2d-standard-16 c2d-standard-8 t2d-standard-16 n2-standard-16 n2d-standard-16 e2-standard-12 t2d-standard-12 n2d-standard-12 n2-standard-12 c2-standard-12 g2-standard-12}"
+# 12 vCPU shapes only: the project's CPUS_ALL_REGIONS quota is 12, so a
+# 16 vCPU instance is rejected in every zone. Fastest first - c2d is
+# Cascade Lake (~3.5 GHz), e2 is the slowest (~2.2 GHz) and comes last.
+MACHINE_TYPES="${MACHINE_TYPES:-c2d-standard-12 t2d-standard-12 n2-standard-12 n2d-standard-12 g2-standard-12 e2-custom-12-49152}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
@@ -263,7 +266,8 @@ create_vm_with_fallback() {
     [ "$SPOT" = 1 ] && spot_args=(--spot)
 
     # Requested shape first, then the fast shapes, then the slow fallback.
-    local shapes="$MACHINE_TYPE c2d-standard-16 n2-standard-16 t2d-standard-16 n2d-standard-16 e2-custom-12-49152"
+    # All are 12 vCPU: CPUS_ALL_REGIONS is capped at 12 for this project.
+    local shapes="$MACHINE_TYPE c2d-standard-12 t2d-standard-12 n2-standard-12 n2d-standard-12 e2-custom-12-49152"
     # Requested zone first, then zones that commonly have spare capacity.
     local zones="$ZONE us-central1-b us-central1-c us-central1-f us-east1-b us-east1-c us-west1-b"
 
