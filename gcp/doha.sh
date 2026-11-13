@@ -55,6 +55,7 @@ asia-south1 asia-southeast1 asia-east1 asia-northeast1 asia-northeast2 asia-nort
 australia-southeast1 australia-southeast2"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
+warn() { printf '  [warn] %s\n' "$*" >&2; }
 die() { printf '[fail] %s\n' "$*" >&2; exit 1; }
 
 usage() {
@@ -250,18 +251,48 @@ cmd_up() {
         log "VM exists: $VM_NAME ($ZONE, $MACHINE_TYPE)"
     else
         ensure_firewall
-        local spot_args=()
-        [ "$SPOT" = 1 ] && spot_args=(--spot)
-        log "creating $VM_NAME: $MACHINE_TYPE, $DISK_SIZE $DISK_TYPE, $IMAGE_FAMILY"
-        gcloud compute instances create "$VM_NAME" \
-            --project="$PROJECT" --zone="$ZONE" \
-            --machine-type="$MACHINE_TYPE" \
-            --image-family="$IMAGE_FAMILY" --image-project="$IMAGE_PROJECT" \
-            --boot-disk-size="$DISK_SIZE" --boot-disk-type="$DISK_TYPE" \
-            --tags=doha-builder --labels=app=doha-a16 --quiet \
-            "${spot_args[@]}"
+        create_vm_with_fallback
     fi
     save_vm_env
+}
+
+# GCP zones run out of capacity for specific shapes. On a stockout, try the
+# next shape and the next zone instead of failing the whole build.
+create_vm_with_fallback() {
+    local spot_args=()
+    [ "$SPOT" = 1 ] && spot_args=(--spot)
+
+    # Requested shape first, then the fast shapes, then the slow fallback.
+    local shapes="$MACHINE_TYPE c2d-standard-16 n2-standard-16 t2d-standard-16 n2d-standard-16 e2-custom-12-49152"
+    # Requested zone first, then zones that commonly have spare capacity.
+    local zones="$ZONE us-central1-b us-central1-c us-central1-f us-east1-b us-east1-c us-west1-b"
+
+    local shape zone attempt=0 first=1
+    for shape in $shapes; do
+        for zone in $zones; do
+            # The requested shape/zone combination is tried first.
+            if [ "$first" = 1 ]; then
+                [ "$shape" = "$MACHINE_TYPE" ] && [ "$zone" = "$ZONE" ] && first=0
+            fi
+            attempt=$((attempt + 1))
+            log "creating $VM_NAME: $shape in $zone (attempt $attempt)"
+            if gcloud compute instances create "$VM_NAME" \
+                    --project="$PROJECT" --zone="$zone" \
+                    --machine-type="$shape" \
+                    --image-family="$IMAGE_FAMILY" --image-project="$IMAGE_PROJECT" \
+                    --boot-disk-size="$DISK_SIZE" --boot-disk-type="$DISK_TYPE" \
+                    --tags=doha-builder --labels=app=doha-a16 --quiet \
+                    "${spot_args[@]}"; then
+                ZONE="$zone"
+                MACHINE_TYPE="$shape"
+                log "created $VM_NAME: $MACHINE_TYPE in $ZONE"
+                return 0
+            fi
+            warn "no capacity for $shape in $zone, trying the next combination"
+            [ "$attempt" -ge 12 ] && break 2
+        done
+    done
+    die "could not create a VM: no capacity for any shape/zone combination tried"
 }
 
 # ---------- transfer / remote setup ----------
