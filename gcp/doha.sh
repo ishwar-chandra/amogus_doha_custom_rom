@@ -33,10 +33,12 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-# 12 vCPU shapes only: the project's CPUS_ALL_REGIONS quota is 12, so a
-# 16 vCPU instance is rejected in every zone. Fastest first - c2d is
-# Cascade Lake (~3.5 GHz), e2 is the slowest (~2.2 GHz) and comes last.
-MACHINE_TYPES="${MACHINE_TYPES:-c2d-standard-12 t2d-standard-12 n2-standard-12 n2d-standard-12 g2-standard-12 e2-custom-12-49152}"
+# 12 vCPU shapes only. The project's CPUS_ALL_REGIONS quota is 12, so a
+# 16 vCPU instance is rejected everywhere, and c2d/c3d/c2/n2d have no
+# 12 vCPU variant at all. Per-family quota also rules out e2-standard
+# (E2_CPUS=8). Fastest first: t2a (AMD Turin ~3.9 GHz), t2d (AMD Milan
+# ~3.0 GHz), n2 (Intel Ice Lake ~3.0-3.8 GHz), e2-custom last (~2.2 GHz).
+MACHINE_TYPES="${MACHINE_TYPES:-t2a-standard-12 t2d-standard-12 n2-standard-12 e2-custom-12-49152}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
@@ -194,41 +196,17 @@ require_vm() {
 
 # ---------- VM lifecycle ----------
 find_zone() {
-    local list candidates best
-    log "querying GCP for 12/16 vCPU shapes (timeout ${FIND_TIMEOUT}s)"
-    # 16 vCPU shapes are preferred (faster per-clock), but the list must also
-    # contain the 12 vCPU fallbacks used before.
-    if ! list=$(timeout "$FIND_TIMEOUT" gcloud compute machine-types list \
-            --project="$PROJECT" --filter='guestCpus>=12' \
-            --format='value(zone.basename(),name)' --quiet 2>/dev/null); then
-        die "machine-type query failed/timed out; use --zone/--machine-type"
-    fi
-    [ -n "$list" ] || die "no 12+ vCPU machine types visible in $PROJECT"
-
-    declare -A rank=()
-    local i=0 r
-    for r in $REGION_ORDER; do rank[$r]=$i; i=$((i + 1)); done
-
-    candidates=$(
-        while read -r zone name; do
-            [ -n "$zone" ] || continue
-            region="${zone%-*}"
-            for mt in $MACHINE_TYPES; do
-                [ "$name" = "$mt" ] && { printf '%s\t%s\t%s\n' "${rank[$region]:-999}" "$zone" "$name"; break; }
-            done
-        done <<< "$list" | sort -n -k1,1
-    )
-    best=$(printf '%s\n' "$candidates" | head -1)
-    if [ -z "$best" ]; then
-        # Some projects expose only GPU 12/48 shapes (quota 0) but still
-        # allow a custom E2 12/48. Use it as the fallback.
-        ZONE="${ZONE:-us-central1-a}"
-        MACHINE_TYPE="e2-custom-12-49152"
-        log "no predefined 12/48 available; using $MACHINE_TYPE in $ZONE"
-        return 0
-    fi
-    IFS=$'\t' read -r _ ZONE MACHINE_TYPE <<< "$best"
-    log "selected $MACHINE_TYPE in $ZONE"
+    # The machine-types list API is filtered by project quota and hides the
+    # usable shapes, so do not enumerate: pick the fastest candidate and let
+    # create_vm_with_fallback walk the rest when a zone is out of capacity.
+    ZONE="${ZONE:-us-central1-a}"
+    local mt
+    for mt in $MACHINE_TYPES; do
+        MACHINE_TYPE="$mt"
+        break
+    done
+    MACHINE_TYPE="${MACHINE_TYPE:-e2-custom-12-49152}"
+    log "selected $MACHINE_TYPE in $ZONE (fallback will try other shapes/zones on stockout)"
 }
 
 ensure_network() {
@@ -266,8 +244,9 @@ create_vm_with_fallback() {
     [ "$SPOT" = 1 ] && spot_args=(--spot)
 
     # Requested shape first, then the fast shapes, then the slow fallback.
-    # All are 12 vCPU: CPUS_ALL_REGIONS is capped at 12 for this project.
-    local shapes="$MACHINE_TYPE c2d-standard-12 t2d-standard-12 n2-standard-12 n2d-standard-12 e2-custom-12-49152"
+    # All are 12 vCPU: CPUS_ALL_REGIONS is capped at 12 for this project, and
+    # only t2a/t2d/n2 have a 12 vCPU standard shape within quota.
+    local shapes="$MACHINE_TYPE t2a-standard-12 t2d-standard-12 n2-standard-12 e2-custom-12-49152"
     # Requested zone first, then zones that commonly have spare capacity.
     local zones="$ZONE us-central1-b us-central1-c us-central1-f us-east1-b us-east1-c us-west1-b"
 
