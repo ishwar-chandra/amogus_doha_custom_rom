@@ -33,12 +33,13 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 NETWORK="${NETWORK:-default}"
 SSH_SOURCE_RANGE="${SSH_SOURCE_RANGE:-0.0.0.0/0}"
 SPOT="${SPOT:-0}"
-# 12 vCPU shapes only. The project's CPUS_ALL_REGIONS quota is 12, so a
-# 16 vCPU instance is rejected everywhere, and c2d/c3d/c2/n2d have no
-# 12 vCPU variant at all. Per-family quota also rules out e2-standard
-# (E2_CPUS=8). Fastest first: t2a (AMD Turin ~3.9 GHz), t2d (AMD Milan
-# ~3.0 GHz), n2 (Intel Ice Lake ~3.0-3.8 GHz), e2-custom last (~2.2 GHz).
-MACHINE_TYPES="${MACHINE_TYPES:-t2a-standard-12 t2d-standard-12 n2-standard-12 e2-custom-12-49152}"
+# 12 vCPU only. No GCP predefined shape has exactly 12 vCPUs (the families
+# jump 8 -> 16), so the builder must use a custom shape. CPUS_ALL_REGIONS is
+# 12, so 16 vCPU is impossible, and per-family quota rules out c2 (0), c3 (8),
+# e2 (8) and n2d (8). Custom shapes are billed against the generic CPUS
+# limit. Fastest base first: t2a (AMD Turin ~3.9 GHz), t2d (AMD Milan
+# ~3.0 GHz), n2 (Intel Ice Lake ~3.0-3.8 GHz), e2 (Skylake ~2.2 GHz) last.
+MACHINE_TYPES="${MACHINE_TYPES:-t2a-custom-12-65536 t2d-custom-12-65536 n2-custom-12-65536 e2-custom-12-49152}"
 FIND_TIMEOUT="${FIND_TIMEOUT:-180}"
 
 GH_REPO="${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}"
@@ -243,10 +244,9 @@ create_vm_with_fallback() {
     local spot_args=()
     [ "$SPOT" = 1 ] && spot_args=(--spot)
 
-    # Requested shape first, then the fast shapes, then the slow fallback.
-    # All are 12 vCPU: CPUS_ALL_REGIONS is capped at 12 for this project, and
-    # only t2a/t2d/n2 have a 12 vCPU standard shape within quota.
-    local shapes="$MACHINE_TYPE t2a-standard-12 t2d-standard-12 n2-standard-12 e2-custom-12-49152"
+    # Requested shape first, then the faster custom bases, then the slow one.
+    # All are 12 vCPU custom shapes: no predefined GCP shape has 12 vCPUs.
+    local shapes="$MACHINE_TYPE t2a-custom-12-65536 t2d-custom-12-65536 n2-custom-12-65536 e2-custom-12-49152"
     # Requested zone first, then zones that commonly have spare capacity.
     local zones="$ZONE us-central1-b us-central1-c us-central1-f us-east1-b us-east1-c us-west1-b"
 
