@@ -49,9 +49,12 @@ device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 - **About 350 GB of free disk**: roughly 200 GB for the synced sources and
   120 GB for `out/`. ccache adds up to 50 GB more if you enable it.
   On btrfs (or XFS) you can save most of the source part by starting from
-  another crDroid 17.0 checkout: `cp -a --reflink=always <that tree>
+  a checkout you already have: `cp -a --reflink=always <that tree>
   <source dir>` shares its files and git history instead of copying
-  them. Move its `.repo/local_manifests/*.xml` out of the copy first;
+  them. The LineageOS 24.0 tree on `lineage-24.0` works well for this:
+  most projects are the same AOSP and LineageOS repositories, and only
+  crDroid's own forks are fetched. Move its
+  `.repo/local_manifests/*.xml` out of the copy first;
   `build.sh` then syncs it to this manifest and only downloads what
   differs. The sync doesn't remove the other tree's own changes, though:
   run `repo status` and revert or remove everything except the projects
