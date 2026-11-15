@@ -1,8 +1,8 @@
 diff --git a/bpf/loader/NetBpfLoad.cpp b/bpf/loader/NetBpfLoad.cpp
-index 7ba3247dcc..c20788a371 100644
+index da146cd..b308e94 100644
 --- a/bpf/loader/NetBpfLoad.cpp
 +++ b/bpf/loader/NetBpfLoad.cpp
-@@ -1548,42 +1548,40 @@ static int doLoad(char** argv, char * const envp[]) {
+@@ -1548,29 +1548,29 @@ static int doLoad(char** argv, char * const envp[]) {
  
      // both S and T require kernel 4.9 (and eBpf support)
      // (this also guarantees 'kernelVer' isn't an invalid uninitialized 0)
@@ -40,12 +40,7 @@ index 7ba3247dcc..c20788a371 100644
      }
  
      // 25Q4 bumps the kernel requirement up to 5.10
-     // see also: //system/netd/tests/kernel_test.cpp TestKernel510
-     if (isAtLeast25Q4 && !isAtLeastKernelVersion(5, 10)) {
--        ALOGE("Android 25Q4 requires kernel 5.10.");
--        return 7;
-+        ALOGW("Android 25Q4 requires kernel 5.10.");
-     }
+@@ -1581,8 +1581,7 @@ static int doLoad(char** argv, char * const envp[]) {
  
      // 26Q4 bumps the kernel requirement up to 5.15
      if (isAtLeast26Q4 && !isAtLeastKernelVersion(5, 15)) {
@@ -55,27 +50,8 @@ index 7ba3247dcc..c20788a371 100644
      }
  
      // Technically already required by U, but only enforce on V+
-diff --git a/bpf/netd/BpfHandler.cpp b/bpf/netd/BpfHandler.cpp
-index 9b57548b54..2535e00d62 100644
---- a/bpf/netd/BpfHandler.cpp
-+++ b/bpf/netd/BpfHandler.cpp
-@@ -131,12 +131,12 @@ static Result<void> initPrograms(const char* cg2_path) {
- 
-     // V bumps the kernel requirement up to 4.19
-     if (isAtLeastV && !isAtLeastKernelVersion(4, 19)) {
--        return Error() << "V+ platform with kernel version < 4.19.0 is unsupported";
-+        ALOGW("V+ platform with kernel version < 4.19.0 is unsupported");
-     }
- 
-     // 25Q2 bumps the kernel requirement up to 5.4
-     if (isAtLeast25Q2 && !isAtLeastKernelVersion(5, 4)) {
--        return Error() << "25Q2+ platform with kernel version < 5.4.0 is unsupported";
-+        ALOGW("25Q2+ platform with kernel version < 5.4.0 is unsupported");
-     }
- 
-     unique_fd cg_fd(open(cg2_path, O_DIRECTORY | O_RDONLY | O_CLOEXEC));
 diff --git a/bpf/progs/netd.c b/bpf/progs/netd.c
-index e4cd7c93b4..83454bd589 100644
+index e4cd7c9..83454bd 100644
 --- a/bpf/progs/netd.c
 +++ b/bpf/progs/netd.c
 @@ -1026,7 +1026,8 @@ return bpf_traffic_account(skb, INGRESS, KVER_4_19, API(T));
@@ -99,7 +75,7 @@ index e4cd7c93b4..83454bd589 100644
      return bpf_traffic_account(skb, EGRESS, KVER_4_9, API(T));
  }
 diff --git a/service/native/libs/libeventpolling/LocalNetEventHandler.cpp b/service/native/libs/libeventpolling/LocalNetEventHandler.cpp
-index 59c28445fb..c96ee414a2 100644
+index 59c2844..c96ee41 100644
 --- a/service/native/libs/libeventpolling/LocalNetEventHandler.cpp
 +++ b/service/native/libs/libeventpolling/LocalNetEventHandler.cpp
 @@ -18,6 +18,7 @@
@@ -137,7 +113,7 @@ index 59c28445fb..c96ee414a2 100644
              uids_pids.push_back(event.pid);
          });
 diff --git a/service/native/libs/libeventpolling/LoopbackEventHandler.cpp b/service/native/libs/libeventpolling/LoopbackEventHandler.cpp
-index 942bbf653b..eae745d5a7 100644
+index 942bbf6..eae745d 100644
 --- a/service/native/libs/libeventpolling/LoopbackEventHandler.cpp
 +++ b/service/native/libs/libeventpolling/LoopbackEventHandler.cpp
 @@ -20,6 +20,7 @@
@@ -163,7 +139,7 @@ index 942bbf653b..eae745d5a7 100644
              LOOPBACK_ACCESS_RINGBUF_NETD_PATH);
  
 diff --git a/service/native/libs/libeventpolling/include/libeventpolling/LocalNetEventHandler.h b/service/native/libs/libeventpolling/include/libeventpolling/LocalNetEventHandler.h
-index ce46620ef7..822f246147 100644
+index ce46620..822f246 100644
 --- a/service/native/libs/libeventpolling/include/libeventpolling/LocalNetEventHandler.h
 +++ b/service/native/libs/libeventpolling/include/libeventpolling/LocalNetEventHandler.h
 @@ -36,7 +36,9 @@ class LocalNetEventHandler {
@@ -178,7 +154,7 @@ index ce46620ef7..822f246147 100644
  
      // Consumes all available events in the ring buffer. Returns a list of
 diff --git a/service/src/com/android/server/BpfNetMaps.java b/service/src/com/android/server/BpfNetMaps.java
-index c1a47997af..5d82237398 100644
+index c1a4799..5d82237 100644
 --- a/service/src/com/android/server/BpfNetMaps.java
 +++ b/service/src/com/android/server/BpfNetMaps.java
 @@ -527,7 +527,9 @@ public class BpfNetMaps {
@@ -337,7 +313,7 @@ index c1a47997af..5d82237398 100644
              sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(isAllowed));
          } catch (ErrnoException e) {
 diff --git a/service/src/com/android/server/connectivity/LocalNetEventListener.java b/service/src/com/android/server/connectivity/LocalNetEventListener.java
-index e8d495ca81..5bba58619e 100644
+index e8d495c..5bba586 100644
 --- a/service/src/com/android/server/connectivity/LocalNetEventListener.java
 +++ b/service/src/com/android/server/connectivity/LocalNetEventListener.java
 @@ -98,7 +98,8 @@ public class LocalNetEventListener {
