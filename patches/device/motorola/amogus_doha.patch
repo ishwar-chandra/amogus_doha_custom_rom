@@ -1,8 +1,8 @@
 diff --git a/BoardConfig.mk b/BoardConfig.mk
-index 9e00b92..a4ddff2 100644
+index 9e00b92..bf7c554 100644
 --- a/BoardConfig.mk
 +++ b/BoardConfig.mk
-@@ -31,9 +31,43 @@ ifneq ($(TARGET_PREBUILT_KERNEL),)
+@@ -31,9 +31,48 @@ ifneq ($(TARGET_PREBUILT_KERNEL),)
        $(wildcard device/motorola/amogus-kernel/modules/*.ko)
  endif
  
@@ -33,6 +33,11 @@ index 9e00b92..a4ddff2 100644
 +# The Himax driver is built in and only needs its firmware (device.mk).
 +RECOVERY_KERNEL_MODULES := focaltech_0flash_mmi_doha.ko
 +BOARD_VENDOR_SEPOLICY_DIRS += device/motorola/amogus_doha/sepolicy/recovery
++
++# crDroid: doha has no quick-tap hardware. Without this, crDroid's
++# vendor/lineage/config/crdroid.mk adds the ColumbusService package, which
++# looks for a sensor that isn't there.
++TARGET_SUPPORTS_QUICK_TAP := false
 +
  # Partitions
  BOARD_VENDORIMAGE_PARTITION_SIZE := 620756992
