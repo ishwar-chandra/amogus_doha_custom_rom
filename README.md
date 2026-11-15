@@ -73,7 +73,7 @@ device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 ## Building
 
 ```sh
-git clone -b crdroid-android-17 https://github.com/christiaan/lineage-23-amogus_doha.git doha-crdroid
+git clone -b crdroid-android-17 https://github.com/ishwar-chandra/amogus_doha_custom_rom.git doha-crdroid
 mkdir -p ~/android/crdroid-17.0 ~/android/ccache/doha ~/doha/zips
 
 docker run --rm -it \
