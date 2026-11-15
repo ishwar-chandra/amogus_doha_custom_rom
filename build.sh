@@ -16,6 +16,10 @@
 #   ZIP_DIR       where finished builds are copied (default: zips/ next to
 #                 SOURCE_DIR)
 #   SKIP_SYNC=1   don't run repo init or repo sync
+#   VARIANT       build variant: userdebug (default), user or eng.
+#                 userdebug keeps ro.debuggable=1, so `adb root`, dmesg
+#                 and /sys/fs/pstore work; `user` is what a release zip
+#                 usually ships as, and gives up all of that.
 #   ADB_KEY       test builds only: an adb public key (adbkey.pub) to trust
 #                 in recovery and Android, with USB adb on by default, so
 #                 adb works after a wipe without tapping "Allow"
@@ -35,6 +39,7 @@ DEVICE=amogus_doha
 # Projects patched by the last run, as "<project> <patch blob> <tree>" lines.
 STAMP=$SRC/.repo/doha-patches
 SKIN_THROTTLE_C=${SKIN_THROTTLE_C:-40}
+VARIANT=${VARIANT:-userdebug}
 case $SKIN_THROTTLE_C in
   ''|*[!0-9]*) echo "SKIN_THROTTLE_C must be a whole number of °C" >&2; exit 1 ;;
 esac
@@ -198,7 +203,7 @@ fi
 # their results by hand.
 set +eu
 source build/envsetup.sh
-breakfast "$DEVICE" userdebug || exit 1
+breakfast "$DEVICE" "$VARIANT" || exit 1
 mka -j"$JOBS" target-files-package bacon || exit 1
 set -eu
 

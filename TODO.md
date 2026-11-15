@@ -103,18 +103,42 @@ Workflow, first time:
 ```sh
 rclone config                        # once, on your own machine: new remote,
                                      # type drive, named gdrive
+export GH_TOKEN=...                  # a token with repo scope, for the release
 tools/gcp-build.sh create
 tools/gcp-build.sh config            # copies rclone.conf to the VM
 tools/gcp-build.sh setup
-tools/gcp-build.sh build             # then: logs / fetch
-tools/gcp-build.sh backup            # once the build is good
-tools/gcp-build.sh delete
+tools/gcp-build.sh build             # starts the build in tmux on the VM
+tools/gcp-build.sh finish            # wait, verify, back up, release, delete
 ```
 
-On a later VM: `create`, `config`, `restore`, `build`. The restore puts
-`.repo` and ccache back, and `build` runs `repo init`/`repo sync` against
-those local objects, so the worktrees come back without downloading
-anything, and the warm ccache makes the rebuild minutes rather than hours.
+`build` runs inside tmux on the VM, so a dropped SSH connection or this
+machine going to sleep does not touch it; `att` attaches, `logs` follows
+the log, `state` says whether it is still running and what it exited with.
+Nothing is deleted on a timeout during a build: the only automatic
+deletion is the `HOURS` hard stop (default 24, `HOURS=0` disables it), and
+`finish` is what normally ends a session, in this order — wait for the
+build, verify the zip and images against their `.sha256sum`, mirror
+`.repo`/ccache/zips to Drive, publish the release, then delete the VM. A
+failed build leaves the VM alone so the log can be read.
+
+The release is published from the VM, where the zip already is, so only
+the token crosses over (written to a file, removed after the upload); `gh`
+is installed there, and the local machine needs nothing but this script.
+`NO_RELEASE=1` and `NO_DELETE=1` skip those steps.
+
+On a later VM: `create`, `config`, `restore`, `build`, `finish`. The
+restore puts `.repo` and ccache back, and `build` runs `repo init`/`repo
+sync` against those local objects, so the worktrees come back without
+downloading anything, and the warm ccache makes the rebuild minutes rather
+than hours.
+
+Build variant: `build.sh` builds **userdebug** by default (override with
+`VARIANT=user`), which is what the debugging here needs — `adb root`,
+dmesg and `/sys/fs/pstore` only work when `ro.debuggable=1`. Worth
+knowing: the v2.0.0/v2.0.1 zips on GitHub were `user` builds
+(`ro.build.type=user` on the phone), which is why the panic log could not
+be read from the device. Keep userdebug for test builds; decide
+separately whether a public crDroid release should be `user`.
 
 What is backed up, and why only that:
 
