@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Sync the pinned LineageOS 23.2 sources for amogus_doha (Moto G8 Plus),
+# Sync the crDroid 13 (Android 17) sources for amogus_doha (Moto G8 Plus),
 # apply the fixes in patches/ and build the flashable zip.
 #
-# Usage: ./build.sh [SOURCE_DIR]      (default: ./lineage)
+# Usage: ./build.sh [SOURCE_DIR]      (default: ./crdroid)
 #
 # Environment:
 #   JOBS          parallel build jobs (default: nproc)
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SRC=$(mkdir -p "${1:-$PWD/lineage}" && cd "${1:-$PWD/lineage}" && pwd)
+SRC=$(mkdir -p "${1:-$PWD/crdroid}" && cd "${1:-$PWD/crdroid}" && pwd)
 JOBS=${JOBS:-$(nproc)}
 # Most projects come from android.googlesource.com, which answers too many
 # parallel fetches with HTTP 429 / RESOURCE_EXHAUSTED. repo then retries each
@@ -157,7 +157,7 @@ mv "$STAMP.new" "$STAMP"
 # vendor/extra/product.mk, which vendor/lineage/config/common.mk inherits
 # when it exists. It isn't in the manifest, so repo never touches it.
 # PRODUCT_ADB_KEYS isn't used: Soong installs it only when ro.debuggable=1,
-# and LineageOS userdebug builds set ro.debuggable=0.
+# and crDroid/LineageOS userdebug builds set ro.debuggable=0.
 product=$SRC/out/target/product/$DEVICE
 key_files=("$product/recovery/root/system/product/etc/security/adb_keys" "$product/product/etc/security/adb_keys")
 rm -rf vendor/extra
@@ -170,7 +170,7 @@ if [ -n "${ADB_KEY:-}" ]; then
   mkdir -p vendor/extra
   printf '%s\n' "$key" > vendor/extra/adb_keys
   cat > vendor/extra/product.mk <<'MK'
-# Written by doha-lineage build.sh because ADB_KEY was set (doha_android#64).
+# Written by doha-crdroid build.sh because ADB_KEY was set (doha_android#64).
 # Recovery's adbd and the system's adbd both trust /adb_keys, a symlink to
 # /product/etc/security/adb_keys in both ramdisks. In recovery /product
 # points to /system/product inside the ramdisk, so the key goes there; a
@@ -208,26 +208,20 @@ if [ -z "${ADB_KEY:-}" ]; then
   done
 fi
 
-# bacon hard-links the dated zip to lineage_<device>-ota.zip, which the next
-# build rewrites in place, so every earlier zip in out/ ends up holding the
-# newest build. Keep a real copy of each build, with its images.
-images=$product/obj/PACKAGING/target_files_intermediates/lineage_$DEVICE-target_files/IMAGES
+# crDroid's bacon renames the OTA zip to crDroidAndroid-<version>.zip and
+# then deletes the target_files intermediates, so the images cannot come
+# from there (LineageOS hard-linked the zip and kept them). Take the zip
+# from out/target/product/<device>/ and the images from PRODUCT_OUT.
+# The zip name carries a YYYYMMDD date, so the newest sorts last.
 dest=${ZIP_DIR:-$(dirname "$SRC")/zips}
-# Take the name from the dated zip that bacon linked to the -ota.zip.
-# Older dated zips in out/ are links to the same file, so take the
-# newest date.
-# Asking get_build_var for LINEAGE_VERSION here gives today's date, which
-# is wrong when the build ran past midnight UTC (doha_android#55). /e/'s
-# vendor/lineage names the zip e-<version>.zip instead of lineage-<version>.zip.
-ota=$product/lineage_$DEVICE-ota.zip
-zip=$(find "$product" -maxdepth 1 -name '*.zip' ! -name "${ota##*/}" -samefile "$ota" | sort | tail -1)
-[ -n "$zip" ] || { echo "No dated zip hard-linked to $ota" >&2; exit 1; }
+zip=$(find "$product" -maxdepth 1 -name 'crDroidAndroid-*.zip' | sort | tail -1)
+[ -n "$zip" ] || { echo "No crDroidAndroid-*.zip in $product" >&2; exit 1; }
 built=$(basename "$zip" .zip)
 name=$built${ADB_KEY:+-adbkey}
 mkdir -p "$dest"
-cp "$product/$built.zip" "$dest/$name.zip"
+cp "$zip" "$dest/$name.zip"
 for img in boot dtbo vbmeta; do
-  cp "$images/$img.img" "$dest/$name-$img.img"
+  cp "$product/$img.img" "$dest/$name-$img.img"
 done
 (cd "$dest" && sha256sum "$name.zip" "$name"-{boot,dtbo,vbmeta}.img > "$name.sha256sum")
 
