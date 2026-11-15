@@ -308,6 +308,11 @@ Known issues:
   profile for (for example SIMs on KPN's network in the Netherlands) it
   falls back to a generic profile with IMS off, so calls go over 2G/3G.
   Stock firmware does the same. Being investigated.
+- **Double tap to wake doesn't wake the screen on FocalTech (Tianma)
+  panels.** The setting is there and on by default, but a double tap does
+  nothing. Being investigated. (The related freeze this gesture used to
+  cause — a reboot when the screen was touched as the phone suspended —
+  is fixed in kernel `03f0501e`, which this manifest pins.)
 - After a fresh install from stock, the first boot may find only 2G.
   One more reboot fixes it.
 
