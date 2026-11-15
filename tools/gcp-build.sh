@@ -38,6 +38,13 @@
 #
 # out/ is deliberately not backed up: ~120 GB of regenerable intermediates.
 #
+# Disk layout, because the quotas force it: the project's SSD_TOTAL_GB cap
+# (250 GB) covers pd-balanced, so the boot disk stays at 250 GB and holds
+# the OS and ccache; the sources and out/ live on the attached local SSD.
+# N2 accepts local SSDs only in pairs, so two 375 GB disks are attached and
+# the first is used -- the second is spare, and both vanish on a stop/start,
+# which is what `restore` is for.
+#
 # backup mirrors with `rclone sync`, so a file deleted locally is deleted on
 # Drive too. That is what keeps .repo from accumulating stale packs. Watch
 # the two Google limits when planning: Drive accepts ~750 GB of uploads per
@@ -54,7 +61,8 @@
 #   ZONE      zone                 (default: asia-south1-a, closest to India)
 #   NAME      instance name        (default: crdroid-build)
 #   MACHINE   machine type         (default: n2-custom-12-98304, 12 vCPU/96 GB)
-#   DISK      boot disk size       (default: 500GB, holds the sources)
+#   DISK      boot disk size       (default: 250GB: the SSD quota cap, so
+#                                   the OS and ccache only)
 #   HOURS     hard stop for the VM (default: 24; 0 disables it). `finish`
 #                                   deletes the VM much sooner; this only
 #                                   catches a VM left running by accident.
@@ -72,7 +80,7 @@ PROJECT=${PROJECT:-customrom-514215}
 ZONE=${ZONE:-asia-south1-a}
 NAME=${NAME:-crdroid-build}
 MACHINE=${MACHINE:-n2-custom-12-98304}
-DISK=${DISK:-500GB}
+DISK=${DISK:-250GB}
 HOURS=${HOURS:-24}
 VARIANT=${VARIANT:-userdebug}
 REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
@@ -86,7 +94,10 @@ CCACHE_MAX=${CCACHE_MAX:-50G}
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
 TAG=${TAG:-crdroid-$(date +%Y%m%d)}
 
-gcloud_() { gcloud --project "$PROJECT" --zone "$ZONE" "$@"; }
+# --project/--zone have to follow the subcommand, so they are appended
+# rather than prefixed. Anything taking a `-- command` tail (ssh, scp)
+# must not use this wrapper.
+gcloud_() { gcloud "$@" --project "$PROJECT" --zone "$ZONE"; }
 
 # Run a mode-specific script inside the VM. $1 is the mode; a few settings
 # follow as arguments because the heredoc is quoted.
@@ -159,7 +170,7 @@ setup)
     grep -q 'HOME/bin' "$HOME/.profile" || echo 'export PATH="$HOME/bin:$PATH"' >> "$HOME/.profile"
   fi
 
-  mkdir -p "$SSD/src" "$SSD/zips" "$SSD/ccache"
+  mkdir -p "$SSD/src" "$SSD/zips" "$HOME/.ccache"
   if [ ! -d "$SSD/manifest/.git" ]; then
     git clone -b "$BRANCH" "$REPO" "$SSD/manifest"
   fi
@@ -177,7 +188,7 @@ set -o pipefail
 SSD=${SSD:-/mnt/ssd}
 cd "$SSD/manifest" || exit 90
 export PATH="$HOME/bin:$PATH"
-export CCACHE_DIR="$SSD/ccache" ZIP_DIR="$SSD/zips"
+export CCACHE_DIR="$HOME/.ccache" ZIP_DIR="$SSD/zips"
 export JOBS=${JOBS:-$(nproc)} VARIANT=${VARIANT:-userdebug}
 rm -f "$SSD/build.exit"
 ./build.sh "$SSD/src"
@@ -217,7 +228,7 @@ verify)
 backup)
   need_rclone
   rclone_ sync "$SSD/src/.repo" "$RCLONE_REMOTE:$RCLONE_PATH/src/.repo" "${EXCLUDES[@]}"
-  rclone_ sync "$SSD/ccache"    "$RCLONE_REMOTE:$RCLONE_PATH/ccache" "${EXCLUDES[@]}"
+  rclone_ sync "$HOME/.ccache"  "$RCLONE_REMOTE:$RCLONE_PATH/ccache" "${EXCLUDES[@]}"
   rclone_ sync "$SSD/zips"      "$RCLONE_REMOTE:$RCLONE_PATH/zips"
   rclone_ sync "$SSD/manifest"  "$RCLONE_REMOTE:$RCLONE_PATH/manifest"
   du -sh "$SSD/src/.repo" "$SSD/ccache" "$SSD/zips"
@@ -226,9 +237,9 @@ backup)
 
 restore)
   need_rclone
-  mkdir -p "$SSD/src" "$SSD/zips" "$SSD/ccache"
+  mkdir -p "$SSD/src" "$SSD/zips" "$HOME/.ccache"
   rclone_ sync "$RCLONE_REMOTE:$RCLONE_PATH/src/.repo" "$SSD/src/.repo" "${EXCLUDES[@]}"
-  rclone_ sync "$RCLONE_REMOTE:$RCLONE_PATH/ccache"    "$SSD/ccache" "${EXCLUDES[@]}"
+  rclone_ sync "$RCLONE_REMOTE:$RCLONE_PATH/ccache"    "$HOME/.ccache" "${EXCLUDES[@]}"
   rclone_ sync "$RCLONE_REMOTE:$RCLONE_PATH/zips"      "$SSD/zips"
   [ -d "$SSD/manifest/.git" ] || \
     rclone_ sync "$RCLONE_REMOTE:$RCLONE_PATH/manifest" "$SSD/manifest"
@@ -240,7 +251,7 @@ restore)
 check)
   need_rclone
   rclone_ check --size-only "$SSD/src/.repo" "$RCLONE_REMOTE:$RCLONE_PATH/src/.repo"
-  rclone_ check --size-only "$SSD/ccache"    "$RCLONE_REMOTE:$RCLONE_PATH/ccache"
+  rclone_ check --size-only "$HOME/.ccache"  "$RCLONE_REMOTE:$RCLONE_PATH/ccache"
   ;;
 
 release)
@@ -266,10 +277,11 @@ case "${1:-}" in
 create)
   extra=()
   [ "$HOURS" != 0 ] && extra=(--max-run-duration="$((HOURS * 3600))s" --instance-termination-action=DELETE)
-  gcloud compute instances create "$NAME" \
+  gcloud_ compute instances create "$NAME" \
     --machine-type "$MACHINE" \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type pd-balanced \
+    --local-ssd interface=nvme,size=375gb \
     --local-ssd interface=nvme,size=375gb \
     "${extra[@]}" --scopes cloud-platform
   echo
@@ -322,7 +334,7 @@ finish)
   fi
   ;;
 
-att)   gcloud_ compute ssh "$NAME" -- tmux attach -t "$SESSION" ;;
+att)   gcloud compute ssh "$NAME" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
 logs)  gcloud_ compute ssh "$NAME" --command "tail -f $SSD/build.log" ;;
 ssh)   gcloud_ compute ssh "$NAME" ;;
 
