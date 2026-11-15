@@ -1,6 +1,6 @@
-# LineageOS 24.0 for the Moto G8 Plus (amogus_doha)
+# crDroid 13 (Android 17) for the Moto G8 Plus (amogus_doha)
 
-This repo has everything needed to rebuild our unofficial **LineageOS 24.0
+This repo has everything needed to rebuild our unofficial **crDroid 13
 (Android 17)** ROM for the **Motorola Moto G8 Plus** (`doha`, XT2019-1/2,
 Snapdragon 665). In the source tree the device is called **`amogus_doha`**.
 
@@ -8,13 +8,22 @@ The repo has three parts:
 
 | Path | What it is |
 | --- | --- |
-| `default.xml` | A `repo` manifest that pins all 1264 projects to the exact commits the released build used |
+| `default.xml` | crDroid's `repo` manifest, plus our `snippets/doha.xml` with the device projects. The doha projects are pinned to exact commits |
 | `patches/` | Our fixes. `patches/<project path>.patch` applies to that project |
 | `build.sh` | Syncs the sources, applies the patches and builds the zip |
 
+The manifest is built on crDroid's own
+([`crdroidandroid/android`](https://github.com/crdroidandroid/android),
+branch `17.0`): `snippets/crdroid.xml` and `snippets/lineage.xml` are
+copied from there unchanged, `default.xml` is their `default.xml` with
+our remotes and an extra include, and `snippets/doha.xml` holds the 27
+doha projects (device, vendor, kernel, HALs and the AOSPA trees the port
+uses). crDroid's vendor tree is checked out at `vendor/lineage`, so the
+device trees' `vendor/lineage/config/*.mk` inheritance works as-is.
+
 The device tree and vendor blobs come from the community doha port by
 Aldair402 and moto-common. We didn't write those. Our work is the
-patches that get that port building and booting on LineageOS 24.0.
+patches that get that port building and booting on Android 17.
 
 The kernel is our fork of Aldair402's
 ([`christiaan/android_kernel_motorola_msm-4.14`](https://github.com/christiaan/android_kernel_motorola_msm-4.14),
@@ -23,21 +32,24 @@ branch `lts`). Aldair402's kernel is Motorola's 4.14.190. Ours merges the
 several years of upstream security and stability fixes. `uname -r` shows
 `4.14.357-openela+`.
 
-The LineageOS 23.2 (Android 16) version of this ROM is on the `main`
-branch.
+The LineageOS 24.0 (Android 17) version of this ROM, with the same
+device work, is on the `lineage-24.0` branch. The LineageOS 23.2
+(Android 16) version is on `main`. This branch is `crdroid-android-17`.
 
 ## Requirements
 
 - **x86-64 Linux** with Docker. The build runs inside the
   [`lineageos4microg/docker-lineage-cicd`](https://github.com/lineageos4microg/docker-lineage-cicd)
-  image, which has all the build tools and `repo` installed. To build
-  without Docker, install the
+  image, which has all the build tools and `repo` installed. It is used
+  only as a toolchain container: `build.sh` replaces its entrypoint, so
+  the LineageOS patches that image normally applies (including the
+  SafetyNet one) never run. To build without Docker, install the
   [LineageOS build dependencies](https://wiki.lineageos.org/emulator#install-the-build-packages)
   and `repo` first.
 - **About 350 GB of free disk**: roughly 200 GB for the synced sources and
   120 GB for `out/`. ccache adds up to 50 GB more if you enable it.
   On btrfs (or XFS) you can save most of the source part by starting from
-  another LineageOS 24.0 checkout: `cp -a --reflink=always <that tree>
+  another crDroid 17.0 checkout: `cp -a --reflink=always <that tree>
   <source dir>` shares its files and git history instead of copying
   them. Move its `.repo/local_manifests/*.xml` out of the copy first;
   `build.sh` then syncs it to this manifest and only downloads what
@@ -46,47 +58,49 @@ branch.
   `build.sh` patches, and move out folders that no project in
   `default.xml` covers (`repo list -p` lists the projects). A plain
   checkout that no device has touched avoids that: we keep one in
-  `~/android/base/lineage-24.0` (`repo init -u
-  https://github.com/LineageOS/android.git -b lineage-24.0`, then `repo
-  sync`) and copy it for each new tree.
+  `~/android/base/crdroid-17.0` (`repo init -u
+  https://github.com/crdroidandroid/android.git -b 17.0 --git-lfs`, then
+  `repo sync`) and copy it for each new tree.
 - **About 100 GB of memory, RAM plus swap.** Soong's analysis step for
-  LineageOS 24.0 needs far more than 23.2 did. We build with 30 GB RAM
+  Android 17 needs far more than 23.2 did. We build with 30 GB RAM
   and a 72 GB swap file; it works, but the analysis step is slow while
   it swaps.
 - A fast internet connection. The first sync downloads about 100 GB of
   git history.
 - Time. A rebuild with a warm ccache takes about 12 minutes; one that
-  follows a monthly LineageOS update about an hour.
+  follows a monthly crDroid update about an hour.
 
 ## Building
 
 ```sh
-git clone -b lineage-24.0 https://github.com/christiaan/lineage-23-amogus_doha.git doha-lineage
-mkdir -p ~/android/doha-24.0 ~/android/ccache/doha ~/doha/zips
+git clone -b crdroid-android-17 https://github.com/christiaan/lineage-23-amogus_doha.git doha-crdroid
+mkdir -p ~/android/crdroid-17.0 ~/android/ccache/doha ~/doha/zips
 
 docker run --rm -it \
   --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$PWD/doha-lineage:/manifest:ro" \
-  -v ~/android/doha-24.0:/src \
+  -v "$PWD/doha-crdroid:/manifest:ro" \
+  -v ~/android/crdroid-17.0:/src \
   -v ~/android/ccache/doha:/ccache -e CCACHE_DIR=/ccache \
   -v ~/doha/zips:/zips -e ZIP_DIR=/zips \
   --entrypoint /manifest/build.sh \
   lineageos4microg/docker-lineage-cicd:latest /src
 ```
 
-Without Docker, run `./build.sh ~/android/doha-24.0` from the clone.
+Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 
 `build.sh` does the following:
 
 1. Runs `repo init` against `default.xml` on the branch checked out in this
-   clone, and then `repo sync`. Every project is pinned to a commit, so the
-   sources you get are the same whenever you sync. repo reads the committed
-   manifest, so the script stops if `default.xml` has uncommitted changes.
+   clone, and then `repo sync`. repo reads the committed manifest, so the
+   script stops if `default.xml` has uncommitted changes. The doha projects
+   are pinned to exact commits. The crDroid, LineageOS and AOSP projects
+   follow crDroid's branch and tag refs until the manifest is pinned to a
+   snapshot (see [Pinning the sources](#pinning-the-sources)).
 2. Resets each patched project and applies its patch from `patches/`, so
    you can run the script again safely. A project whose patch and files are
    unchanged since the last run is left alone, so its files keep their
    timestamps and the build doesn't redo work. A project whose patch was
-   deleted is reset to its pinned commit.
+   deleted is reset to its synced commit.
 3. Creates the empty file `device/motorola/amogus_doha/kernel-headers`
    (see [the kernel headers fix](#kernel-headers)).
 4. Runs `breakfast amogus_doha userdebug` and
@@ -95,13 +109,19 @@ Without Docker, run `./build.sh ~/android/doha-24.0` from the clone.
    `~/doha/zips`, with a `.sha256sum` file.
 
 The output is
-`~/doha/zips/lineage-24.0-<date>-UNOFFICIAL-amogus_doha.zip`, next to
-`lineage-24.0-<date>-UNOFFICIAL-amogus_doha-{boot,dtbo,vbmeta}.img`. Use
-these copies, not the zips in `out/target/product/amogus_doha/`: `bacon`
-hard-links the dated zip there to `lineage_amogus_doha-ota.zip`, and the
-next build rewrites that file in place, so every older zip in `out/` ends
-up holding the newest build. A second build on the same day replaces that
-day's files in `~/doha/zips`.
+`~/doha/zips/crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`, next to
+`crDroidAndroid-17.0-<date>-amogus_doha-v13.1-{boot,dtbo,vbmeta}.img`. The
+copies are worth keeping: crDroid's `bacon` renames the OTA zip in `out/`
+to that `crDroidAndroid-*.zip` name and deletes the target-files
+intermediates it was built from, so `build.sh` takes the images straight
+out of `out/target/product/amogus_doha/` and keeps a real copy of every
+build. A second build on the same day replaces that day's files in
+`~/doha/zips`.
+
+The device is built from the ordinary `lineage_amogus_doha` product: the
+device trees in `device/motorola/targets` name their product that way and
+inherit `vendor/lineage/config/common_full_phone.mk`, which is crDroid's
+vendor tree here and pulls in crDroid's own packages and settings.
 
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
@@ -118,6 +138,23 @@ reports throttling (the default is 40). With Docker, pass these as
 
 The build is `userdebug`, unsigned (it uses the AOSP test keys) and has no
 GApps; you can add them yourself (see Installing).
+
+### Pinning the sources
+
+`default.xml` currently includes crDroid's `snippets/crdroid.xml` and
+`snippets/lineage.xml`, which reference branches (`17.0`, `lineage-24.0`),
+so a later sync can pick up newer crDroid commits. Once a build is known
+to boot, snapshot it:
+
+```sh
+repo manifest -r -o default.xml     # flattens the includes and pins every project
+```
+
+Commit the result. The pinned manifest no longer includes the snippets
+(`repo` resolves them away), so keep `snippets/` as the upstream baseline:
+to move to a new crDroid point release, restore the include-based
+`default.xml` from git, refresh the two snippet files from crDroid, sync,
+rebase any patch that no longer applies, and pin again.
 
 ### Test builds with your adb key
 
@@ -145,14 +182,14 @@ inside `boot`.
 
 1. `fastboot flash boot <boot.img>` and `fastboot flash dtbo
    <dtbo.img>`. This is only needed when you're coming from stock or a
-   different ROM, including LineageOS 23.2 of this ROM. Recovery runs
-   with the dtbo of the current slot, and with stock's, the touchscreen
-   doesn't work in recovery on phones with the Tianma (FocalTech) panel.
-   The volume keys and the power button work either way.
+   different ROM, including the LineageOS builds of this device. Recovery
+   runs with the dtbo of the current slot, and with stock's, the
+   touchscreen doesn't work in recovery on phones with the Tianma
+   (FocalTech) panel. The volume keys and the power button work either
+   way.
 2. Boot into recovery. Do a factory reset (**Factory reset → Format
-   data**) when coming from another ROM or from LineageOS 23.2. Then
-   choose **Apply update → Apply from ADB** and run
-   `adb sideload lineage-24.0-*.zip`.
+   data**) when coming from another ROM. Then choose **Apply update →
+   Apply from ADB** and run `adb sideload crDroidAndroid-17.0-*.zip`.
 3. When the install finishes, recovery asks whether you want to install
    additional packages. To add Google apps, answer **Yes** (recovery
    restarts on the new slot) and follow [Google apps](#google-apps).
@@ -164,7 +201,7 @@ on USB debugging, authorize the computer, and run
 ```sh
 adb reboot sideload-auto-reboot
 adb wait-for-sideload
-adb sideload lineage-24.0-*.zip
+adb sideload crDroidAndroid-17.0-*.zip
 ```
 
 With `sideload-auto-reboot`, recovery skips the additional-zip prompt
@@ -212,9 +249,9 @@ Magisk app and flash it:
 
 1. Install the Magisk app (31.1 or newer) from
    [its GitHub releases](https://github.com/topjohnwu/Magisk/releases).
-2. Copy `lineage-24.0-*-boot.img` from the release you have installed
-   to the phone. In Magisk, tap **Install**, choose **Patch firmware /
-   image** and select that file. The app saves
+2. Copy `crDroidAndroid-17.0-*-boot.img` from the release you have
+   installed to the phone. In Magisk, tap **Install**, choose **Patch
+   firmware / image** and select that file. The app saves
    `magisk_patched-*.img` in Downloads.
 3. Copy the patched image to your computer and flash it to the active
    slot:
@@ -236,11 +273,18 @@ Magisk, so patch and flash the new release's boot image after updating.
 
 ## Status
 
+**The crDroid build has not been tested on hardware yet.** It is the same
+device work as the LineageOS 24.0 build on the `lineage-24.0` branch,
+retargeted at crDroid 13; the patches apply to crDroid's trees, but a
+build has to be flashed and used before anything here can be called
+tested. The list below is what that LineageOS 24.0 build passed, and it
+is the checklist for this one.
+
 Tested on real hardware (an XT2019-1 with the Tianma FocalTech touch
 panel and the FPC fingerprint sensor):
 
 - A clean install from stock firmware (4-1-7) following the steps above,
-  and updates sideloaded over an earlier 24.0 build.
+  and updates sideloaded over an earlier build.
 - Boot, touch (in Android and in recovery), all four cameras including
   the ultra-wide, fingerprint enrolment and unlock.
 - Calls with audio both ways, SMS and mobile data (on two Dutch
@@ -264,26 +308,30 @@ Known issues:
 - After a fresh install from stock, the first boot may find only 2G.
   One more reboot fixes it.
 
-## Differences from an official LineageOS device
+## Differences from an official crDroid device
 
-This build isn't official. Measured against LineageOS's
-[device support requirements](https://github.com/LineageOS/charter/blob/main/device-support-requirements.md),
-it differs in these ways:
+This build isn't official, and crDroid has no doha maintainer. Against
+crDroid's [maintainer
+rules](https://github.com/crdroidandroid/rules-and-guidelines) and
+LineageOS's [device support
+requirements](https://github.com/LineageOS/charter/blob/main/device-support-requirements.md)
+(which crDroid builds on), it differs in these ways:
 
-- **No updates through the Updater app.** There is no update server for
-  `amogus_doha`, so the Updater app finds nothing. Update with
-  `adb sideload` as described under Installing.
+- **No updates through the Updater app.** There is no OTA entry for
+  `amogus_doha` in crDroid's OTA repo, so the build writes its own JSON
+  with empty maintainer fields and the Updater app has nothing to
+  download. Update with `adb sideload` as described under Installing.
 - **Firmware is not managed for you.** The zip doesn't contain Motorola
   firmware, and the install steps don't copy it to the second slot. Both
   slots should run the latest stock firmware for doha (Android 10)
   before you install.
 - **No dm-verity on vendor.** Verified boot is turned off in `vbmeta`
-  (`--flags 2`). Official devices turn verity off for system too, but
-  should keep it on for vendor.
-- **No LiveDisplay colour adjustment.**
+  (`--flags 2`).
 - **Kernel 4.14 on Android 17.** Android 17 expects at least 5.10. A few
   features that need a newer kernel are turned off instead of crashing
-  the system (see [LineageOS 24.0](#lineageos-240)).
+  the system (see [crDroid 13](#crdroid-13)).
+- **Quick tap is off**: doha has no quick-tap hardware, so crDroid's
+  ColumbusService is not built (`TARGET_SUPPORTS_QUICK_TAP := false`).
 - **Hardware variants**: the build supports every Moto G8 Plus, but only
   some combinations have been tested (see Status).
 
@@ -294,10 +342,38 @@ it differs in these ways:
 Most of these problems come from pairing a recent Android base with a
 device that launched on Android 10 with a 4.14 kernel. The shared
 Qualcomm trees also assume newer chips. Each section names the patch it
-lives in. The 23.2 fixes below all carry over; LineageOS 24.0 needed the
-extra ones in the next section.
+lives in. These are the same fixes the LineageOS 24.0 build on
+`lineage-24.0` carries; the crDroid-specific differences are in the
+first section.
 
-### LineageOS 24.0
+### crDroid 13
+
+- **The manifest is crDroid's.** `default.xml` is crDroid's own manifest
+  with our remotes, plus `snippets/doha.xml`, which holds the 27 doha
+  projects. `snippets/crdroid.xml` and `snippets/lineage.xml` are
+  crDroid's, unmodified. crDroid maps `vendor/lineage` and
+  `device/lineage/sepolicy` to its own forks at those paths, so the
+  device trees' inheritance and `device/motorola/amogus`'s
+  `device/lineage/sepolicy/libion/sepolicy.mk` include work unchanged.
+- **Quick tap off** (`device/motorola/amogus_doha.patch`). crDroid's
+  `vendor/lineage/config/crdroid.mk` adds the `ColumbusService` package
+  unless `TARGET_SUPPORTS_QUICK_TAP := false`; doha has no quick-tap
+  hardware, so the flag is set in `BoardConfig.mk`.
+- **SafetyNet spoofing comes from crDroid.** The LineageOS build carried
+  the `0001-Pass-SafetyNet.patch` from the docker-lineage-cicd image as
+  `patches/system/core.patch`. crDroid's `system/core` already does this
+  (`SPOOF_SAFETYNET=1` in `init/Android.bp`, `SetSafetyNetProps` in
+  `property_service.cpp`), so that patch is gone. The docker image is
+  still used as a toolchain container, but `build.sh` overrides its
+  entrypoint, so its patches never run.
+- **Build output handling** (`build.sh`). crDroid's `bacon.mk` renames
+  the OTA zip to `crDroidAndroid-<version>.zip` and deletes the
+  target-files intermediates instead of hard-linking them as LineageOS
+  does, so the zip is taken from `out/target/product/amogus_doha/` and
+  the images from `PRODUCT_OUT` rather than the deleted `IMAGES/`
+  directory.
+
+### Android 17
 
 - **Boot through the ramdisk.** Android 17's init no longer boots doha's
   legacy system-as-root layout. The kernel now unpacks the boot ramdisk
@@ -311,7 +387,9 @@ extra ones in the next section.
   `device/motorola/amogus_doha.patch`)
 - **Legacy HAL paths.** Keymaster and gatekeeper need `libion`'s legacy
   implementation, plus the legacy gralloc and display-service paths
-  that LineageOS's other 24.0 devices of this age use.
+  that the LineageOS-derived trees use for devices of this age
+  (`libion,legacy_impl`, `libui,legacy_gralloc`,
+  `surfaceflinger,register_displayservice`).
 - **BPF on 4.14.** healthd's power-supply filter and netd's traffic
   programs get their kernel limits back so 4.14 loads (or skips) them,
   and system_server no longer aborts when the kernel has no BPF ring
@@ -363,12 +441,12 @@ copied the whole build machine's root filesystem into `out/`. The fix:
 (`device.mk`,
 `PRODUCT_OTA_ENFORCE_VINTF_KERNEL_REQUIREMENTS := false`). doha ships with
 API level 29, which maps to FCM level 5. The compatibility matrices in
-Android 16 no longer list a 4.14 kernel for that level, so `checkvintf`
+Android 17 no longer list a 4.14 kernel for that level, so `checkvintf`
 always rejects this kernel.
 
 **`libqsap_sdk` can't be built** (`device/motorola/common`,
 `device/qcom/common`, `hardware/motorola`). `libqsap_sdk` is built from
-`system/qcom/softap/sdk/Android.mk`, and that file is on Android 16's
+`system/qcom/softap/sdk/Android.mk`, and that file is on Android 17's
 `androidmk_denylist.go`. Both `PRODUCT_PACKAGES` entries for it are
 removed, and `libqsap_shim` (its only user among source-built modules) is
 stubbed out. See the GSM fix below for the prebuilt copy that is
@@ -422,17 +500,21 @@ still installed.
 
 ### Needed to boot
 
-**BPF kernel-version gates** (`packages/modules/Connectivity`). Android 16
+**BPF kernel-version gates** (`packages/modules/Connectivity`). Android 17
 requires kernel 4.19 or newer for BPF networking. doha has 4.14.
 
-- `NetBpfLoad.cpp`: the 4.9/4.14/4.19/5.4 checks returned an error, and
-  `reboot_on_failure` in `netbpfload.rc` turned that into a bootloop. Now
-  they only log a warning, like the 5.10 check below them already does.
-  LineageOS's abandoned Gerrit change 433516 made the same change.
-- `BpfHandler.cpp`: the same 4.19 and 5.4 gates in netd made
-  `libnetd_updatable_init` abort. netd is a critical service, so init kept
-  restarting the whole `main` class and `system_server` never started. Now
-  they only log a warning.
+- `NetBpfLoad.cpp`: the 4.9/4.14/4.19/5.4 and 5.15 checks returned an
+  error, and `reboot_on_failure` in `netbpfload.rc` turned that into a
+  bootloop. Now they only log a warning, like the 5.10 check already
+  does. LineageOS's abandoned Gerrit change 433516 made the same change,
+  and AOSP has since relaxed the 5.10 one itself.
+- `BpfHandler.cpp`: netd's 4.19 and 5.4 gates made
+  `libnetd_updatable_init` abort, taking `system_server` down with it
+  because netd is a critical service. This needs no patch on crDroid:
+  its `hardware/interfaces`/Connectivity revision no longer rejects the
+  kernel, it checks the version around each 4.19+ or 5.4+ attachment
+  instead. The hunk was in the LineageOS 24.0 patch and was dropped when
+  the patch was rebased onto crDroid.
 - `BpfNetMaps.java`: the `local_net_access` and `local_net_blocked_uid`
   maps can't be created on 4.14. `system_server` threw on this and
   crashed. Now it treats the maps as unsupported and skips them.
@@ -466,7 +548,7 @@ requires kernel 4.19 or newer for BPF networking. doha has 4.14.
 
 ### Workarounds for the 4.14 kernel
 
-Android 16 assumes a 5.10 or newer kernel. The BPF kernel-version gates
+Android 17 assumes a 5.10 or newer kernel. The BPF kernel-version gates
 under "Needed to boot" put back fallbacks for kernel features doha's
 4.14 kernel doesn't have.
 
@@ -500,8 +582,8 @@ wpa_supplicant sent VERSION_3 for SAE, the kernel rejected it, and WPA3
 networks reported a wrong password.
 
 **Vibration and other kernel modules** (`device/motorola/amogus_doha`,
-`BOARD_VENDOR_KERNEL_MODULES_LOAD`). LineageOS always writes
-`vendor/lib/modules/modules.load`, even when the list is empty. An empty
+`BOARD_VENDOR_KERNEL_MODULES_LOAD`). The vendor build system always
+writes `vendor/lib/modules/modules.load`, even when the list is empty. An empty
 file makes `init.modprobe.sh` skip its "load everything" fallback, so no
 vendor module loaded. That included the aw8695 haptics driver, so the
 vibrator didn't work. The patch lists the modules explicitly: `aw8624`,
@@ -550,17 +632,20 @@ side change.
 **GPS: remove QCC** (`vendor/qcom/common` `gps-vendor.mk`,
 `device/motorola/common` `vintf/manifest-qcom.xml`). The prebuilt
 `qccsyshal@1.2` system HAL was built against protobuf ~3.21 and can't
-link against LineageOS 23.2's protobuf 25.8. It crash-looped, and the QCC
+link against Android 17's protobuf 25.8. It crash-looped, and the QCC
 app restarted every 15 seconds waiting for it. The patch stops installing
 the HAL, its libraries and the app, and removes its VINTF entry. GPS and
 XTRA downloads work without it.
 
-### Inherited from docker-lineage-cicd
+### SafetyNet
 
-**`system/core`: `0001-Pass-SafetyNet.patch`.** This is not our patch. The
-docker-lineage-cicd image applies it by default (`APPLY_PI_PATCH=true`)
-from [lineageos4microg/patches](https://github.com/lineageos4microg/patches),
-and our released build included it. It makes init report a locked,
-verified boot state so that basic Play Integrity passes, and it makes
-fastbootd read the real lock state from the kernel command line. If you
-don't want it, delete `patches/system/core.patch`.
+The LineageOS 24.0 build carried `patches/system/core.patch`, the
+`0001-Pass-SafetyNet.patch` from
+[lineageos4microg/patches](https://github.com/lineageos4microg/patches)
+that the docker-lineage-cicd image applies by default. It makes init
+report a locked, verified boot state so that basic Play Integrity passes,
+and makes fastbootd read the real lock state from the kernel command line.
+crDroid's own `system/core` does the same thing
+(`SPOOF_SAFETYNET=1`), so there is no `patches/system/core.patch` on this
+branch. Our docker command still uses that image, but only as a toolchain
+container, because `build.sh` replaces its entrypoint.
