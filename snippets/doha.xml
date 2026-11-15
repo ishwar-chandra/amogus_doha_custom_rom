@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+  <!-- doha (Moto G8 Plus) device, vendor, kernel and HAL projects. -->
+  <!-- The AOSPA fastrpc tree replaces AOSP's, so drop the latter first. -->
+  <remove-project name="platform/external/fastrpc" />
+
+  <project name="android_external_fastrpc" path="external/fastrpc" remote="aospa" revision="a83e9c19925dcaf77fa42aefaa0be8eed74e4974" upstream="uvite" dest-branch="uvite" groups="local::doha" />
+  <project name="android_device_motorola_amogus" path="device/motorola/amogus" remote="moto-common" revision="de72dd4f7dbf63caa93e338bf24d962c18601b2c" upstream="14" dest-branch="14" groups="local::doha" />
+  <project name="android_device_motorola_amogus-kernel" path="device/motorola/amogus-kernel" remote="moto-common" revision="1fb2d561ea614612b850df790baa93422dd314aa" upstream="13" dest-branch="13" groups="local::doha" />
+  <project name="android_device_motorola_amogus_doha" path="device/motorola/amogus_doha" remote="aldair402" revision="2638aeb900d67d02ac3fc4fe8370a35e1adde161" upstream="2.1" dest-branch="2.1" groups="local::doha" />
+  <project name="android_device_motorola_common" path="device/motorola/common" remote="aldair402" revision="8baff88cddde39bc67e0e817ac22653019341ec0" upstream="16" dest-branch="16" groups="local::doha" />
+  <project name="android_device_motorola_targets" path="device/motorola/targets" remote="aldair402" revision="ce106e503e8e4e844b552213e0c6af5be7e7768d" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="android_device_qcom_common" path="device/qcom/common" remote="aospa" revision="4898502afe2b81c999c8a7224a837bf5e0b02f06" upstream="uvite" dest-branch="uvite" groups="local::doha" />
+  <project name="android_device_qcom_qssi" path="device/qcom/qssi" remote="aospa" revision="dc16714f7004f6b47114e6d0c953c1d0fa5749e4" upstream="uvite" dest-branch="uvite" groups="local::doha" />
+  <project name="android_device_sony_sepolicy" path="device/sony/sepolicy" remote="moto-common" revision="f80fb521f326f5a8e1b19451594bf6ddbd727b82" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="android_hardware_motorola" path="hardware/motorola" remote="moto-common" revision="f805e9ef6f64e0dad5b9ee47cc6e094a2b3db9b0" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="christiaan/android_kernel_motorola_msm-4.14" path="kernel/motorola/msm-4.14" remote="github" revision="52885f01cd5cc3b392c81bfbd3f4456a7ac8d990" upstream="lts" dest-branch="lts" groups="local::doha" />
+  <project name="android_vendor_motorola_amogus" path="vendor/motorola/amogus" remote="aldair402" revision="85187ccfe24f696f8ccfc68f2f03529fc0caa98f" upstream="15" dest-branch="15" groups="local::doha" />
+  <project name="android_vendor_motorola_amogus_doha" path="vendor/motorola/amogus_doha" remote="aldair402" revision="7b6d8adfee61b37bea3f08715d89936dd74d6849" upstream="14" dest-branch="14" groups="local::doha" />
+  <project name="android_vendor_motorola_common" path="vendor/motorola/common" remote="moto-common" revision="5cfff4dfe2e257fd1c9df4176ffd1bbf3bd99f20" upstream="14" dest-branch="14" groups="local::doha" />
+  <project name="platform_hardware_qcom_bootctrl" path="hardware/qcom/bootctrl" remote="moto-common" revision="bf0e3210326e5237bdd978f8205c31e7341f2e04" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_prebuilts_clang_host_linux-x86_clang-r383902" path="prebuilts/clang/host/linux-x86/clang-r383902" remote="moto-common" revision="8a74b63a5f9328ab91ba6b48e37c9627ae85c206" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_audio_sm8150" path="vendor/qcom/opensource/audio/sm8150" remote="aldair402" revision="d0dbea0f17eb102c82c880e913bf6ccdc0bfb13d" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_audio_st-hal" path="vendor/qcom/opensource/audio/st-hal" remote="moto-common" revision="bd8a1001918c1d83b6c9a9220252844e12c0580d" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_data-ipa-cfg-mgr" path="vendor/qcom/opensource/data-ipa-cfg-mgr" remote="moto-common" revision="a2152b4042748aae7a7b954e1bdd89d97f48c20b" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_data-ipa-cfg-mgr-legacy-um" path="vendor/qcom/opensource/data-ipa-cfg-mgr-legacy" remote="moto-common" revision="d20dd73a194147632b3eae4e0773d9b524a00570" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_display-commonsys-intf" path="vendor/qcom/opensource/display-commonsys-intf" remote="moto-common" revision="c23805998ffd8c61035c7ec17916e0decef0167d" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_display_sm8150" path="vendor/qcom/opensource/display/sm8150" remote="moto-common" revision="b2f90a6f2ed9e2c87478cbabf798bd6982d7992c" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_gps-legacy" path="vendor/qcom/opensource/gps/legacy" remote="aldair402" revision="365d6682a3b4b8d92e6c615d2ef8d19fb6a6bf39" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_media_sm8150" path="vendor/qcom/opensource/media/sm8150" remote="moto-common" revision="f841fe095a16eb85241065122d7f61c572c9e517" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_recovery-ext" path="vendor/qcom/opensource/recovery-ext" remote="moto-common" revision="1e7886185b9d29312f52453925764eecb9ba1847" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="platform_vendor_qcom_opensource_thermal" path="vendor/qcom/opensource/thermal" remote="moto-common" revision="d90b0d8fbc80521e7fb9f3bc45e0099e90ee9fbf" upstream="master" dest-branch="master" groups="local::doha" />
+  <project name="proprietary_vendor_qcom_common" path="vendor/qcom/common" remote="aospa-vendor" revision="50d32904db70c6a786963b255f92f24c8a0ccb79" upstream="uvite" dest-branch="uvite" groups="local::doha" />
+
+</manifest>
