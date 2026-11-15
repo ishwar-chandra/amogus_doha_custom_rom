@@ -89,6 +89,59 @@ kernel `4.14.357-openela+ #16`).
   a first-boot GMS permission state. Candidate for a README
   troubleshooting entry.
 
+## GCP build machine and Drive backup
+
+`tools/gcp-build.sh` does the whole cycle. Project `customrom-514215`
+(asia-south1), 12 vCPU / 96 GB (`n2-custom-12-98304`) with a 500 GB boot
+disk for the sources and a 375 GB local SSD for `out/`, ccache and swap.
+Quota preferences for 64 vCPU, spot CPUs and 500 GB SSD are submitted and
+still show `granted` = the old values; the 12 vCPU shape works without
+them, so the build does not wait.
+
+Workflow, first time:
+
+```sh
+rclone config                        # once, on your own machine: new remote,
+                                     # type drive, named gdrive
+tools/gcp-build.sh create
+tools/gcp-build.sh config            # copies rclone.conf to the VM
+tools/gcp-build.sh setup
+tools/gcp-build.sh build             # then: logs / fetch
+tools/gcp-build.sh backup            # once the build is good
+tools/gcp-build.sh delete
+```
+
+On a later VM: `create`, `config`, `restore`, `build`. The restore puts
+`.repo` and ccache back, and `build` runs `repo init`/`repo sync` against
+those local objects, so the worktrees come back without downloading
+anything, and the warm ccache makes the rebuild minutes rather than hours.
+
+What is backed up, and why only that:
+
+- `src/.repo` — bare git objects for all ~1280 projects, ~180 GB.
+  Immutable once fetched, so rclone uploads only new objects. Restoring
+  this and letting `repo sync` re-create the worktrees also sidesteps the
+  fact that Drive stores neither file modes nor symlinks: a copied-out
+  worktree would restore into something that cannot build.
+- `ccache` — content-addressed, so also incremental.
+- `manifest` (this recipe clone) and `zips` (finished builds).
+
+`out/` is not backed up: ~120 GB of regenerable intermediates.
+
+Caveats worth remembering:
+
+- `backup` mirrors, so locally deleted files are deleted on Drive too.
+- Drive allows ~750 GB of uploads per account per day; the first backup is
+  the big one (~230 GB), later ones are small.
+- Egress from GCP is billed (~180 GB out of asia-south1 is a few dollars),
+  so the first backup is also the only expensive transfer.
+- The local SSD does not survive a stop/start; the boot disk does.
+- `create` sets `--max-run-duration=8h` with `instance-termination-action=
+  DELETE`, so a forgotten VM removes itself instead of billing overnight.
+- Google always spends credits before the card, but there is no hard spend
+  cap: check Console → Billing → Credits before a session, and `delete`
+  the VM when done.
+
 ## Build and tooling
 
 - [ ] **The release is a `user` build, not `userdebug`.**
