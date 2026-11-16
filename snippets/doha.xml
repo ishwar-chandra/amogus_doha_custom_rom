@@ -11,7 +11,7 @@
        qti-telephony.mk puts in the product. With both present Soong stops:
        module "ipacm" (and IPACM_cfg.xml) found in multiple namespaces when
        including in vendor partition. Same conflict, same answer as 24.0's
-       fe9638b -- keep the copy the device work was tested with. Removed by
+       fe9638b: keep the copy the device work was tested with. Removed by
        path: the same project name backs the sm8450/sm8550/... vendor trees
        above, which other devices need. -->
   <remove-project name="LineageOS/android_vendor_qcom_opensource_data-ipa-cfg-mgr"
