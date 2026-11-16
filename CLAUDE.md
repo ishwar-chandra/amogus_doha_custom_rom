@@ -77,10 +77,16 @@ loop. `bash -n build.sh` is the only cheap check.
 verbatim; keep them that way so a rebase is a plain re-copy.
 `snippets/doha.xml` is ours: the 27 `local::doha` projects (device trees,
 vendor blobs, kernel, HALs, the AOSPA `device/qcom/*` and
-`vendor/qcom/common`). It starts with
-`<remove-project name="platform/external/fastrpc" />` because doha uses
-AOSPA's fastrpc at that path — the only project path that collides with
-crDroid's manifest.
+`vendor/qcom/common`). It starts with two `<remove-project>` entries, for
+the two crDroid projects whose path doha takes over:
+
+- `platform/external/fastrpc` — doha uses AOSPA's fastrpc at that path.
+- `LineageOS/android_vendor_qcom_opensource_data-ipa-cfg-mgr` at
+  `vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um` — doha's IPACM comes
+  from moto-common's `.../data-ipa-cfg-mgr-legacy`. With both, Soong stops
+  on `ipacm` and `IPACM_cfg.xml` being in two namespaces. Removed by
+  `name` **and** `path`: the same project name backs the
+  `hardware/qcom-caf/*/data-ipa-cfg-mgr` entries other devices use.
 
 Pinning: the doha projects are pinned to commits; the crDroid, LineageOS
 and AOSP projects currently follow branch/tag refs. Once a build boots,

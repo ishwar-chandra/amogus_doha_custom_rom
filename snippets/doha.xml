@@ -5,6 +5,18 @@
   <!-- The AOSPA fastrpc tree replaces AOSP's, so drop the latter first. -->
   <remove-project name="platform/external/fastrpc" />
 
+  <!-- crDroid/LineageOS 17.0 also ship IPACM at
+       vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um. doha gets its IPACM
+       from moto-common at .../data-ipa-cfg-mgr-legacy instead, which AOSPA's
+       qti-telephony.mk puts in the product. With both present Soong stops:
+       module "ipacm" (and IPACM_cfg.xml) found in multiple namespaces when
+       including in vendor partition. Same conflict, same answer as 24.0's
+       fe9638b -- keep the copy the device work was tested with. Removed by
+       path: the same project name backs the sm8450/sm8550/... vendor trees
+       above, which other devices need. -->
+  <remove-project name="LineageOS/android_vendor_qcom_opensource_data-ipa-cfg-mgr"
+                  path="vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um" />
+
   <project name="android_external_fastrpc" path="external/fastrpc" remote="aospa" revision="a83e9c19925dcaf77fa42aefaa0be8eed74e4974" upstream="uvite" dest-branch="uvite" groups="local::doha" />
   <project name="android_device_motorola_amogus" path="device/motorola/amogus" remote="moto-common" revision="de72dd4f7dbf63caa93e338bf24d962c18601b2c" upstream="14" dest-branch="14" groups="local::doha" />
   <project name="android_device_motorola_amogus-kernel" path="device/motorola/amogus-kernel" remote="moto-common" revision="1fb2d561ea614612b850df790baa93422dd314aa" upstream="13" dest-branch="13" groups="local::doha" />
