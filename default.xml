@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
 
+  <!-- crDroid upstream writes fetch=".." here, which repo resolves against
+       the manifest repo's own URL. That only works when the manifest is
+       fetched from github.com/crdroidandroid/android; build.sh inits repo
+       from a local path (MANIFEST_URL defaults to this checkout), where
+       ".." became a filesystem path like /mnt/LineageOS/android_* and every
+       LineageOS project failed to fetch. Spell it out instead. -->
   <remote  name="github"
-           fetch=".."
+           fetch="https://github.com/"
            review="review.lineageos.org" />
 
   <remote  name="private"
