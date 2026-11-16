@@ -7,6 +7,13 @@
 # Environment:
 #   JOBS          parallel build jobs (default: nproc)
 #   SYNC_JOBS     parallel repo sync jobs (default: 4)
+#   REPO_DEPTH    shallow-clone depth for repo init (unset = full history).
+#                 REPO_DEPTH=1 downloads only each project's tip instead of
+#                 ~100 GB of history, which also shrinks what the Drive
+#                 backup has to carry. It needs the server to serve the
+#                 exact commits the manifest pins; if a pin cannot be
+#                 fetched shallow, repo says so and you drop back to a full
+#                 sync (unset REPO_DEPTH and rerun).
 #   MANIFEST_URL  manifest repo to init from (default: this checkout)
 #   MANIFEST_BRANCH  manifest branch (default: this checkout's current
 #                 branch, or main when MANIFEST_URL is set)
@@ -75,7 +82,8 @@ if [ "${SKIP_SYNC:-0}" != 1 ]; then
   MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
 
   # Run init every time so a changed MANIFEST_URL or branch takes effect.
-  repo init -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH" -m default.xml --git-lfs -g default,-darwin
+  repo init -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH" -m default.xml --git-lfs -g default,-darwin \
+    ${REPO_DEPTH:+--depth="$REPO_DEPTH"}
   # --force-checkout lets a pin bump replace a project that still carries
   # the previous run's patch. Projects already at their pin aren't touched.
   repo sync -c -j"$SYNC_JOBS" --retry-fetches=5 --force-sync --force-checkout \

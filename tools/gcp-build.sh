@@ -87,15 +87,44 @@ set -euo pipefail
 PROJECT=${PROJECT:-customrom-514215}
 ZONE=${ZONE:-asia-south1-a}
 NAME=${NAME:-crdroid-build}
-# e2 would be cheapest but its quota is 0 in asia-south1, and n2 keeps the
-# grow step a same-family machine-type change.
-SYNC_MACHINE=${SYNC_MACHINE:-n2-standard-4}
-MACHINE=${MACHINE:-n2-custom-12-98304}
+# Sizing, against the README's own numbers (it builds with 30 GB RAM plus a
+# 72 GB swap file, and Soong's analysis is the peak at ~100 GB):
+#   12 vCPU        the CPUS_ALL_REGIONS quota cap for this project
+#   64 GB RAM      + 48 GB swap = 112 GB, the same headroom, but RAM is the
+#                  expensive part ($0.005/GB/h); 96 GB of pure RAM was
+#                  paying for memory the swap file covers for a fifth of it
+#   400 GB disk    the shallow path needs ~255 GB (sources ~85, out/ ~120,
+#                  ccache up to 50, zips ~2), so this leaves >100 GB of
+#                  breathing room; disk is the cheap resource (~$0.04/GB/
+#                  month, half a cent per 100 GB per hour). A full-history
+#                  fallback wants DISK=500GB.
+#   4 vCPU sync    only worth it if you deliberately set SYNC_MACHINE --
+#                  a sync is network-bound, so a small box is enough. Left
+#                  equal to MACHINE by default, since idle cores cost less
+#                  than the stop/start dance.
+MACHINE=${MACHINE:-n2-custom-12-65536}
+SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-400GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
+# mka's -j must come from the *build* machine, not from whatever nproc says
+# at launch time: build.sh would otherwise compute 4 on a small sync
+# machine and compile with -j4 after being grown to 12 vCPUs.
+# Parsed from MACHINE (n2-custom-12-65536 -> 12).
+case "$MACHINE" in
+  *-custom-*) JOBS_BUILD=${JOBS_BUILD:-$(printf '%s' "$MACHINE" | sed -n 's/.*-custom-\([0-9]*\)-.*/\1/p')} ;;
+  *)          JOBS_BUILD=${JOBS_BUILD:-$(printf '%s' "$MACHINE" | sed -n 's/.*-\([0-9]*\)$/\1/p')} ;;
+esac
+JOBS_BUILD=${JOBS_BUILD:-12}
+# Swap file on the boot disk. 48 GB, created by setup and re-enabled by the
+# build script, because swap does not survive a stop/start.
+SWAP_GB=${SWAP_GB:-48}
 HOURS=${HOURS:-24}
 VARIANT=${VARIANT:-userdebug}
 SYNC_JOBS=${SYNC_JOBS:-nproc}
+# Shallow clone: ~15-25 GB instead of ~100 GB of history, and a much
+# smaller .repo for the Drive backup. Set REPO_DEPTH= (empty) for a full
+# history sync if a pinned commit cannot be fetched shallow.
+REPO_DEPTH=${REPO_DEPTH-1}
 REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
 BRANCH=${BRANCH:-crdroid-android-17}
 OUT=${OUT:-$PWD/gcp-out}
@@ -145,13 +174,28 @@ EOF
 # follow as arguments because the heredoc is quoted.
 remote_exec() {
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$CCACHE_MAX'" \
+    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$CCACHE_MAX' '$SWAP_GB'" \
     <<'REMOTE'
 set -euo pipefail
 MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
 VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 CCACHE_MAX=$9
+SWAP_GB=${10}
 SRC=$HOME/src MANIFEST=$HOME/manifest ZIPS=$HOME/zips CCACHE=$HOME/.ccache
 LOG=$HOME/build.log RLOG=$HOME/rclone.log EXIT=$HOME/build.exit
+
+# RAM is the expensive resource, so Soong's ~100 GB analysis peak is covered
+# partly by swap; the README's own build machine uses 30 GB RAM + 72 GB swap.
+ensure_swap() {
+  local f=$HOME/swap
+  if [ ! -e "$f" ]; then
+    fallocate -l "${SWAP_GB}G" "$f" 2>/dev/null ||
+      dd if=/dev/zero of="$f" bs=1M count=$((SWAP_GB * 1024)) status=none
+    chmod 600 "$f"
+    sudo mkswap "$f" >/dev/null
+  fi
+  swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$f" ||
+    sudo swapon "$f" 2>/dev/null || true
+}
 
 need_rclone() {
   command -v rclone >/dev/null && return
@@ -159,7 +203,7 @@ need_rclone() {
 }
 need_gh() {
   command -v gh >/dev/null && return
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y gh >/dev/null 2>&1 && return
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y gh >/dev/null 2>&1 && return
   ( cd /tmp && v=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest |
       sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p') \
     && curl -fsSL -o gh.tgz "https://github.com/cli/cli/releases/download/v$v/gh_${v}_linux_amd64.tar.gz" \
@@ -178,8 +222,10 @@ case "$MODE" in
 
 setup)
   if [ ! -x "$HOME/.deps-installed" ]; then
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    # A fresh image runs unattended-upgrades at boot, which holds the dpkg
+    # lock; wait for it instead of failing the whole setup.
+    sudo apt-get -o DPkg::Lock::Timeout=900 update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y \
       bc bison build-essential ccache curl flex g++-multilib gcc-multilib git \
       git-lfs gnupg gperf imagemagick lib32ncurses-dev lib32z1-dev libelf-dev \
       liblz4-tool libssl-dev libxml2 libxml2-utils lzop rsync schedtool \
@@ -195,10 +241,11 @@ setup)
   fi
 
   mkdir -p "$SRC" "$ZIPS" "$CCACHE"
+  ensure_swap
   if [ ! -d "$MANIFEST/.git" ]; then
     git clone -b "$BRANCH" "$REPO" "$MANIFEST"
   fi
-  echo "setup done"
+  echo "setup done: $(nproc) cpus, $(free -g | sed -n '2s/.* \([0-9]*\)$/\1/p') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')"
   ;;
 
 build)
@@ -207,10 +254,15 @@ build)
 # Started by tools/gcp-build.sh inside tmux; writes the exit-code marker
 # that `finish` waits for, whatever happens.
 set -o pipefail
+# Swap lives on the boot disk, which survives a stop/start, but the active
+# swap device does not, so re-enable it here rather than trusting setup.
+swapon --show=NAME --noheadings 2>/dev/null | grep -q . ||
+  sudo swapon "$HOME/swap" 2>/dev/null || true
 cd "$HOME/manifest" || exit 90
 export PATH="$HOME/bin:$PATH"
 export CCACHE_DIR="$HOME/.ccache" ZIP_DIR="$HOME/zips"
 export JOBS=${JOBS:-$(nproc)} VARIANT=${VARIANT:-userdebug}
+export REPO_DEPTH="${REPO_DEPTH:-}"
 export SYNC_JOBS=${SYNC_JOBS:-$(nproc)}
 rm -f "$HOME/build.exit"
 ./build.sh "$HOME/src"
@@ -227,7 +279,7 @@ EOS
   sleep 2
   rm -f "$EXIT"
   tmux new-session -d -s "$SESSION" \
-    "VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+    "VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
   sleep 3
   tmux ls
   echo "started in tmux session '$SESSION'; log: $LOG"
