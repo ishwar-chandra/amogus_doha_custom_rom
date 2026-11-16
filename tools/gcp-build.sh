@@ -132,11 +132,14 @@ publish_release() {
 # settings, passed as arguments because the heredoc is quoted.
 remote_exec() {
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB'" \
+    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH'" \
     <<'REMOTE'
 set -euo pipefail
 MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
 VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
+# The heredoc is quoted, so $JOBS_BUILD/$REPO_DEPTH below are expanded by
+# this remote shell: they have to arrive as arguments, not from the caller.
+JOBS_BUILD=${10} REPO_DEPTH=${11}
 
 BUILD=/mnt/build CACHE=/mnt/cache
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
@@ -152,7 +155,11 @@ mount_ssds() {
     [ -e "$dev" ] || continue
     mountpoint -q "$mnt" && continue
     sudo mkdir -p "$mnt"
-    blkid "$dev" >/dev/null 2>&1 || sudo mkfs.ext4 -F -m 0 "$dev" >/dev/null
+    # Ask about *this* device: plain `blkid $dev` succeeds whenever any
+    # device has a signature (the loop mounts, the boot disk), which would
+    # skip the format and then fail the mount on a bare disk.
+    [ -n "$(sudo blkid -o value -s TYPE "$dev" 2>/dev/null)" ] ||
+      sudo mkfs.ext4 -F -m 0 "$dev" >/dev/null
     sudo mount "$dev" "$mnt"
     sudo chown "$(id -u):$(id -g)" "$mnt"
   done
@@ -164,7 +171,8 @@ ensure_swap() {
   if [ ! -e "$f" ]; then
     fallocate -l "${SWAP_GB}G" "$f" 2>/dev/null ||
       dd if=/dev/zero of="$f" bs=1M count=$((SWAP_GB * 1024)) status=none
-    chmod 600 "$f"; sudo mkswap "$f" >/dev/null
+    chmod 600 "$f"; sudo chown 0:0 "$f"   # mkswap refuses a user-owned file
+    sudo mkswap "$f" >/dev/null
   fi
   swapon --show=NAME --noheadings | grep -qx "$f" || sudo swapon "$f" 2>/dev/null || true
 }
@@ -251,7 +259,11 @@ export PATH="$HOME/bin:$PATH"
 export CCACHE_DIR="$CACHE/ccache" ZIP_DIR="$BUILD/zips" TMPDIR="$BUILD/tmp"
 mkdir -p "$TMPDIR"
 export JOBS=${JOBS:-$(nproc)} VARIANT=${VARIANT:-userdebug}
-export REPO_DEPTH="${REPO_DEPTH:-}" SYNC_JOBS=${SYNC_JOBS:-$(nproc)}
+export REPO_DEPTH="${REPO_DEPTH:-}"
+# SYNC_JOBS can arrive as the literal word "nproc", which repo -j rejects,
+# so resolve it here where nproc means this machine.
+case "${SYNC_JOBS:-nproc}" in nproc|"") SYNC_JOBS=$(nproc) ;; esac
+export SYNC_JOBS
 # The swap device does not survive a reboot even though the file does.
 swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$CACHE/swap" ||
   sudo swapon "$CACHE/swap" 2>/dev/null || true
@@ -269,7 +281,7 @@ EOS
         pkill -f "repo/main.py" 2>/dev/null || true
         sleep 2; rm -f "$EXIT"
         tmux new-session -d -s "$SESSION" \
-          "VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+          "VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
         sleep 3; tmux ls
         echo "started in tmux '$SESSION'; log: $LOG" ;;
 
