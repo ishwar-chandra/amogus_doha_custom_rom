@@ -212,7 +212,10 @@ fi
 set +eu
 source build/envsetup.sh
 breakfast "$DEVICE" "$VARIANT" || exit 1
-mka -j"$JOBS" target-files-package bacon || exit 1
+# bacon alone: crDroid's OTA packaging uses the target-files staging
+# directory and deletes it afterwards. Asking for target-files-package as
+# well makes ninja zip that tree while it is being removed (lstat ENOENT).
+mka -j"$JOBS" bacon || exit 1
 set -eu
 
 if [ -z "${ADB_KEY:-}" ]; then

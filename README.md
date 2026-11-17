@@ -106,8 +106,7 @@ Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
    deleted is reset to its synced commit.
 3. Creates the empty file `device/motorola/amogus_doha/kernel-headers`
    (see [the kernel headers fix](#kernel-headers)).
-4. Runs `breakfast amogus_doha userdebug` and
-   `mka target-files-package bacon`.
+4. Runs `breakfast amogus_doha userdebug` and `mka bacon`.
 5. Copies the zip, `boot.img`, `dtbo.img` and `vbmeta.img` into
    `~/doha/zips`, with a `.sha256sum` file.
 
@@ -379,7 +378,11 @@ first section.
   target-files intermediates instead of hard-linking them as LineageOS
   does, so the zip is taken from `out/target/product/amogus_doha/` and
   the images from `PRODUCT_OUT` rather than the deleted `IMAGES/`
-  directory.
+  directory. For the same reason the build asks only for `bacon`:
+  adding `target-files-package` makes ninja zip the staging tree that
+  bacon is deleting, which fails with `lstat ...: No such file or
+  directory` (the OTA is built from the staging directory, not from
+  that zip).
 
 ### Android 17
 

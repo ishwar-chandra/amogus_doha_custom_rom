@@ -27,7 +27,7 @@ build.sh
   2. per patches/<project path>.patch: git reset --hard && git clean -fd,
      render placeholders, git apply --whitespace=nowarn
   3. create empty file device/motorola/amogus_doha/kernel-headers
-  4. breakfast amogus_doha userdebug  &&  mka target-files-package bacon
+  4. breakfast amogus_doha userdebug  &&  mka bacon
   5. copy crDroidAndroid-*.zip + boot/dtbo/vbmeta images + .sha256sum to ZIP_DIR
 ```
 

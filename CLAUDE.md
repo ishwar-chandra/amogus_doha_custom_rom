@@ -50,7 +50,7 @@ Or directly on a host with `repo` and the AOSP build deps:
 `build.sh` is the only build entry point. It (1) `repo init`/`repo sync`
 against this clone's manifest, (2) resets each patched project and applies
 `patches/`, (3) creates the empty `kernel-headers` file, (4) runs
-`breakfast amogus_doha userdebug` and `mka target-files-package bacon`,
+`breakfast amogus_doha userdebug` and `mka bacon`,
 (5) copies the zip plus `boot`, `dtbo` and `vbmeta` images and their
 `.sha256sum` to the zip directory.
 
