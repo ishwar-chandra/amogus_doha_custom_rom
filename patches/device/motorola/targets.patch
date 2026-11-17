@@ -48,3 +48,17 @@ index 41e309b..b4a9e82 100644
 +# hardcoding the confirmed-correct path is the pragmatic choice over
 +# further chasing Make product-config inheritance order.
 +PRODUCT_VENDOR_KERNEL_HEADERS := device/motorola/amogus-kernel/kernel-headers
+diff --git a/rom/lineage.mk b/rom/lineage.mk
+index 1fb3410..f3faac1 100644
+--- a/rom/lineage.mk
++++ b/rom/lineage.mk
+@@ -12,6 +12,9 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++# Variant axis, rendered by build.sh: 0 = standard, 1 = debloat.
++DEBLOAT_BUILD := @DEBLOAT@
++
+ # Common
+ include device/motorola/targets/include/common.mk
+ 

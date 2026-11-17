@@ -1,0 +1,33 @@
+diff --git a/app/src/main/java/org/lineageos/updater/data/UpdatesRepository.kt b/app/src/main/java/org/lineageos/updater/data/UpdatesRepository.kt
+index e4f7355..dd47c93 100644
+--- a/app/src/main/java/org/lineageos/updater/data/UpdatesRepository.kt
++++ b/app/src/main/java/org/lineageos/updater/data/UpdatesRepository.kt
+@@ -132,6 +132,15 @@ class UpdatesRepository(
+             Log.d(TAG, "${update.name} is older than current Android version")
+             return false
+         }
++
++        // build.sh renders @UPDATER_CHANNEL@ here. Both channels are signed
++        // with the same testkey, so this is the only thing that stops a
++        // standard build from installing a debloat zip (and vice versa).
++        val channelIsDebloat = "@UPDATER_CHANNEL@" == "debloat"
++        if (update.name.contains("-debloat") != channelIsDebloat) {
++            Log.d(TAG, "${update.name} is from the other channel")
++            return false
++        }
+         return true
+     }
+ }
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 178141b..06fa8b6 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -22,7 +22,7 @@
+         Optional placeholders replaced at runtime:
+           {device} - Device name
+     -->
+-    <string name="updater_server_url" translatable="false">https://raw.githubusercontent.com/crdroidandroid/android_vendor_crDroidOTA/17.0/{device}.json</string>
++    <string name="updater_server_url" translatable="false">https://raw.githubusercontent.com/ishwar-chandra/doha-ota/main/@UPDATER_CHANNEL@/doha.json</string>
+ 
+     <string name="verification_failed_notification">Verification failed</string>
+     <string name="verifying_download_notification">Verifying update</string>

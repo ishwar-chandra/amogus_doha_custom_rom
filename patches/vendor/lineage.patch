@@ -1,0 +1,70 @@
+diff --git a/config/common_mobile.mk b/config/common_mobile.mk
+index 6dac632..b09f850 100644
+--- a/config/common_mobile.mk
++++ b/config/common_mobile.mk
+@@ -18,9 +18,13 @@ PRODUCT_PACKAGES += \
+     AvatarPicker \
+     Backgrounds \
+     Canvas \
+-    Glimpse \
+     LatinIME
+ 
++ifneq ($(DEBLOAT_BUILD),1)
++PRODUCT_PACKAGES += \
++    Glimpse
++endif
++
+ ifeq ($(PRODUCT_TYPE), go)
+ PRODUCT_PACKAGES += \
+     Launcher3QuickStepGo
+diff --git a/config/common_mobile_full.mk b/config/common_mobile_full.mk
+index bf0f432..e07a03f 100644
+--- a/config/common_mobile_full.mk
++++ b/config/common_mobile_full.mk
+@@ -8,9 +8,13 @@ PRODUCT_PACKAGES += \
+     Camelot \
+     Etar \
+     Profiles \
++    Seedvault
++
++ifneq ($(DEBLOAT_BUILD),1)
++PRODUCT_PACKAGES += \
+     Recorder \
+-    Seedvault \
+     Twelve
++endif
+ 
+ ifneq ($(PRODUCT_NO_CAMERA),true)
+ PRODUCT_PACKAGES += \
+diff --git a/config/crdroid.mk b/config/crdroid.mk
+index a959e7e..874e5e3 100644
+--- a/config/crdroid.mk
++++ b/config/crdroid.mk
+@@ -44,17 +44,24 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += \
+ PRODUCT_PACKAGES += \
+     AxSandbox \
+     AxThemeStore \
++    OmniJaws \
++    OmniStyle
++
++# Optional extras: left out of the debloat variant.
++ifneq ($(DEBLOAT_BUILD),1)
++PRODUCT_PACKAGES += \
+     BatteryStatsViewer \
+     GameSpace \
+     LMOFreeform \
+-    LMOFreeformSidebar \
+-    OmniJaws \
+-    OmniStyle
++    LMOFreeformSidebar
++endif
+ 
+ ifneq ($(TARGET_DISABLE_MATLOG),true)
++ifneq ($(DEBLOAT_BUILD),1)
+ PRODUCT_PACKAGES += \
+     MatLog
+ endif
++endif
+ 
+ # DeviceAsWebcam
+ ifeq ($(TARGET_BUILD_DEVICE_AS_WEBCAM), true)
