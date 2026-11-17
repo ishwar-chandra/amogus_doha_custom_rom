@@ -82,7 +82,9 @@ VARIANT=${VARIANT:-userdebug}
 # help: the global cap is what a create trips over), so 12 vCPU is the widest
 # machine that can be created today. Raise the quota, then MACHINE=n2-custom-16-49152.
 MACHINE=${MACHINE:-n2-custom-12-49152}
-SSD_COUNT=${SSD_COUNT:-1}
+# GCP attaches local SSDs in multiples of two (0, 2, 4, 8, 16, 24); one
+# is rejected by the API, so two is the smallest usable count.
+SSD_COUNT=${SSD_COUNT:-2}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-50GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
@@ -473,10 +475,13 @@ case "${1:-}" in
 create)
   extra=()
   [ "$HOURS" != 0 ] && extra=(--max-run-duration="$((HOURS * 3600))s" --instance-termination-action=DELETE)
-  # One device is enough (tree + ccache + swap = ~331 of 369 GB); the second is
-  # only a convenience when caches are meant to outlive a rebuild.
-  ssd=(--local-ssd interface=nvme,size=375gb)
-  [ "${SSD_COUNT:-1}" = 2 ] && ssd+=(--local-ssd interface=nvme,size=375gb)
+  case "${SSD_COUNT:-2}" in
+    0|2|4|8|16|24) ;;
+    *) echo "SSD_COUNT=${SSD_COUNT:-2} is not allowed: GCP takes 0, 2, 4, 8, 16 or 24 local SSDs." >&2
+       exit 1 ;;
+  esac
+  ssd=()
+  for _ in $(seq 1 "${SSD_COUNT:-2}"); do ssd+=(--local-ssd interface=nvme,size=375gb); done
   # Fail before the create with a readable reason: a 16-vCPU machine on a
   # 12-vCPU global quota costs nothing to attempt but confuses the log.
   want=$(gcloud_ compute machine-types describe "$SYNC_MACHINE" --format='value(guestCpus)' 2>/dev/null || echo "")
@@ -494,7 +499,7 @@ create)
     "${ssd[@]}" \
     --no-boot-disk-auto-delete \
     "${extra[@]}" --scopes cloud-platform
-  echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-1}x 375 GB NVMe). Next: config, setup, build" ;;
+  echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-2}x 375 GB NVMe). Next: config, setup, build" ;;
 
 config)
   CONF=${RCLONE_CONF:-$HOME/.config/rclone/rclone.conf}
