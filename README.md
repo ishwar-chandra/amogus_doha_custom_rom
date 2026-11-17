@@ -252,10 +252,9 @@ Magisk app and flash it:
 
 1. Install the Magisk app (31.1 or newer) from
    [its GitHub releases](https://github.com/topjohnwu/Magisk/releases).
-2. Copy `crDroidAndroid-17.0-*-boot.img` from the release you have
-   installed to the phone. In Magisk, tap **Install**, choose **Patch
-   firmware / image** and select that file. The app saves
-   `magisk_patched-*.img` in Downloads.
+2. Copy `boot.img` from the release you have installed to the phone. In
+   Magisk, tap **Install**, choose **Patch firmware / image** and select
+   that file. The app saves `magisk_patched-*.img` in Downloads.
 3. Copy the patched image to your computer and flash it to the active
    slot:
    ```sh
