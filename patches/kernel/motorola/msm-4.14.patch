@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/vendor/amogus_defconfig
-index 2ac915b04add..866954d2dc75 100644
+index 2ac915b04..866954d2d 100644
 --- a/arch/arm64/configs/vendor/amogus_defconfig
 +++ b/arch/arm64/configs/vendor/amogus_defconfig
 @@ -179,6 +179,7 @@ CONFIG_DEFAULT_USE_ENERGY_AWARE=y
@@ -19,7 +19,7 @@ index 2ac915b04add..866954d2dc75 100644
  CONFIG_PROC_SYSCTL=y
  CONFIG_PROC_PAGE_MONITOR=y
 diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
-index b70156a71f98..1dddc40ff13f 100755
+index b70156a71..1dddc40ff 100755
 --- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 +++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 @@ -265,8 +265,15 @@ int fts_fw_resume(bool need_reset)
@@ -51,8 +51,21 @@ index b70156a71f98..1dddc40ff13f 100755
          FTS_INFO("download fw from bootimage");
          ret = fts_fw_download(upg->fw, upg->fw_length, need_reset);
      } else {
+diff --git a/drivers/power/supply/qcom/qpnp-smb2.c b/drivers/power/supply/qcom/qpnp-smb2.c
+index c0e59cec2..36867d5cb 100644
+--- a/drivers/power/supply/qcom/qpnp-smb2.c
++++ b/drivers/power/supply/qcom/qpnp-smb2.c
+@@ -1148,7 +1148,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
+ 		val->intval = chg->fcc_stepper_enable;
+ 		break;
+ 	default:
+-		pr_err("batt power supply prop %d not supported\n", psp);
++		pr_debug("batt power supply prop %d not supported\n", psp);
+ 		return -EINVAL;
+ 	}
+ 
 diff --git a/fs/proc/Kconfig b/fs/proc/Kconfig
-index 08dce22afec1..967de641703d 100644
+index 08dce22af..967de6417 100644
 --- a/fs/proc/Kconfig
 +++ b/fs/proc/Kconfig
 @@ -88,3 +88,14 @@ config PROC_UID
@@ -71,7 +84,7 @@ index 08dce22afec1..967de641703d 100644
 +	  This is a workaround to allow recovery-as-boot A/B devices that
 +	  launched with Android 9 to use two-stage init.
 diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
-index 403cbb12a6e9..18c32e2b4475 100644
+index 403cbb12a..18c32e2b4 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
 @@ -3,10 +3,51 @@
@@ -137,7 +150,7 @@ index 403cbb12a6e9..18c32e2b4475 100644
  	return 0;
  }
 diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
-index 709a1f6cf8c9..8402cf4b3554 100644
+index 709a1f6cf..8402cf4b3 100644
 --- a/include/uapi/linux/nl80211.h
 +++ b/include/uapi/linux/nl80211.h
 @@ -4273,6 +4273,7 @@ enum nl80211_mfp {
@@ -149,7 +162,7 @@ index 709a1f6cf8c9..8402cf4b3554 100644
  
  /**
 diff --git a/init/initramfs.c b/init/initramfs.c
-index 33fdbdc19ad7..431ea8fa60cf 100644
+index 33fdbdc19..431ea8fa6 100644
 --- a/init/initramfs.c
 +++ b/init/initramfs.c
 @@ -614,7 +614,7 @@ static int __init skip_initramfs_param(char *str)
@@ -162,7 +175,7 @@ index 33fdbdc19ad7..431ea8fa60cf 100644
  }
  __setup("skip_initramfs", skip_initramfs_param);
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 51ce59fec545..270161f592b9 100644
+index 51ce59fec..270161f59 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
 @@ -7153,8 +7153,15 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
@@ -183,7 +196,7 @@ index 51ce59fec545..270161f592b9 100644
  	/*
  	 * Cache the old values so that they can be restored
 diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
-index bdddc2ec3311..ee6263bf79fd 100644
+index bdddc2ec3..ee6263bf7 100644
 --- a/net/wireless/nl80211.c
 +++ b/net/wireless/nl80211.c
 @@ -8238,7 +8238,8 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
@@ -197,7 +210,7 @@ index bdddc2ec3311..ee6263bf79fd 100644
  
  static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 diff --git a/scripts/extract-cert.c b/scripts/extract-cert.c
-index dd1a4bd706a2..1f5bacf6ee7b 100644
+index dd1a4bd70..1f5bacf6e 100644
 --- a/scripts/extract-cert.c
 +++ b/scripts/extract-cert.c
 @@ -119,6 +119,9 @@ int main(int argc, char **argv)
@@ -219,7 +232,7 @@ index dd1a4bd706a2..1f5bacf6ee7b 100644
  		BIO *b;
  		X509 *x509;
 diff --git a/scripts/sign-file.c b/scripts/sign-file.c
-index 12acc70e5a7a..d8861cd00cdc 100644
+index 12acc70e5..d8861cd00 100644
 --- a/scripts/sign-file.c
 +++ b/scripts/sign-file.c
 @@ -144,6 +144,9 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
@@ -241,7 +254,7 @@ index 12acc70e5a7a..d8861cd00cdc 100644
  	} else {
  		BIO *b;
 diff --git a/usr/Kconfig b/usr/Kconfig
-index 8b4826de1189..de9d04f2c0be 100644
+index 8b4826de1..de9d04f2c 100644
 --- a/usr/Kconfig
 +++ b/usr/Kconfig
 @@ -32,6 +32,17 @@ config INITRAMFS_FORCE
