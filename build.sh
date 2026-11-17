@@ -227,6 +227,30 @@ breakfast "$DEVICE" "$VARIANT" || exit 1
 mka -j"$JOBS" bacon || exit 1
 set -eu
 
+# The launcher's preview path is used by Recents and the widget picker, and this
+# build has twice shipped it with a resources.arsc older than its own code: the
+# missing drawable crashes LauncherAppWidgetHostView, and the interrupted bind
+# leaves the workspace "loading", which silently disables every drag on the home
+# screen (icons cannot be moved, folders cannot be made). A module-level clean
+# does not fix it, only a build from an empty out/ does -- so fail here instead
+# of handing out a zip whose launcher is already broken.
+launcher_apk=$(find "$product" -path '*priv-app*' -name 'Launcher3*.apk' 2>/dev/null | head -1)
+if [ -n "$launcher_apk" ]; then
+  aapt2_bin=$SRC/out/host/linux-x86/bin/aapt2
+  if [ -x "$aapt2_bin" ]; then
+    if "$aapt2_bin" dump resources "$launcher_apk" 2>/dev/null | grep -q widget_internal_focus_bg; then
+      echo "launcher resource table OK (widget_internal_focus_bg present)"
+    else
+      echo "ERROR: $(basename "$launcher_apk") has no widget_internal_focus_bg." >&2
+      echo "       Code and resource table are out of step (stale resources.arsc)." >&2
+      echo "       Delete out/ (or the Launcher3 intermediates) and build again." >&2
+      exit 1
+    fi
+  else
+    echo "WARNING: no aapt2 at $aapt2_bin; launcher resources unverified" >&2
+  fi
+fi
+
 if [ -z "${ADB_KEY:-}" ]; then
   for f in "${key_files[@]}"; do
     [ ! -e "$f" ] || { echo "$f exists in a build without ADB_KEY" >&2; exit 1; }

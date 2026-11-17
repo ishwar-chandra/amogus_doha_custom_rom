@@ -79,6 +79,40 @@ unlocked`) before the next flash; if it is genuinely locked, `fastboot flash` wi
 - `WindowOrganizerController: Attempting to externally change a non-organized container` when
   apps close — known WM noise, not device-specific.
 
+### D7 — Home-screen icons cannot be moved: the workspace never leaves "loading" (high, not a feature)
+
+Reported after the launcher crash: long-press an icon, the drag never starts, the item snaps back,
+and the home screen feels stuck. It is **not** a lock-layout feature — Launcher3 has no user-facing
+workspace lock; the flag behind it is the load state. Proof from this bugreport's launcher dump:
+
+```
+mWorkspaceLoading=true mPendingRequestArgs=null
+```
+
+in both snapshots (18:13 and 18:29, ~75 min after the crash), while the icons themselves are drawn.
+
+The chain, from `packages/apps/Launcher3` at branch 17.0:
+
+- `Launcher.isWorkspaceLocked()` returns `isWorkspaceLoading() || mPendingRequestArgs != null`
+  (Launcher.java:2643) — `mPendingRequestArgs` was null, so the load flag is what locks it.
+- `ItemLongClickListener.canStartDrag` refuses when `launcher.isWorkspaceLocked()`
+  (ItemLongClickListener.java:145) — that is the "cannot move anything" symptom, and the same flag
+  also gates add-to-workspace, folder creation and widget drops (Workspace.java:908, 973, 1045, 1162).
+- `workspaceLoading` is set `true` in `startBinding()` and cleared in exactly one place:
+  `finishBindingItems()`, *after* `workspace.restoreInstanceStateForRemainingPages()`
+  (ModelCallbacks.kt:195). A throw during that restore — the same resource damage as D1 — leaves the
+  flag true for the rest of the session. Only a process restart resets it, and the next bind can hit
+  the same path again.
+
+So D1 and D7 are one root cause with two symptoms: the launcher APK's resource table is older than
+its code. Fixes in the kit:
+
+- `patches/packages/apps/Launcher3.patch`: the missing-drawable `setBackgroundResource` is wrapped so
+  a bad table costs one background instead of the process, and `workspaceLoading` is cleared in a
+  `finally` so no failure can lock the home screen for the session.
+- `build.sh` now refuses to finish a build whose launcher APK lacks `widget_internal_focus_bg`
+  (`aapt2 dump resources`), so the stale-table build cannot be flashed again.
+
 ### D4 — GMS crashes on the platform's Safety Center source list (medium, no user-visible break)
 
 Three crashes inside 11 s on the 09:06 build, all the same:

@@ -1,0 +1,42 @@
+diff --git a/src/com/android/launcher3/ModelCallbacks.kt b/src/com/android/launcher3/ModelCallbacks.kt
+index 1709ee1..eb68c60 100644
+--- a/src/com/android/launcher3/ModelCallbacks.kt
++++ b/src/com/android/launcher3/ModelCallbacks.kt
+@@ -191,8 +191,15 @@ class ModelCallbacks(private var launcher: Launcher) : BgDataModel.Callbacks {
+     private fun finishBindingItems(pagesBoundFirst: IntSet?) {
+         TraceHelper.INSTANCE.beginSection("finishBindingItems")
+         val deviceProfile = launcher.deviceProfile
+-        launcher.workspace.restoreInstanceStateForRemainingPages()
+-        workspaceLoading = false
++        // A throw here used to leave workspaceLoading true for the rest of the
++        // session, and isWorkspaceLocked() then refuses every drag: icons cannot be
++        // moved, folders cannot be made, widgets cannot be dropped. The flag has to
++        // clear even when restoring a page fails.
++        try {
++            launcher.workspace.restoreInstanceStateForRemainingPages()
++        } finally {
++            workspaceLoading = false
++        }
+         launcher.processActivityResult()
+         val currentPage =
+             if (pagesBoundFirst != null && !pagesBoundFirst.isEmpty)
+diff --git a/src/com/android/launcher3/widget/LauncherAppWidgetHostView.java b/src/com/android/launcher3/widget/LauncherAppWidgetHostView.java
+index cea412f..9c8cd6d 100644
+--- a/src/com/android/launcher3/widget/LauncherAppWidgetHostView.java
++++ b/src/com/android/launcher3/widget/LauncherAppWidgetHostView.java
+@@ -108,7 +108,14 @@ public class LauncherAppWidgetHostView extends BaseLauncherAppWidgetHostView
+             setCustomActionsListener(WorkspaceWidgetCustomActionsListener.INSTANCE);
+         }
+         setAccessibilityDelegate(mActivityContext.getAccessibilityDelegate());
+-        setBackgroundResource(R.drawable.widget_internal_focus_bg);
++        // This view is inflated from many places, including the previews Recents
++        // builds, so a resource table that is out of step with these sources takes
++        // the whole launcher down instead of losing one background.
++        try {
++            setBackgroundResource(R.drawable.widget_internal_focus_bg);
++        } catch (android.content.res.Resources.NotFoundException e) {
++            Log.w(TAG, "widget_internal_focus_bg missing from this build", e);
++        }
+         if (Flags.enableFocusOutline()) {
+             setDefaultFocusHighlightEnabled(false);
+             mFocusRectOutsets = context.getResources().getDimensionPixelSize(

@@ -212,3 +212,15 @@ Caveats worth remembering:
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
 - [ ] D6 keystore2 attestation errors: documented in BUGREPORT §D6, no action.
+
+## Home-screen drag (D7), from the 18:29 report
+
+- [x] Root cause: `mWorkspaceLoading=true` forever → `isWorkspaceLocked()` → `canStartDrag` false.
+      Not a lock feature; cleared only in `finishBindingItems()`, after a restore that can throw.
+- [x] `patches/packages/apps/Launcher3.patch` (verified with `git apply --check` on pristine
+      `0be34a1`): try/catch around the widget-host background, and `try/finally` around the page
+      restore so the loading flag always clears.
+- [x] `build.sh` gate: fails the build if the launcher APK has no `widget_internal_focus_bg`.
+- [ ] Verify on the next flash: long-press an icon and drag it across pages; then
+      `adb shell dumpsys activity service com.android.launcher3/.LauncherProxyService | grep mWorkspaceLoading`
+      must say `false`.
