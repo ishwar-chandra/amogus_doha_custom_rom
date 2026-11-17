@@ -224,3 +224,11 @@ Caveats worth remembering:
 - [ ] Verify on the next flash: long-press an icon and drag it across pages; then
       `adb shell dumpsys activity service com.android.launcher3/.LauncherProxyService | grep mWorkspaceLoading`
       must say `false`.
+- [ ] D8 Wi-Fi RTT: no `IWifiRttController` published, so indoor ranging fails. Needs the vendor
+      Wi-Fi HAL sources to tell "HAL lacks RTT" from "feature off in config"; nothing to patch blind.
+- [ ] D9 IMEI in Settings: `user` build restriction (`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`), not a
+      bug to fix; documented so it is not re-reported.
+- [ ] D10 fingerprint `on_error 5`: single cancel during verify. Only actionable if it repeats every
+      unlock — then it is placement/`g_finger_lost_detec`, not the HAL.
+- [ ] D11 audio perf lock: the HAL asks the perf HAL for a boost and gets `Incorrect params`; no perf
+      HAL is in the image. Cosmetic, no audio defect observed.

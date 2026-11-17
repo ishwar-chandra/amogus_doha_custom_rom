@@ -356,6 +356,18 @@ Known issues:
 - After a fresh install from stock, the first boot may find only 2G.
   One more reboot fixes it.
 
+### Checking a running build
+
+```sh
+./tools/device-check.sh                 # PASS/WARN/FAIL health check over adb, exit code = failures
+adb bugreport ./br.zip                  # from the phone, while the problem is happening
+./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
+```
+
+`bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
+handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
+noise that only appears inside the dump). `BUGREPORT.md` is the record of what that sweep found.
+
 ## Differences from an official crDroid device
 
 This build isn't official, and crDroid has no doha maintainer. Against

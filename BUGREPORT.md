@@ -165,6 +165,83 @@ Keymaster on this device has no provisioned attestation keys, so keys are genera
 be attested. Consequence: Play Integrity basic checks may pass via the SafetyNet spoof, but
 hardware attestation does not exist; nothing to fix in the ROM and no app misbehaviour observed.
 
+### D8 — No Wi-Fi RTT service (low, feature missing)
+
+`SystemServiceRegistry: No service published for: wifirtt` (23 times, every time an app asks).
+The Wi-Fi HAL never publishes `IWifiRttController`, so 802.11mc ranging — what apps use for
+room-level indoor positioning — is unavailable. Nothing crashes; features that call it get a
+`ServiceNotFoundException`. Either the vendor Wi-Fi HAL lacks RTT or the feature flag is off in the
+device config; would need the HAL sources to confirm.
+
+### D9 — Settings cannot show the IMEI (cosmetic, by design)
+
+`ImeiPreference: PrimaryImei not available` 112 times, i.e. every time About → IMEI is opened. The
+telephony service refuses `getDeviceId` on a `user` build without the privileged permission, which
+is exactly what `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG` gives us. Settings shows an empty field
+instead of the IMEI. Not fixable without weakening the build; the IMEI is on the box and readable
+with `fastboot getvar` anyway.
+
+### D10 — Fingerprint HAL error 5 once (watch item)
+
+```
+E FingerprintHal: [fingerprint.c] [on_error_msg:361] on_error 5
+E FingerprintHal: [fingerprint.c] [fingerprint_cancel:976] ets_fp_verify_finger(), fps_cancel
+                 g_finger_lost_detec
+```
+
+One occurrence, during an unlock: the sensor reported "finger lost" while verifying and the HAL
+cancelled. Error 5 is a cancel, so the worst case is a retry. Only if it repeats per unlock is it a
+sensor/placement problem rather than normal cancellation.
+
+### D11 — Audio HAL cannot take a perf lock (cosmetic)
+
+`audio_hw_extn: audio_extn_perf_lock_acquire: Incorrect params, Failed to acquire perf lock` ×18,
+followed by `out_write: retry previous failed cal level set`. The QTI audio HAL asks the perf HAL
+for a boost and gets its arguments rejected; audio still plays, the boost just never happens. No
+perf HAL is present in this image (only the cameraservice/audio/sensorservice HALs are registered),
+which matches the failure.
+
+## 8. Full-sweep inventory (tools/bugreport-scan.py)
+
+`tools/bugreport-scan.py` runs the same analysis over any bugreport zip and groups every error tag
+with a sample, so this section is reproducible rather than hand-collected.
+
+Crashes in the 4 h capture (boot 14:36:26 → report 18:31): **3 × GMS (D4), 1 × Launcher3 (D1)**.
+No ANRs, no native crashes, no `system_server` restarts, no watchdog kills, no `SYSTEM TOMBSTONE`,
+no LMK kills, no thermal trips, no `Davey`/`Slow dispatch` samples. Battery: 159 mAh computed over
+the session, screen 53.5 mAh, wakelocks 0.06 mAh, camera 1.2 mAh.
+
+| Count | Tag | Verdict |
+| --- | --- | --- |
+| 301 | `android.system.suspend-service` wakelock stats | D5, sepolicy |
+| 130 | `AndroidRuntime` `Unexpected safety source: AdvancedProtection` | D4, platform/GApps |
+| 112 | `ImeiPreference` | D9, `user` build |
+| 91 | `VendorCaps: Failed to read platform VT driver version` | vendor lib probing a VT driver; benign |
+| 90 | `QC2V4l2Driver: queryControl failed id 992077` | video *decoder* vendor control query (`avcD_0`, `hevcD_0`); benign, not the camera |
+| 70 | `YT.mlplayer` / `YT.qoe` | YouTube's own player/analytics |
+| 36 | `StandardCaps: FrameRateInputHelper queryParamRanges failed` | encoder caps probe; benign |
+| 25 | `TransitionChain: Can't collect into a chain` | WM noise |
+| 23 | `SystemServiceRegistry: No service published for: wifirtt` | D8 |
+| 21 | `sensors-hal: mot_disprot_event` | Motorola rotation sensor, expected |
+| 20 | `iftw: Trace … timed out after 1457038 ms` | GMS trace plumbing, app side |
+| 18 | `audio_hw_extn` perf lock | D11 |
+| 13 | `OMX-VDEC-1080P: extension not implemented` | optional codec extension, benign |
+| 13 | `system_server: poll() failed: Interrupted system call` | EINTR on a signal, expected |
+| 12 | `KeyMasterHalDevice: Attest key send cmd failed` | D6 |
+| 10 | `ConsumerBase: abandonLocked` | screen-record/camera pipeline teardown |
+| 10 | `Settings: Invalid resource ID 0x00000000` | benign null id (see below) |
+| 10 | `QcrilOemhookMsgTunnel: Unexpected serial number` | RIL oemhook noise |
+
+One hypothesis to kill before someone chases it: `Invalid resource ID 0x00000001…0x00000010` appears
+in Launcher3 (7×) and SystemUI (8×), all at **18:29:56**, i.e. inside the dumpstate run — a dump
+artifact, not runtime damage. Only the launcher's `0x7f082f07` (D1) is a real missing resource.
+`knrq: Previous channel … garbage collected` (804×) is GMS 26.45.31's own gRPC bookkeeping, uid
+10225, not a platform defect.
+
+Also expected with an AOSP launcher plus GMS: `Unable to start service Intent {
+act=com.android.launcher3.WINDOW_OVERLAY … pkg=com.google.android.googlequicksearchbox }` — the
+Google app looks for its launcher overlay in its own package, which only the Google launcher has.
+
 ## 2. Fixed: the earlier boot-animation hang (slot mismatch)
 
 The previous ROM hung at the boot animation. Root cause: the images were flashed into the slot
