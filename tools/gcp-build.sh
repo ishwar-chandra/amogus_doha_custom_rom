@@ -85,7 +85,10 @@ SYNC_JOBS=${SYNC_JOBS:-nproc}
 REPO_DEPTH=${REPO_DEPTH-1}
 REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
 BRANCH=${BRANCH:-crdroid-android-17}
-OUT=${OUT:-$PWD/gcp-out}
+# Repo root, not $PWD: the script may be started from anywhere (tools/, or an
+# absolute path), and the defaults must still point at this checkout.
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+OUT=${OUT:-$ROOT/gcp-out}
 SESSION=doha
 BACKUP_REMOTE=${BACKUP_REMOTE:-gdrive:doha-backup}
 RCLONE_REMOTE=${RCLONE_REMOTE:-gdrive}
@@ -474,7 +477,6 @@ finish)
 build)
   # The VM builds from its own clone of this repo: anything uncommitted or
   # unpushed simply will not be there, which has bitten this project before.
-  ROOT=$(cd "$HERE/.." && pwd)
   if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
     echo "WARN: $ROOT has uncommitted changes; the VM builds origin/$BRANCH only" >&2
   fi
