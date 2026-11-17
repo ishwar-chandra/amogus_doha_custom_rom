@@ -97,6 +97,9 @@ tools/gcp-build.sh logs       # tail -f the build log
 tools/gcp-build.sh att        # attach to the tmux session (Ctrl-b d to detach)
 tools/gcp-build.sh fetch      # copy zips/ to ./gcp-out locally
 tools/gcp-build.sh finish     # wait, verify, back up, release, delete
+TAG=crdroid-20261117-standard tools/gcp-build.sh release   # release only
+TAG=… OTA_DRY=--dry-run tools/gcp-build.sh ota             # print the feed JSON
+TAG=crdroid-20261117-standard tools/gcp-build.sh ota       # write <channel>/doha.json
 tools/gcp-build.sh delete     # delete the VM now
 ```
 

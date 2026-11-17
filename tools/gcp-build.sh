@@ -12,6 +12,8 @@
 #   att|logs|state|ssh|fetch|delete
 #   backup|restore|check     Drive backup of .repo + ccache + zips
 #   release                  publish zips/ as a GitHub release
+#   ota <tag> <owner/repo>   write <channel>/doha.json to the OTA feed repo
+#                            (--dry-run prints the JSON, publishes nothing)
 #
 # Typical session:  create; config; setup; build; finish
 #
@@ -94,6 +96,7 @@ BACKUP_REMOTE=${BACKUP_REMOTE:-gdrive:doha-backup}
 RCLONE_REMOTE=${RCLONE_REMOTE:-gdrive}
 RCLONE_PATH=${RCLONE_PATH:-amogus-doha}
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
+OTA_REPO=${OTA_REPO:-ishwar-chandra/doha-ota}
 TAG=${TAG:-crdroid-$(date +%Y%m%d)}
 TOKEN_FILE=${TOKEN_FILE:-$HOME/.config/crdroid-gh-token}
 # mka's -j comes from the build machine, not from nproc at launch time,
@@ -411,6 +414,46 @@ release) install_gh
             --notes "$(release_notes)" "${assets[@]}" && rm -f "$HOME/.gh_token"
          echo "published $1 to $2" ;;
 
+ota)  [ -n "$1" ] || { echo "usage: ota <tag> <owner/repo> [--dry-run]" >&2; exit 1; }
+      channel=standard
+      case $1 in *-debloat) channel=debloat ;; esac
+      prop=""
+      for c in "$SRC/out/target/product/amogus_doha/system/build.prop" \
+               "$SRC/out/target/product/amogus_doha/obj/ETC/system_build_prop_intermediates/build.prop"; do
+        [ -s "$c" ] && prop=$c && break
+      done
+      [ -n "$prop" ] || { echo "no build.prop yet: the build has not packaged" >&2; exit 1; }
+      if [ "$channel" = debloat ]; then
+        zip=$(ls "$ZIPS"/*-debloat.zip 2>/dev/null | grep -v -- -adbkey | head -1)
+      else
+        zip=$(ls "$ZIPS"/*.zip 2>/dev/null | grep -v -- -debloat | grep -v -- -adbkey | tail -1)
+      fi
+      [ -n "$zip" ] || { echo "no $channel zip in $ZIPS" >&2; exit 1; }
+      dt=$(sed -n 's/^ro.build.date.utc=//p' "$prop" | head -1)
+      rtype=$(sed -n 's/^ro.build.type=//p' "$prop" | head -1)
+      ver=$(sed -n 's/^ro.cm.version=//p' "$prop" | head -1)
+      [ -n "$ver" ] || ver=$(sed -n 's/^ro.crdroid.version=//p' "$prop" | head -1)
+      base=$(basename "$zip")
+      id=$(sha256sum "$zip" | cut -d' ' -f1)
+      size=$(stat -c %s "$zip")
+      body=$(printf '{\n  "response": [\n    {\n      "datetime": %s,\n      "filename": "%s",\n      "id": "%s",\n      "romtype": "%s",\n      "size": %s,\n      "url": "https://github.com/%s/releases/download/%s/%s",\n      "version": "%s"\n    }\n  ]\n}\n' \
+             "${dt:-0}" "$base" "$id" "${rtype:-userdebug}" "$size" "$2" "$1" "$base" "${ver:-13.1}")
+      if [ "$3" = --dry-run ]; then printf '%s\n' "$body"; exit 0; fi
+      [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
+      token=$(cat "$HOME/.gh_token")
+      api="https://api.github.com/repos/$2/contents/$channel/doha.json"
+      sha=$(curl -fsS -H "Authorization: Bearer $token" "$api" 2>/dev/null \
+              | sed -n 's/.*"sha": "\([^"]*\)".*/\1/p' | head -1)
+      curl -fsS -X PUT -H "Authorization: Bearer $token" \
+        -H "Accept: application/vnd.github+json" \
+        -d "$(python3 -c 'import base64,json,sys
+body,tag,sha=sys.argv[1],sys.argv[2],sys.argv[3]
+d={"message":"ota: "+tag,"content":base64.b64encode(body.encode()).decode()}
+if sha: d["sha"]=sha
+print(json.dumps(d))' "$body" "$1" "$sha")" \
+        "$api" >/dev/null && rm -f "$HOME/.gh_token"
+      echo "published $channel/doha.json to $2" ;;
+
 *) echo "unknown mode: $MODE" >&2; exit 1 ;;
 esac
 REMOTE
@@ -461,6 +504,11 @@ PY
   echo "gh-check passed" ;;
 
 release)  publish_release ;;
+ota)
+  # Writes the feed entry, so the ROM's Updater finds this release. Runs after
+  # the release exists: the JSON points at its download URL.
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
   while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
