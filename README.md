@@ -374,6 +374,7 @@ Known issues:
 ./tools/device-check.sh                 # PASS/WARN/FAIL health check over adb, exit code = failures
 adb bugreport ./br.zip                  # from the phone, while the problem is happening
 ./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
+./tools/app-trace.sh com.anthropic.claude # one app: its logs, screenshot, activity state
 ```
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
