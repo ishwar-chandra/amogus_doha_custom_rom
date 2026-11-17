@@ -6,54 +6,9 @@ references are from the hardware session on 2026-11-16 (device
 ZF6522633X, XT2019-1, build `24.0-20261113-UNOFFICIAL-amogus_doha`,
 kernel `4.14.357-openela+ #16`).
 
-## Fixed, needs a release
-
-- [x] **Random reboots while idle.** With double tap to wake on (the
-  default), the FocalTech and Himax touch drivers kept their IRQ enabled
-  in gesture mode and read touch data over SPI while the controller was
-  suspending, ending in a hardware reset. Reproduced by tapping the
-  screen with it off and on battery.
-  Fixed by kernel `03f0501e6470` ("input: touchscreen: keep the IRQ
-  thread off SPI during system suspend"), a direct child of the commit
-  both branches pinned. `lineage-24.0` had it as v2.0.1; this branch now
-  pins it too. **Still to do: rebuild crDroid so it carries the fix, and
-  sideload v2.0.1 on the test phone.**
-
-- [x] **Double tap to sleep: works, it is two settings, not a bug** (checked on the
-  running build 1794906363 with the phone attached):
-  - status bar: `Settings.Secure.double_tap_to_sleep` was **0**, so nothing happened.
-    Set to 1, `input tap` twice on the status bar drove `mWakefulness=Dozing` — the
-    consumer is `framework.jar` (PhoneWindowManager), the toggle is Settings ->
-    Status bar -> "Double tap to sleep" (`status_bar_double_tap_to_sleep_title`).
-  - lock screen: `Settings.System.double_tap_sleep_lockscreen=1` (default on) and it
-    sleeps on a double tap; verified the same way.
-  - home screen / wallpaper: **not implemented** in crDroid's Launcher3 (branch
-    17.0). The aconfig flag `double_tap_to_sleep` exists in `aconfig/launcher.aconfig`
-    ("Enables double tap to sleep gesture on launcher") but nothing in `src/` or
-    `quickstep/src/` reads it, and no code calls `goToSleep`/`lockNow`. Adding the
-    gesture is a launcher feature, not a fix.
-
 ## Open, being investigated
 
-- [ ] **Double tap to wake: patched in the kit, waiting for a build and a flash.**
-  Root cause found in the pinned kernel (`03f0501e`), three gaps, all now covered
-  by `patches/kernel/motorola/msm-4.14.patch`:
-  - `fts_ts_suspend()` only enters gesture mode when `should_enable_gesture` is
-    set, and the only writer is `fts_sensor_set_enable()` — the Moto `dt-gesture`
-    sensor class (`SENSOR_TYPE_MOTO_DOUBLE_TAP`). No Moto service exists in this
-    tree and the device tree ships no Lineage touch HAL, so the flag stayed 0 and
-    the panel went to `FTS_REG_POWER_MODE_SLEEP` on every suspend: a double tap
-    could not be seen at all. Patch defaults it to true.
-  - `focaltech,report_gesture_key` is not in `trinket-doha-touch-overlay.dtsi`, so
-    `fts_gesture_report()` took the `ABS_DISTANCE` branch (Moto sensor class)
-    instead of `KEY_WAKEUP`. Patch reports `KEY_WAKEUP` on the touch input device.
-  - `KEY_WAKEUP` was not in that device's keybit, and input drops keys that are
-    not declared. Patch sets it in `fts_input_init()`.
-  Test on the next flash: screen off, double tap the middle of the display →
-  display wakes; then check standby drain over a night against the previous build
-  (gesture mode keeps the panel powered while asleep). If a double tap no longer
-  wakes but the phone also no longer reboots, that is the PM guard working —
-  collect `adb bugreport` and compare. Upstream issue: doha_android#76.
+
 - [ ] **VoLTE / IMS.** Evidence from the device:
   - the IMS PDN connects, then drops and rebuilds every 5–11 minutes
     (17 transitions in one window, e.g. 20:14 → 20:41 on 11-15), and
@@ -213,28 +168,15 @@ Caveats worth remembering:
 
 ## Variants and OTA (2026-11-17)
 
-- [x] `DEBLOAT=1` switch in `build.sh` (renders `@DEBLOAT@` / `@UPDATER_CHANNEL@`,
-  artifact suffix `-debloat`), documented in README/GUIDE/AGENTS/CLAUDE.
-- [ ] Verify the Launcher3 fix on the next flash: no `Resources$NotFoundException`
-  (`widget_internal_focus_bg`) and no launcher restart loop.
-- [ ] `patches/vendor/lineage.patch`: gate GameSpace, LMOFreeform(+Sidebar),
-  BatteryStatsViewer, MatLog, Twelve, Recorder, Glimpse behind `DEBLOAT_BUILD`.
-  Keep Jelly (browser), Etar (calendar app), ExactCalculator and every role holder
-  (Dialer, messaging, Contacts) in both variants.
-- [ ] `patches/packages/apps/Updater.patch`: endpoint → `doha-ota/<channel>/doha.json`
-  and a `filterUpdates` guard on `update.name` so a build only accepts its own channel.
 - [ ] Create `doha-ota` with `standard/doha.json` and `debloat/doha.json`; add
   `tools/gcp-build.sh ota` to publish build.prop-verified entries.
 - [ ] One-click OTA end-to-end: Settings → System update → install → reboot → slot switch.
 - [ ] GApps on the standard build: Play Store + GMS work (GMS self-updated to 26.45.31);
   roles stay crDroid's until a Google app set is flashed; `AdvancedProtection` is absent
-  from the Safety Center config (see BUGREPORT §8).
+  from the Safety Center config (see BUGREPORT §6).
 
 ## From the 18:29 bugreport (build 09:06)
 
-- [ ] D1 launcher crash survives a module-level clean: gate the next build on
-  `aapt2 dump resources out/target/product/amogus_doha/*/priv-app/Launcher3*/Launcher3*.apk | grep widget_internal_focus_bg`
-  and only then flash. A build from an empty `out/` is the actual fix.
 - [ ] D5 sepolicy: add `allow system_suspend sysfs_batteryinfo:dir r_dir_perms;` and
   `:file r_file_perms;` (174 denials per report, and it is why `suspend-service` cannot read the
   wakeup38 wakelock stats). Regenerate `patches/device/lineage/sepolicy.patch` from the tree.
@@ -246,22 +188,3 @@ Caveats worth remembering:
   fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
   `MEETS_BASIC_INTEGRITY` is reachable.
 
-## Home-screen drag (D7), from the 18:29 report
-
-- [x] Root cause: `mWorkspaceLoading=true` forever → `isWorkspaceLocked()` → `canStartDrag` false.
-      Not a lock feature; cleared only in `finishBindingItems()`, after a restore that can throw.
-- [x] `patches/packages/apps/Launcher3.patch` (verified with `git apply --check` on pristine
-      `0be34a1`): try/catch around the widget-host background, and `try/finally` around the page
-      restore so the loading flag always clears.
-- [x] `build.sh` gate: fails the build if the launcher APK has no `widget_internal_focus_bg`.
-- [ ] Verify on the next flash: long-press an icon and drag it across pages; then
-      `adb shell dumpsys activity service com.android.launcher3/.LauncherProxyService | grep mWorkspaceLoading`
-      must say `false`.
-- [ ] D8 Wi-Fi RTT: no `IWifiRttController` published, so indoor ranging fails. Needs the vendor
-      Wi-Fi HAL sources to tell "HAL lacks RTT" from "feature off in config"; nothing to patch blind.
-- [ ] D9 IMEI in Settings: `user` build restriction (`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`), not a
-      bug to fix; documented so it is not re-reported.
-- [ ] D10 fingerprint `on_error 5`: single cancel during verify. Only actionable if it repeats every
-      unlock — then it is placement/`g_finger_lost_detec`, not the HAL.
-- [ ] D11 audio perf lock: the HAL asks the perf HAL for a boost and gets `Incorrect params`; no perf
-      HAL is in the image. Cosmetic, no audio defect observed.

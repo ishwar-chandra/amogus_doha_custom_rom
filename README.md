@@ -316,12 +316,9 @@ verified for:
   self-updated 25.34.34 → 26.45.31 and ran for minutes without crashing; the
   crDroid default roles stay in place until a Google app set is flashed
 
-Known issue found in this first build and fixed in the next one: the launcher
-crash-looped with `Resources$NotFoundException` for the drawable
-`widget_internal_focus_bg` (stale `resources.arsc` from an incremental build); a
-clean Launcher3 rebuild is in flight, see `BUGREPORT.md` D1. The earlier hang at
-the boot animation was a slot mismatch (images flashed into the slot the OTA then
-replaced) and is prevented by `tools/flash.sh` flashing `--slot=all`.
+The launcher of that first build crashed on `widget_internal_focus_bg` (a stale `resources.arsc`); the
+kit now patches Launcher3 and refuses to finish a build whose launcher APK lacks the drawable, so it
+cannot be shipped again.
 
 The list below is the checklist inherited from the LineageOS 24.0 build on this
 device; those items still have to be re-run on the crDroid releases:
