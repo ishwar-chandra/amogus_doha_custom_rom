@@ -200,3 +200,15 @@ Caveats worth remembering:
 - [ ] GApps on the standard build: Play Store + GMS work (GMS self-updated to 26.45.31);
   roles stay crDroid's until a Google app set is flashed; `AdvancedProtection` is absent
   from the Safety Center config (see BUGREPORT §8).
+
+## From the 18:29 bugreport (build 09:06)
+
+- [ ] D1 launcher crash survives a module-level clean: gate the next build on
+  `aapt2 dump resources out/target/product/amogus_doha/*/priv-app/Launcher3*/Launcher3*.apk | grep widget_internal_focus_bg`
+  and only then flash. A build from an empty `out/` is the actual fix.
+- [ ] D5 sepolicy: add `allow system_suspend sysfs_batteryinfo:dir r_dir_perms;` and
+  `:file r_file_perms;` (174 denials per report, and it is why `suspend-service` cannot read the
+  wakeup38 wakelock stats). Regenerate `patches/device/lineage/sepolicy.patch` from the tree.
+- [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
+  Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
+- [ ] D6 keystore2 attestation errors: documented in BUGREPORT §D6, no action.

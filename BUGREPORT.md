@@ -48,6 +48,18 @@ aapt2 dump resources Launcher3QuickStep.apk | grep widget_internal_focus_bg   # 
 Trigger: any code path that inflates a widget host in a preview (Recents/overview, and the
 widget picker) — i.e. it is not rare; it reproduces while simply using the phone.
 
+**Still present on the 09:06 build** (bugreport captured 18:29, crash at 17:18:45, same
+`0x7f082f07`, same `LauncherAppWidgetHostView.<init>` → `LauncherPreviewRenderer.inflateAndAdd`
+path). So deleting the Launcher3 intermediates before that rebuild did not fix it: the stale
+`resources.arsc` survives a module-level clean because aapt2's output lives in
+`out/…/intermediates/packaged_res` and the APK is only re-linked, not re-packed, when the
+resource *inputs* look unchanged. The reliable form of the fix is a build from an empty `out/`,
+which is what the next VM run does — and the `aapt2 dump resources … | grep
+widget_internal_focus_bg` assertion must gate that build, not the next incremental one.
+
+It is one crash per boot on this build, not a loop: the launcher restarts and the phone stays
+usable, which is why it survived a day of testing unnoticed.
+
 ### D2 — Verified boot reports green / `ro.boot.flash.locked=1` (needs a check, medium)
 
 `ro.boot.verifiedbootstate=green`, `ro.boot.flash.locked=1`, yet fastboot flashed this build
@@ -66,6 +78,58 @@ unlocked`) before the next flash; if it is genuinely locked, `fastboot flash` wi
   expected for `ro.debuggable=0`, no action.
 - `WindowOrganizerController: Attempting to externally change a non-organized container` when
   apps close — known WM noise, not device-specific.
+
+### D4 — GMS crashes on the platform's Safety Center source list (medium, no user-visible break)
+
+Three crashes inside 11 s on the 09:06 build, all the same:
+
+```
+FATAL EXCEPTION: [GmsIntentOperationChimeraService-Executor] idle
+Process: com.google.android.gms
+java.lang.IllegalArgumentException: Unexpected safety source: AdvancedProtection
+    at android.os.Parcel.createExceptionOrNull(Parcel.java:3396)   ← thrown by the *platform*
+```
+
+The binder call goes into the Safety Center service, which validates the source against the
+enum of safety sources the platform build knows. `AdvancedProtection` is newer than the AOSP 17
+list this build compiles, so the platform rejects the call and GMS dies in its intent-operation
+service; it restarts and retries. Not caused by any doha patch — the same signature is reported
+on other Android 17 builds paired with recent GApps packages.
+
+Effect: background GMS work (safety/security check-ins) restarts a few times per boot; Play
+Store and sign-in are unaffected. Fix has to come from the platform side (add the source to the
+`frameworks/base` safety-source enum) or from a GMS version that matches; not worth patching a
+third-party project for.
+
+### D5 — SELinux denials: `system_suspend` cannot read battery sysfs (low, noisy)
+
+263 audit lines, dominated by one pair:
+
+```
+avc: denied { read } for scontext=u:r:system_suspend tcontext=u:object_r:sysfs_batteryinfo
+```
+
+which is also why `android.system.suspend-service` logs `Error opening kernel wakelock stats for:
+wakeup38/…` — the suspend service walks `/sys/class/power_supply` for wakelock accounting and is
+denied. Suspend itself works (the phone dozes); only the stats are missing. Either the label or
+the rule is missing in the vendor sepolicy; a two-line `allow` in our sepolicy patch would quiet
+it, and is safe (read-only, already world-readable sysfs).
+
+The rest is expected noise: 19 × `untrusted_app -> system_adbd_prop: read` (apps probing adb
+props on a `user` build), 8 × `mediaprovider_app -> radio_service: find` (upstream AOSP quirk),
+plus single digits for shell/dumpstate checks.
+
+### D6 — keystore2 refuses attestation without an attestation key (informational)
+
+`keystore2` logs, whenever an app asks for an attested key:
+
+```
+While generating without a provided attestation key and parameter…
+```
+
+Keymaster on this device has no provisioned attestation keys, so keys are generated but cannot
+be attested. Consequence: Play Integrity basic checks may pass via the SafetyNet spoof, but
+hardware attestation does not exist; nothing to fix in the ROM and no app misbehaviour observed.
 
 ## 2. Fixed: the earlier boot-animation hang (slot mismatch)
 
@@ -130,8 +194,10 @@ Captured 2026-11-17 16:08 (3.6 MB zip, full dumpsys + all log buffers). New deta
   framework race at boot, not a missing service.
 - **`TaskPersister: File error accessing recents directory`** — recents persistence fails while the
   launcher crash-loops (D1); expect it to clear once the launcher is fixed.
-- **No ANRs, no watchdog kills, 0 SELinux denials** in the whole report — the failure mode is one
-  crash loop, not a broad framework problem.
+- **No ANRs, no watchdog kills, no tombstones, 0 `Fatal signal`** in the whole report.
+- SELinux: the earlier capture showed 0 denials, this one shows 263 (see D5) — same build, so the
+  difference is what the phone was doing (charging + dozing), not a policy change. The kernel log
+  is otherwise clean: no `EXT4-fs error`, no `hung task`, no thermal trip, no LMK kills.
 
 ## 7. Fixes applied for the next build
 
@@ -140,4 +206,7 @@ Captured 2026-11-17 16:08 (3.6 MB zip, full dumpsys + all log buffers). New deta
 | D1 Launcher3 crash loop | Launcher3/QuickStep intermediates deleted before the rebuild, so the APK is regenerated from the current source (variant switch forces a full rebuild as well). Verified post-build with `aapt2 dump resources … \| grep widget_internal_focus_bg`. |
 | D3 charger log spam | `patches/kernel/motorola/msm-4.14.patch`: `pr_err` → `pr_debug` for the unsupported-battery-property path in `qpnp-smb2.c` (pure log level, no behaviour change). |
 | D2 verified-boot state | Not patchable in the ROM — it is the bootloader's report. Check `fastboot getvar unlocked` / `fastboot oem device-info` before the next flash. |
+| D4 GMS `AdvancedProtection` | Nothing to patch here: the rejection comes from the platform safety-source enum. Revisit if GMS still crashes after the next GApps bump; a `frameworks/base` enum addition is the only real fix. |
+| D5 `system_suspend` denials | Proposed, not applied (needs the tree to regenerate the patch): `allow system_suspend sysfs_batteryinfo:dir r_dir_perms;` and `… :file r_file_perms;` in the device sepolicy. Read-only sysfs, safe to allow; it only restores wakelock stats. |
+| D6 keystore attestation | Informational. No attestation keys exist on this hardware; documented so it is not mistaken for a regression. |
 | Boot-animation hang | Already fixed in `tools/flash.sh` (`--slot=all` by default). |
