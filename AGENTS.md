@@ -167,7 +167,7 @@ Build-affecting environment variables (pass as `-e NAME=value` in Docker):
 | --- | --- |
 | `build.sh` | Only build entry point: sync, patch, build, artifact copy |
 | `default.xml`, `snippets/*.xml` | Source pinning; `snippets/doha.xml` is ours, the other two are verbatim upstream |
-| `patches/…` (21 files) | The actual product — each fix lives here, mirrored by a README section |
+| `patches/…` (24 files) | The actual product — each fix lives here, mirrored by a README section |
 | `README.md` | Requirements, install/flash/GApps/Magisk steps, Status (what is tested), per-fix rationale |
 | `CLAUDE.md` | Repo rules: manifest/patch/build mechanics and the editing workflow |
 | `TODO.md` | Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors) |
