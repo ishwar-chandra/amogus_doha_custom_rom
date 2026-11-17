@@ -302,15 +302,29 @@ Magisk, so patch and flash the new release's boot image after updating.
 
 ## Status
 
-**The crDroid build has not been tested on hardware yet.** It is the same
-device work as the LineageOS 24.0 build on the `lineage-24.0` branch,
-retargeted at crDroid 13; the patches apply to crDroid's trees, but a
-build has to be flashed and used before anything here can be called
-tested. The list below is what that LineageOS 24.0 build passed, and it
-is the checklist for this one.
+**The crDroid build boots on hardware**, first flashed on 2026-11-17 (XT2019-1, serial
+ZF6522633X, build `crdroid-…-20261117`, slot `_a`). What this build itself has been
+verified for:
 
-Tested on real hardware (an XT2019-1 with the Tianma FocalTech touch
-panel and the FPC fingerprint sensor):
+- boot to the launcher, `ro.build.type=user` with the crDroid user/release-keys spoof
+- adb from first boot on an `ADB_KEY` test build (`ro.adb.secure=1` kept)
+- 47 hardware sensors, touchscreen, 4 camera devices, fingerprint HAL,
+  display 1080x2280 @ 60 Hz, audio outputs, SIM + voice registration,
+  SElinux enforcing with 0 denials
+- screen recording (5 s clip written, quick-settings tile works)
+- Play Store and Play services after flashing MindTheGapps/NikGapps core: GMS
+  self-updated 25.34.34 → 26.45.31 and ran for minutes without crashing; the
+  crDroid default roles stay in place until a Google app set is flashed
+
+Known issue found in this first build and fixed in the next one: the launcher
+crash-looped with `Resources$NotFoundException` for the drawable
+`widget_internal_focus_bg` (stale `resources.arsc` from an incremental build); a
+clean Launcher3 rebuild is in flight, see `BUGREPORT.md` D1. The earlier hang at
+the boot animation was a slot mismatch (images flashed into the slot the OTA then
+replaced) and is prevented by `tools/flash.sh` flashing `--slot=all`.
+
+The list below is the checklist inherited from the LineageOS 24.0 build on this
+device; those items still have to be re-run on the crDroid releases:
 
 - A clean install from stock firmware (4-1-7) following the steps above,
   and updates sideloaded over an earlier build.
