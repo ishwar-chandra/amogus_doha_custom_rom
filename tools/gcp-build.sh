@@ -70,7 +70,7 @@ set -euo pipefail
 PROJECT=${PROJECT:-customrom-514215}
 ZONE=${ZONE:-asia-south1-a}
 NAME=${NAME:-crdroid-build}
-HOURS=${HOURS:-24}
+HOURS=${HOURS:-48}
 VARIANT=${VARIANT:-userdebug}
 # 12 vCPU is the project's CPUS_ALL_REGIONS cap. 64 GB RAM + 48 GB swap
 # covers Soong's ~100 GB analysis peak; RAM is the expensive resource
@@ -78,7 +78,7 @@ VARIANT=${VARIANT:-userdebug}
 # paying for 96 GB of it. The 350 GB of NVMe (two 375 GB local SSDs -- N2
 # takes them in pairs) is >100 GB more than the shallow path needs, and the
 # boot disk stays small: it only holds the OS.
-MACHINE=${MACHINE:-n2-custom-12-65536}
+MACHINE=${MACHINE:-n2-custom-16-49152}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-50GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
@@ -468,6 +468,7 @@ create)
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type "$DISK_TYPE" \
     --local-ssd interface=nvme,size=375gb --local-ssd interface=nvme,size=375gb \
+    --no-boot-disk-auto-delete \
     "${extra[@]}" --scopes cloud-platform
   echo "Created $NAME ($SYNC_MACHINE, 750 GB NVMe at /mnt/build + /mnt/cache). Next: config, setup, build" ;;
 
@@ -520,6 +521,11 @@ finish)
   remote_exec verify
   remote_exec backup
   [ "${NO_RELEASE:-0}" = 1 ] || publish_release
+  if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
+    # The feed entry points at the release URL, so it has to come after it.
+    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+    remote_exec ota "${TAG:-}" "$OTA_REPO" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
+  fi
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 
 build)

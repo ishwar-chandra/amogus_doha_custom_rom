@@ -20,7 +20,7 @@ version.
   - A GCP project with `gcloud` (hands-off build; recommended for a laptop).
 - Disk/time: a full build needs ~350 GB of scratch space and a lot of RAM.
   On GCP the script sizes this for you (12 vCPU, 64 GB RAM + 48 GB swap,
-  750 GB NVMe). A cold build takes hours (~9 h at 12 vCPU); a warm rebuild
+  750 GB NVMe). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
   takes minutes.
 - Optional: an `adb`/`fastboot` setup on the machine you flash from.
 - Optional for releases: a GitHub token (see §8).
@@ -106,7 +106,7 @@ tools/gcp-build.sh delete     # delete the VM now
 Typical session: `create; config; setup; build; finish`.
 
 Knobs: `VARIANT`, `JOBS`, `SYNC_JOBS`, `REPO_DEPTH` (default `1`),
-`SWAP_GB`, `HOURS` (hard stop/auto-delete, default 24), `NO_RELEASE=1`,
+`SWAP_GB`, `HOURS` (hard stop/auto-delete, default 48), `NO_RELEASE=1`, `NO_OTA=1`,
 `NO_DELETE=1`, `TAG=...`.
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
@@ -322,7 +322,9 @@ Commit messages: plain-language subject, optional area prefix
 
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
   (~$1/h for 12 vCPU + 64 GB).
-- `HOURS` (default 24) is a hard stop that deletes the VM even if forgotten.
+- `HOURS` (default 48) is a hard stop that deletes the VM even if forgotten; the boot disk is created with
+  `--no-boot-disk-auto-delete`, so `~/.repo-backup` (a copy of `.repo`) survives and a later VM can mount it
+  instead of re-syncing.
 - The backup destination is your own Drive (`gdrive:doha-backup` by default),
   which costs nothing extra. If you back up to the GCS bucket instead
   (option 2 in §2.3), that bucket keeps billing until deleted: 46 GB standard
