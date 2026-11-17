@@ -262,11 +262,56 @@ each_set() {  # $1 = push|pull|check; remaining args are extra flags
 }
 
 release_notes() {
+  local variant=standard
+  case $TAG in *-debloat) variant=debloat ;; esac
   cat <<EOF
-Unofficial crDroid 13 (Android 17) for the Moto G8 Plus (amogus_doha), built on Google Cloud.
-Variant: $VARIANT; manifest branch: $BRANCH.
-Artifacts: flashable zip, boot/dtbo/vbmeta images, sha256sum.
+Unofficial crDroid 13 (Android 17) for the Motorola Moto G8 Plus — device \`doha\`, tree \`amogus_doha\`.
+
+**Variant:** $variant · **branch:** $BRANCH · **manifest:** $(git -C "$MANIFEST" rev-parse --short HEAD 2>/dev/null || echo unknown)
+
+## Flash it
+
+The phone is A/B and recovery lives inside \`boot\`.
+
+1. Unlock the bootloader. From stock or another ROM, flash the images of this release:
+   \`\`\`
+   fastboot flash boot  crDroidAndroid-*-boot.img
+   fastboot flash dtbo  crDroidAndroid-*-dtbo.img
+   fastboot flash vbmeta crDroidAndroid-*-vbmeta.img   # only if verification complains
+   \`\`\`
+2. Boot to recovery (power + volume down → Recovery).
+3. **Factory reset → Format data** when coming from another ROM or switching variants.
+4. **Apply update → Apply from ADB**, then \`adb sideload crDroidAndroid-*.zip\`.
+5. Reboot. First boot takes several minutes; the second is normal.
+
+## Google apps (optional, not included)
+
+This build ships no Google apps. Flash crDroid's official NikGapps package
+(\`NikGapps-crdroid-official-*-signed.zip\`) in the same recovery session, right after the ROM,
+answering **Yes** to "install additional packages".
+
+## Checksums
+
+\`sha256sum -c crDroidAndroid-*.sha256sum\`
+
+Tested items, known issues and the untested checklist: see the repository README ("Status") and
+BUGREPORT.md. Do not flash a zip from a different variant over this one without wiping data.
 EOF
+}
+
+# Only this variant's artifacts, and never a test build: a release must not
+# contain an -adbkey zip (it trusts the builder's key) or the other variant.
+release_assets() {
+  local f
+  for f in "$ZIPS"/*; do
+    [ -e "$f" ] || continue
+    case $f in *-adbkey*) continue ;; esac
+    case $TAG in
+      *-debloat) case $f in *-debloat*) ;; *) continue ;; esac ;;
+      *)         case $f in *-debloat*) continue ;; esac ;;
+    esac
+    echo "$f"
+  done
 }
 
 case "$MODE" in
@@ -356,8 +401,11 @@ check)   case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
 release) install_gh
          [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
          export GH_TOKEN=$(cat "$HOME/.gh_token")
+         mapfile -t assets < <(release_assets)
+         [ ${#assets[@]} -gt 0 ] || { echo "no assets for $1 in $ZIPS" >&2; exit 1; }
+         echo "assets: ${assets[*]}"
          gh release create "$1" --repo "$2" --target "$BRANCH" --title "$1" \
-            --notes "$(release_notes)" "$ZIPS"/* && rm -f "$HOME/.gh_token"
+            --notes "$(release_notes)" "${assets[@]}" && rm -f "$HOME/.gh_token"
          echo "published $1 to $2" ;;
 
 *) echo "unknown mode: $MODE" >&2; exit 1 ;;

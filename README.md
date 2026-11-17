@@ -133,8 +133,8 @@ Variants: `DEBLOAT=1` builds the same ROM without the optional crDroid extras
 (Game Space, floating windows, battery stats viewer, MatLog, the Twelve music
 player, Recorder and Glimpse gallery); the zip is named `…-debloat.zip`. Calls,
 SMS, camera, the file picker, calendar storage and OTA are untouched by it.
-One-click updates from Settings are **planned, not shipped**: the next builds
-carry the Updater endpoint patch, see `PLAN.md`.
+One-click updates from Settings are **planned, not shipped**: this build carries the Updater
+endpoint patch and a per-channel guard; the feed itself is tracked in `TODO.md`.
 
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
