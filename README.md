@@ -353,11 +353,18 @@ Known issues:
   and is on by default. Double-tapping the wallpaper does nothing: crDroid's
   Launcher3 for this branch declares the gesture but does not implement it, so that
   is by design rather than a regression.
-- **Double tap to wake doesn't wake the screen on FocalTech (Tianma)
-  panels.** The setting is there and on by default, but a double tap does
-  nothing. Being investigated. (The related freeze this gesture used to
-  cause — a reboot when the screen was touched as the phone suspended —
-  is fixed in kernel `03f0501e`, which this manifest pins.)
+- **Double tap to wake: patched, not yet tested on hardware.** Three things were
+  missing on doha, and `patches/kernel/motorola/msm-4.14.patch` now supplies all
+  three: gesture suspend was gated on a flag only Motorola's `dt-gesture` sensor
+  class writes (no Moto service and no Lineage touch HAL here, so the panel was
+  powered down at every suspend), `focaltech,report_gesture_key` is absent from
+  the device tree so the gesture only reached that sensor class, and `KEY_WAKEUP`
+  was not in the touch device's keybit. The patch defaults the gesture on and
+  reports `KEY_WAKEUP` on the touch device itself, which the framework turns into
+  a screen wake. Cost: the panel stays in low-power gesture mode while asleep, so
+  expect a little standby drain. The reboot this gesture used to cause — a freeze
+  when the screen was touched as the phone suspended — stays fixed by kernel
+  `03f0501e`, which this manifest pins and which the patch builds on.
 - After a fresh install from stock, the first boot may find only 2G.
   One more reboot fixes it.
 

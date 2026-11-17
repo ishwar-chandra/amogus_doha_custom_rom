@@ -35,10 +35,25 @@ kernel `4.14.357-openela+ #16`).
 
 ## Open, being investigated
 
-- [ ] **Double tap to wake does nothing on FocalTech (Tianma) panels.**
-  The setting exists and defaults to on, but a double tap does not wake
-  the screen. The touch-suspend fix above stops the reboot, not this.
-  Upstream is investigating (doha_android#76).
+- [ ] **Double tap to wake: patched in the kit, waiting for a build and a flash.**
+  Root cause found in the pinned kernel (`03f0501e`), three gaps, all now covered
+  by `patches/kernel/motorola/msm-4.14.patch`:
+  - `fts_ts_suspend()` only enters gesture mode when `should_enable_gesture` is
+    set, and the only writer is `fts_sensor_set_enable()` — the Moto `dt-gesture`
+    sensor class (`SENSOR_TYPE_MOTO_DOUBLE_TAP`). No Moto service exists in this
+    tree and the device tree ships no Lineage touch HAL, so the flag stayed 0 and
+    the panel went to `FTS_REG_POWER_MODE_SLEEP` on every suspend: a double tap
+    could not be seen at all. Patch defaults it to true.
+  - `focaltech,report_gesture_key` is not in `trinket-doha-touch-overlay.dtsi`, so
+    `fts_gesture_report()` took the `ABS_DISTANCE` branch (Moto sensor class)
+    instead of `KEY_WAKEUP`. Patch reports `KEY_WAKEUP` on the touch input device.
+  - `KEY_WAKEUP` was not in that device's keybit, and input drops keys that are
+    not declared. Patch sets it in `fts_input_init()`.
+  Test on the next flash: screen off, double tap the middle of the display →
+  display wakes; then check standby drain over a night against the previous build
+  (gesture mode keeps the panel powered while asleep). If a double tap no longer
+  wakes but the phone also no longer reboots, that is the PM guard working —
+  collect `adb bugreport` and compare. Upstream issue: doha_android#76.
 - [ ] **VoLTE / IMS.** Evidence from the device:
   - the IMS PDN connects, then drops and rebuilds every 5–11 minutes
     (17 transitions in one window, e.g. 20:14 → 20:41 on 11-15), and

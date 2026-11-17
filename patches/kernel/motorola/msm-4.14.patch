@@ -275,3 +275,69 @@ index 8b4826de1..de9d04f2c 100644
  config INITRAMFS_ROOT_UID
  	int "User ID to map to 0 (user root)"
  	depends on INITRAMFS_SOURCE!=""
+diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+index 0bd1dd1..876bd5b 100644
+--- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
++++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+@@ -960,6 +960,11 @@ static int fts_input_init(struct fts_ts_data *ts_data)
+     __set_bit(EV_KEY, input_dev->evbit);
+     __set_bit(BTN_TOUCH, input_dev->keybit);
+     __set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
++#if FTS_GESTURE_EN
++    /* The double tap is reported as KEY_WAKEUP on this device; input drops a
++     * key that is not in keybit. See fts_gesture_readdata(). */
++    __set_bit(KEY_WAKEUP, input_dev->keybit);
++#endif
+ 
+     if (pdata->have_key) {
+         FTS_INFO("set key capabilities");
+@@ -1846,6 +1851,17 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
+         FTS_ERROR("create fts workqueue fail");
+     }
+ 
++#if FTS_GESTURE_EN
++    /*
++     * Gesture suspend is gated on should_enable_gesture, and the only writer of
++     * that flag is the Moto "dt-gesture" sensor class (fts_sensor_set_enable).
++     * This tree has neither a Moto gesture service nor a Lineage touch HAL, so
++     * the panel was powered down at every suspend and a double tap could never
++     * be seen (doha #76). Default the gesture on; a userspace consumer can
++     * still disable it by writing 0 to that sensor's enable node.
++     */
++    ts_data->should_enable_gesture = true;
++#endif
+     spin_lock_init(&ts_data->irq_lock);
+     mutex_init(&ts_data->report_mutex);
+     mutex_init(&ts_data->bus_lock);
+diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
+index 92bcf55..43f2e02 100644
+--- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
++++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
+@@ -558,9 +558,25 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
+ 
+     /* report gesture to OS */
+ #if FOCALTECH_DT2W_ENABLE
+-	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0]))
+-#endif /* FOCALTECH_DT2W_ENABLE */
++	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0])) {
+ 		fts_gesture_report(input_dev, gesture->gesture_id);
++		/*
++		 * Nothing else consumes this event on doha: focaltech,report_gesture_key
++		 * is not in the device tree, so fts_gesture_report() only feeds the Moto
++		 * sensor class, and no Moto service or touch HAL is installed to read it.
++		 * Send KEY_WAKEUP on the touch device itself - the framework handles that
++		 * key before queueing and turns the screen on.
++		 */
++		if (gesture->gesture_id == GESTURE_DOUBLECLICK) {
++			input_report_key(input_dev, KEY_WAKEUP, 1);
++			input_sync(input_dev);
++			input_report_key(input_dev, KEY_WAKEUP, 0);
++			input_sync(input_dev);
++		}
++	}
++#else
++	fts_gesture_report(input_dev, gesture->gesture_id);
++#endif /* FOCALTECH_DT2W_ENABLE */
+ 
+     return 0;
+ }
