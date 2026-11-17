@@ -322,6 +322,9 @@ Commit messages: plain-language subject, optional area prefix
 
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
   (~$1/h for 12 vCPU + 64 GB).
+- `CPUS_ALL_REGIONS` is **12** on this project, so 12 vCPU is the widest machine that can be created; the
+  regional limit (32) does not help. `create` preflights the quota and refuses a wider machine with that reason
+  instead of failing inside gcloud. After an increase, `MACHINE=n2-custom-16-49152` (or 24) works unchanged.
 - `HOURS` (default 48) is a hard stop that deletes the VM even if forgotten; the boot disk is created with
   `--no-boot-disk-auto-delete`, so `~/.repo-backup` (a copy of `.repo`) survives and a later VM can mount it
   instead of re-syncing.

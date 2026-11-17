@@ -78,7 +78,10 @@ VARIANT=${VARIANT:-userdebug}
 # paying for 96 GB of it. The 350 GB of NVMe (two 375 GB local SSDs -- N2
 # takes them in pairs) is >100 GB more than the shallow path needs, and the
 # boot disk stays small: it only holds the OS.
-MACHINE=${MACHINE:-n2-custom-16-49152}
+# CPUS_ALL_REGIONS is 12 on this project (the regional limit of 32 does not
+# help: the global cap is what a create trips over), so 12 vCPU is the widest
+# machine that can be created today. Raise the quota, then MACHINE=n2-custom-16-49152.
+MACHINE=${MACHINE:-n2-custom-12-49152}
 SSD_COUNT=${SSD_COUNT:-1}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-50GB}
@@ -474,6 +477,16 @@ create)
   # only a convenience when caches are meant to outlive a rebuild.
   ssd=(--local-ssd interface=nvme,size=375gb)
   [ "${SSD_COUNT:-1}" = 2 ] && ssd+=(--local-ssd interface=nvme,size=375gb)
+  # Fail before the create with a readable reason: a 16-vCPU machine on a
+  # 12-vCPU global quota costs nothing to attempt but confuses the log.
+  want=$(gcloud_ compute machine-types describe "$SYNC_MACHINE" --format='value(guestCpus)' 2>/dev/null || echo "")
+  have=$(gcloud_ compute project-info describe --format='value(quotas[metric=CPUS_ALL_REGIONS].limit)' 2>/dev/null || echo "")
+  echo "cpus: $SYNC_MACHINE wants ${want:-?}, project CPUS_ALL_REGIONS is ${have:-?}"
+  if [ -n "$want" ] && [ -n "$have" ] && awk "BEGIN{exit !($want > $have)}"; then
+    echo "refusing: $SYNC_MACHINE needs $want vCPUs but CPUS_ALL_REGIONS is $have." >&2
+    echo "Either request a quota increase, or MACHINE=n2-custom-${have%.*}-49152." >&2
+    exit 1
+  fi
   gcloud_ compute instances create "$NAME" \
     --machine-type "$SYNC_MACHINE" \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
