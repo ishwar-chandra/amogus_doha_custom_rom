@@ -192,6 +192,17 @@ the key from `out/` again.
 You need an unlocked bootloader. The phone is A/B, and the recovery is
 inside `boot`.
 
+`tools/flash.sh` does the steps below for you: it lists the artifact sets
+present in `gcp-out/` (only complete ones are selectable — an unfinished
+download cannot be picked), verifies their `.sha256sum`, then flashes
+boot/dtbo/vbmeta and sideloads the zip.
+
+```sh
+./tools/flash.sh            # interactive menu
+./tools/flash.sh --list     # show what is available, change nothing
+./tools/flash.sh --dry-run  # print the fastboot/adb commands
+```
+
 1. `fastboot flash boot <boot.img>` and `fastboot flash dtbo
    <dtbo.img>`. This is only needed when you're coming from stock or a
    different ROM, including the LineageOS builds of this device. Recovery

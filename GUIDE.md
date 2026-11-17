@@ -184,6 +184,11 @@ the ROM, not to Google apps.
 
 ### 4.1 From stock or another ROM
 
+`tools/flash.sh` runs this section end to end: it lists the artifact sets in
+`gcp-out/` (only complete ones are selectable), verifies checksums and flashes.
+`--list` shows what is there without touching the phone, `--dry-run` prints the
+commands.
+
 ```sh
 fastboot flash boot boot.img
 fastboot flash dtbo dtbo.img
@@ -314,9 +319,10 @@ Commit messages: plain-language subject, optional area prefix
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
   (~$1/h for 12 vCPU + 64 GB).
 - `HOURS` (default 24) is a hard stop that deletes the VM even if forgotten.
-- The GCS bucket keeps billing until deleted: 46 GB standard in
-  asia-south1 is roughly $1/month. Delete it when the cache is stale:
-  `gcloud storage rm -r gs://<project>-doha-backup`.
+- The backup destination is your own Drive (`gdrive:doha-backup` by default),
+  which costs nothing extra. If you back up to the GCS bucket instead
+  (option 2 in §2.3), that bucket keeps billing until deleted: 46 GB standard
+  in asia-south1 is roughly $1/month — `gcloud storage rm -r gs://<bucket>`.
 
 ## 12. Where to look
 
