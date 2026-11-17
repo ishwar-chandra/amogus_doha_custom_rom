@@ -74,7 +74,7 @@ Useful variables (all optional, also accepted as `-e NAME=value` in Docker):
 | `ZIP_DIR` | artifact destination | `zips/` next to the source |
 | `SKIN_THROTTLE_C` | thermal-HAL throttling temperature | `40` |
 | `VARIANT` | `userdebug`/`user`/`eng` | `userdebug` |
-| `ADB_KEY` | test only: bake an `adbkey.pub` into the build | unset |
+| `ADB_KEY` | test only: bake an `adbkey.pub` into the build (on GCP: `ADB_KEY=~/.android/adbkey.pub ./tools/gcp-build.sh build`) | unset |
 | `MANIFEST_URL`, `MANIFEST_BRANCH` | manifest source | this clone / its branch |
 
 `build.sh` refuses to start (without `SKIP_SYNC=1`) if `default.xml` is

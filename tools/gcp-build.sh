@@ -50,6 +50,10 @@
 #   SWAP_GB       swap on the NVMe     (default: 48)
 #   HOURS         hard stop            (default: 24; 0 disables)
 #   VARIANT       userdebug|user|eng   (default: userdebug)
+#   ADB_KEY       path to an adb public key on this machine; `build` copies
+#                 it to the VM and bakes it in (build.sh's ADB_KEY), so adb
+#                 works from the phone's first boot. Test builds only: the
+#                 zip gets an -adbkey suffix and must never be distributed.
 #   JOBS          compile jobs         (default: MACHINE's vCPUs)
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
@@ -132,14 +136,14 @@ publish_release() {
 # settings, passed as arguments because the heredoc is quoted.
 remote_exec() {
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH'" \
+    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '${2:-0}'" \
     <<'REMOTE'
 set -euo pipefail
 MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
 VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
 # The heredoc is quoted, so $JOBS_BUILD/$REPO_DEPTH below are expanded by
 # this remote shell: they have to arrive as arguments, not from the caller.
-JOBS_BUILD=${10} REPO_DEPTH=${11}
+JOBS_BUILD=${10} REPO_DEPTH=${11} ADB_KEY_BUILD=${12:-0}
 
 BUILD=/mnt/build CACHE=/mnt/cache
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
@@ -280,8 +284,12 @@ EOS
         # resumes where it stopped.
         pkill -f "repo/main.py" 2>/dev/null || true
         sleep 2; rm -f "$EXIT"
+        # ADB_KEY builds need the public key on the VM; build.sh does the rest
+        # (vendor/extra/product.mk, adb_keys in recovery+product).
+        adb_env=
+        [ "$ADB_KEY_BUILD" = 1 ] && adb_env="ADB_KEY='$HOME/adbkey.pub' "
         tmux new-session -d -s "$SESSION" \
-          "VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+          "$adb_env VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
         sleep 3; tmux ls
         echo "started in tmux '$SESSION'; log: $LOG" ;;
 
@@ -377,7 +385,21 @@ finish)
   [ "${NO_RELEASE:-0}" = 1 ] || publish_release
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 
-setup|build|backup|restore|check|state|verify) remote_exec "$1" ;;
+build)
+  # ADB_KEY is a path on *this* machine; the VM needs the key itself. Its
+  # content is validated here so a bad path fails before the build starts.
+  adb_arg=0
+  if [ -n "${ADB_KEY:-}" ]; then
+    [ -f "$ADB_KEY" ] || { echo "ADB_KEY: no such file: $ADB_KEY" >&2; exit 1; }
+    [ "$(head -c 5 "$ADB_KEY")" = QAAAA ] ||
+      { echo "ADB_KEY must be an adb public key (adbkey.pub): $ADB_KEY" >&2; exit 1; }
+    gcloud_ compute scp "$ADB_KEY" "$NAME:adbkey.pub" >/dev/null
+    adb_arg=1
+    echo "ADB_KEY: copied $(basename "$ADB_KEY") to $NAME, build gets -adbkey suffix"
+  fi
+  remote_exec build "$adb_arg" ;;
+
+setup|backup|restore|check|state|verify) remote_exec "$1" ;;
 
 att)    gcloud compute ssh "$NAME" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
 logs)   gcloud_ compute ssh "$NAME" --command "tail -f \$HOME/build.log" ;;

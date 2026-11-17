@@ -171,6 +171,12 @@ adb works in recovery and in Android right after a wipe, with no
 ```sh
   -v ~/.android/adbkey.pub:/adbkey.pub:ro -e ADB_KEY=/adbkey.pub \
 ```
+On a GCP VM the same key travels with the build command instead
+(`tools/gcp-build.sh build` copies it to the VM first):
+
+```sh
+ADB_KEY=~/.android/adbkey.pub ./tools/gcp-build.sh build
+```
 
 Recovery and the system trust only that key (`ro.adb.secure` stays on),
 and USB debugging is on by default. Switching from a build without the key needs a
