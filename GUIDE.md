@@ -20,7 +20,7 @@ version.
   - A GCP project with `gcloud` (hands-off build; recommended for a laptop).
 - Disk/time: a full build needs ~350 GB of scratch space and a lot of RAM.
   On GCP the script sizes this for you (12 vCPU, 64 GB RAM + 48 GB swap,
-  750 GB NVMe). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
+  375 GB NVMe; `SSD_COUNT=2` adds a second). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
   takes minutes.
 - Optional: an `adb`/`fastboot` setup on the machine you flash from.
 - Optional for releases: a GitHub token (see §8).
@@ -88,7 +88,7 @@ The script provisions a VM, syncs, builds, backs up and can publish a
 release. Commands (run from the repo root, `gcloud` in `PATH`):
 
 ```sh
-tools/gcp-build.sh create     # VM + local SSDs (750 GB)
+tools/gcp-build.sh create     # VM + 375 GB NVMe (SSD_COUNT=2 adds a second)
 tools/gcp-build.sh config     # copy ~/.config/rclone/rclone.conf to the VM
 tools/gcp-build.sh setup      # install deps, clone the recipe
 tools/gcp-build.sh build      # start sync+build in tmux

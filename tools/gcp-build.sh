@@ -79,6 +79,7 @@ VARIANT=${VARIANT:-userdebug}
 # takes them in pairs) is >100 GB more than the shallow path needs, and the
 # boot disk stays small: it only holds the OS.
 MACHINE=${MACHINE:-n2-custom-16-49152}
+SSD_COUNT=${SSD_COUNT:-1}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-50GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
@@ -156,7 +157,10 @@ VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
 # this remote shell: they have to arrive as arguments, not from the caller.
 JOBS_BUILD=${10} REPO_DEPTH=${11} ADB_KEY_BUILD=${12:-0} BACKUP_REMOTE=${13:-}
 
-BUILD=/mnt/build CACHE=/mnt/cache
+BUILD=/mnt/build
+# One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
+# A second one is optional and only carries ccache + swap; SSD_COUNT=2 adds it.
+CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
 LOG=$HOME/build.log RLOG=$HOME/rclone.log EXIT=$HOME/build.exit
 
@@ -344,7 +348,10 @@ build)
 # Started by tools/gcp-build.sh inside tmux; records the exit code for
 # `finish`, whatever happens.
 set -o pipefail
-BUILD=/mnt/build CACHE=/mnt/cache
+BUILD=/mnt/build
+# One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
+# A second one is optional and only carries ccache + swap; SSD_COUNT=2 adds it.
+CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
 export PATH="$HOME/bin:$PATH"
 export CCACHE_DIR="$CACHE/ccache" ZIP_DIR="$BUILD/zips" TMPDIR="$BUILD/tmp"
 mkdir -p "$TMPDIR"
@@ -463,14 +470,18 @@ case "${1:-}" in
 create)
   extra=()
   [ "$HOURS" != 0 ] && extra=(--max-run-duration="$((HOURS * 3600))s" --instance-termination-action=DELETE)
+  # One device is enough (tree + ccache + swap = ~331 of 369 GB); the second is
+  # only a convenience when caches are meant to outlive a rebuild.
+  ssd=(--local-ssd interface=nvme,size=375gb)
+  [ "${SSD_COUNT:-1}" = 2 ] && ssd+=(--local-ssd interface=nvme,size=375gb)
   gcloud_ compute instances create "$NAME" \
     --machine-type "$SYNC_MACHINE" \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type "$DISK_TYPE" \
-    --local-ssd interface=nvme,size=375gb --local-ssd interface=nvme,size=375gb \
+    "${ssd[@]}" \
     --no-boot-disk-auto-delete \
     "${extra[@]}" --scopes cloud-platform
-  echo "Created $NAME ($SYNC_MACHINE, 750 GB NVMe at /mnt/build + /mnt/cache). Next: config, setup, build" ;;
+  echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-1}x 375 GB NVMe). Next: config, setup, build" ;;
 
 config)
   CONF=${RCLONE_CONF:-$HOME/.config/rclone/rclone.conf}
