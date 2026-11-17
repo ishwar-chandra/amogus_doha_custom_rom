@@ -85,6 +85,13 @@ MACHINE=${MACHINE:-n2-custom-12-49152}
 # GCP attaches local SSDs in multiples of two (0, 2, 4, 8, 16, 24); one
 # is rejected by the API, so two is the smallest usable count.
 SSD_COUNT=${SSD_COUNT:-2}
+# DISK_MODE=local : local SSDs, fastest, billed for the whole 750 GB because GCP
+#                   attaches them in pairs (0,2,4,8,16,24) - nothing smaller exists.
+# DISK_MODE=pd    : no local SSD, one exactly-sized pd-ssd for the tree. Slower
+#                   (about 0.5 MB/s of sustained throughput per GB) but no idle disk.
+DISK_MODE=${DISK_MODE:-local}
+DATA_DISK_GB=${DATA_DISK_GB:-400}
+DATA_DISK_TYPE=${DATA_DISK_TYPE:-pd-ssd}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-50GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
@@ -174,6 +181,23 @@ LOG=$HOME/build.log RLOG=$HOME/rclone.log EXIT=$HOME/build.exit
 # them, and reformatting would throw away a synced tree.
 mount_ssds() {
   local n=0 dev mnt
+  # DISK_MODE=pd: no local SSD; the tree lives on a persistent data disk that
+  # appears as /dev/disk/by-id/google-data.
+  if [ ! -e /dev/nvme0n1 ]; then
+    if [ -b /dev/disk/by-id/google-data ]; then
+      mnt=$BUILD
+      if ! mountpoint -q "$mnt"; then
+        sudo mkdir -p "$mnt"
+        [ -n "$(sudo blkid -o value -s TYPE /dev/disk/by-id/google-data 2>/dev/null)" ] ||
+          sudo mkfs.ext4 -F -m 0 /dev/disk/by-id/google-data >/dev/null
+        sudo mount /dev/disk/by-id/google-data "$mnt"
+        sudo chown "$(id -u):$(id -g)" "$mnt"
+      fi
+    else
+      echo "no local SSD and no /dev/disk/by-id/google-data: nothing to mount" >&2
+    fi
+    return 0
+  fi
   for dev in /dev/nvme0n1 /dev/nvme0n2; do
     n=$((n + 1)); mnt=$([ $n = 1 ] && echo "$BUILD" || echo "$CACHE")
     [ -e "$dev" ] || continue
@@ -481,7 +505,9 @@ create)
        exit 1 ;;
   esac
   ssd=()
-  for _ in $(seq 1 "${SSD_COUNT:-2}"); do ssd+=(--local-ssd interface=nvme,size=375gb); done
+  if [ "$DISK_MODE" = local ]; then
+    for _ in $(seq 1 "${SSD_COUNT:-2}"); do ssd+=(--local-ssd interface=nvme,size=375gb); done
+  fi
   # Fail before the create with a readable reason: a 16-vCPU machine on a
   # 12-vCPU global quota costs nothing to attempt but confuses the log.
   want=$(gcloud_ compute machine-types describe "$SYNC_MACHINE" --format='value(guestCpus)' 2>/dev/null || echo "")
@@ -499,7 +525,21 @@ create)
     "${ssd[@]}" \
     --no-boot-disk-auto-delete \
     "${extra[@]}" --scopes cloud-platform
-  echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-2}x 375 GB NVMe). Next: config, setup, build" ;;
+  if [ "$DISK_MODE" = pd ]; then
+    # A data disk has no pair rule: exactly the size asked for, and it can outlive
+    # the instance (DATA_DISK_KEEP=1) so a later VM resumes without a re-sync.
+    gcloud_ compute disks create "$NAME-data" --size "${DATA_DISK_GB}GB" --type "$DATA_DISK_TYPE"
+    gcloud_ compute instances attach-disk "$NAME" --disk "$NAME-data" \
+      --device-name data --mode rw
+    if [ "${DATA_DISK_KEEP:-0}" = 1 ]; then
+      gcloud_ compute instances set-disk-auto-delete "$NAME" --device-name data --no-auto-delete
+    else
+      gcloud_ compute instances set-disk-auto-delete "$NAME" --device-name data --auto-delete
+    fi
+    echo "Created $NAME ($SYNC_MACHINE, ${DATA_DISK_GB} GB $DATA_DISK_TYPE at /mnt/build). Next: config, setup, build"
+  else
+    echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-2}x 375 GB NVMe). Next: config, setup, build"
+  fi ;;
 
 config)
   CONF=${RCLONE_CONF:-$HOME/.config/rclone/rclone.conf}
