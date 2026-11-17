@@ -19,6 +19,20 @@ kernel `4.14.357-openela+ #16`).
   pins it too. **Still to do: rebuild crDroid so it carries the fix, and
   sideload v2.0.1 on the test phone.**
 
+- [x] **Double tap to sleep: works, it is two settings, not a bug** (checked on the
+  running build 1794906363 with the phone attached):
+  - status bar: `Settings.Secure.double_tap_to_sleep` was **0**, so nothing happened.
+    Set to 1, `input tap` twice on the status bar drove `mWakefulness=Dozing` — the
+    consumer is `framework.jar` (PhoneWindowManager), the toggle is Settings ->
+    Status bar -> "Double tap to sleep" (`status_bar_double_tap_to_sleep_title`).
+  - lock screen: `Settings.System.double_tap_sleep_lockscreen=1` (default on) and it
+    sleeps on a double tap; verified the same way.
+  - home screen / wallpaper: **not implemented** in crDroid's Launcher3 (branch
+    17.0). The aconfig flag `double_tap_to_sleep` exists in `aconfig/launcher.aconfig`
+    ("Enables double tap to sleep gesture on launcher") but nothing in `src/` or
+    `quickstep/src/` reads it, and no code calls `goToSleep`/`lockNow`. Adding the
+    gesture is a launcher feature, not a fix.
+
 ## Open, being investigated
 
 - [ ] **Double tap to wake does nothing on FocalTech (Tianma) panels.**

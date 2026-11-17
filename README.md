@@ -348,6 +348,11 @@ Known issues:
   profile for (for example SIMs on KPN's network in the Netherlands) it
   falls back to a generic profile with IMS off, so calls go over 2G/3G.
   Stock firmware does the same. Being investigated.
+- **Double tap to sleep is a setting, and only on the status bar.** Turn on
+  Settings → Status bar → "Double tap to sleep"; the lock screen has its own toggle
+  and is on by default. Double-tapping the wallpaper does nothing: crDroid's
+  Launcher3 for this branch declares the gesture but does not implement it, so that
+  is by design rather than a regression.
 - **Double tap to wake doesn't wake the screen on FocalTech (Tianma)
   panels.** The setting is there and on by default, but a double tap does
   nothing. Being investigated. (The related freeze this gesture used to
