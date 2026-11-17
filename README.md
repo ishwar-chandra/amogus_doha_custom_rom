@@ -112,7 +112,8 @@ Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 
 The output is
 `~/doha/zips/crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`, next to
-`crDroidAndroid-17.0-<date>-amogus_doha-v13.1-{boot,dtbo,vbmeta}.img`. The
+plain `boot.img`, `dtbo.img` and `vbmeta.img`, plus the zip's
+`.sha256sum` file. The
 copies are worth keeping: crDroid's `bacon` renames the OTA zip in `out/`
 to that `crDroidAndroid-*.zip` name and deletes the target-files
 intermediates it was built from, so `build.sh` takes the images straight

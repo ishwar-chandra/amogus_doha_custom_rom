@@ -292,7 +292,7 @@ state)  [ -f "$EXIT" ] && echo "finished exit=$(cat "$EXIT")" || echo "no exit f
 verify) fail=0
         ls "$ZIPS"/crDroidAndroid-*.zip >/dev/null 2>&1 || { echo "no crDroidAndroid-*.zip in $ZIPS"; fail=1; }
         for f in boot dtbo vbmeta; do
-          ls "$ZIPS"/*-"$f".img >/dev/null 2>&1 || { echo "missing *-$f.img"; fail=1; }
+          ls "$ZIPS"/"$f".img >/dev/null 2>&1 || { echo "missing $f.img"; fail=1; }
         done
         [ "$fail" = 0 ] && { ( cd "$ZIPS" && sha256sum -c ./*.sha256sum ) || fail=1; }
         [ "$fail" = 0 ] && echo "artifacts ok: $(ls "$ZIPS" | tr '\n' ' ')"

@@ -236,10 +236,12 @@ built=$(basename "$zip" .zip)
 name=$built${ADB_KEY:+-adbkey}
 mkdir -p "$dest"
 cp "$zip" "$dest/$name.zip"
+# Keep the zip's versioned name, but name the images plainly like every
+# other custom ROM build: boot.img, dtbo.img, vbmeta.img.
 for img in boot dtbo vbmeta; do
-  cp "$product/$img.img" "$dest/$name-$img.img"
+  cp "$product/$img.img" "$dest/$img.img"
 done
-(cd "$dest" && sha256sum "$name.zip" "$name"-{boot,dtbo,vbmeta}.img > "$name.sha256sum")
+(cd "$dest" && sha256sum "$name.zip" boot.img dtbo.img vbmeta.img > "$name.sha256sum")
 
 echo
 echo "Done. Build copied to $dest:"
