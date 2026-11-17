@@ -36,6 +36,9 @@ The LineageOS 24.0 (Android 17) version of this ROM, with the same
 device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 (Android 16) version is on `main`. This branch is `crdroid-android-17`.
 
+New here? [`GUIDE.md`](GUIDE.md) walks through a build end to end: local and
+GCP, backups, flashing, GApps, releasing and troubleshooting.
+
 ## Requirements
 
 - **x86-64 Linux** with Docker. The build runs inside the
