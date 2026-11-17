@@ -181,3 +181,22 @@ Caveats worth remembering:
   `pmsg-ramoops-0` for the last userspace messages).
 - [ ] **Pin the crDroid manifest once a build boots** (`repo manifest
   -r -o default.xml`), per the README.
+
+## Variants and OTA (2026-11-17)
+
+- [x] `DEBLOAT=1` switch in `build.sh` (renders `@DEBLOAT@` / `@UPDATER_CHANNEL@`,
+  artifact suffix `-debloat`), documented in README/GUIDE/AGENTS/CLAUDE.
+- [ ] Verify the Launcher3 fix on the next flash: no `Resources$NotFoundException`
+  (`widget_internal_focus_bg`) and no launcher restart loop.
+- [ ] `patches/vendor/lineage.patch`: gate GameSpace, LMOFreeform(+Sidebar),
+  BatteryStatsViewer, MatLog, Twelve, Recorder, Glimpse behind `DEBLOAT_BUILD`.
+  Keep Jelly (browser), Etar (calendar app), ExactCalculator and every role holder
+  (Dialer, messaging, Contacts) in both variants.
+- [ ] `patches/packages/apps/Updater.patch`: endpoint → `doha-ota/<channel>/doha.json`
+  and a `filterUpdates` guard on `update.name` so a build only accepts its own channel.
+- [ ] Create `doha-ota` with `standard/doha.json` and `debloat/doha.json`; add
+  `tools/gcp-build.sh ota` to publish build.prop-verified entries.
+- [ ] One-click OTA end-to-end: Settings → System update → install → reboot → slot switch.
+- [ ] GApps on the standard build: Play Store + GMS work (GMS self-updated to 26.45.31);
+  roles stay crDroid's until a Google app set is flashed; `AdvancedProtection` is absent
+  from the Safety Center config (see BUGREPORT §8).

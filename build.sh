@@ -47,6 +47,12 @@ DEVICE=amogus_doha
 STAMP=$SRC/.repo/doha-patches
 SKIN_THROTTLE_C=${SKIN_THROTTLE_C:-40}
 VARIANT=${VARIANT:-userdebug}
+# Variant axis: 0 = standard (everything crDroid ships), 1 = debloat (the
+# extras listed in patches/vendor/lineage.patch are left out). Rendered into
+# the patches, so a variant switch re-applies them like any other setting.
+DEBLOAT=${DEBLOAT:-0}
+case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
+UPDATER_CHANNEL=$([ "$DEBLOAT" = 1 ] && echo debloat || echo standard)
 case $SKIN_THROTTLE_C in
   ''|*[!0-9]*) echo "SKIN_THROTTLE_C must be a whole number of °C" >&2; exit 1 ;;
 esac
@@ -137,7 +143,10 @@ done
 # blob is that of the filled-in patch, so changing a setting counts as a
 # changed patch.
 render_patch() {
-  sed "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" "$HERE/patches/$1.patch"
+  sed -e "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" \
+      -e "s/@DEBLOAT@/$DEBLOAT/g" \
+      -e "s/@UPDATER_CHANNEL@/$UPDATER_CHANNEL/g" \
+      "$HERE/patches/$1.patch"
 }
 
 for proj in "${projects[@]}"; do
@@ -233,7 +242,9 @@ dest=${ZIP_DIR:-$(dirname "$SRC")/zips}
 zip=$(find "$product" -maxdepth 1 -name 'crDroidAndroid-*.zip' | sort | tail -1)
 [ -n "$zip" ] || { echo "No crDroidAndroid-*.zip in $product" >&2; exit 1; }
 built=$(basename "$zip" .zip)
-name=$built${ADB_KEY:+-adbkey}
+suffix=""
+[ "$DEBLOAT" = 1 ] && suffix="-debloat"
+name=$built${suffix}${ADB_KEY:+-adbkey}
 mkdir -p "$dest"
 cp "$zip" "$dest/$name.zip"
 # Keep the zip's versioned name, but name the images plainly like every

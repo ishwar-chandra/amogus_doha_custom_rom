@@ -129,6 +129,13 @@ device trees in `device/motorola/targets` name their product that way and
 inherit `vendor/lineage/config/common_full_phone.mk`, which is crDroid's
 vendor tree here and pulls in crDroid's own packages and settings.
 
+Variants: `DEBLOAT=1` builds the same ROM without the optional crDroid extras
+(Game Space, floating windows, battery stats viewer, MatLog, the Twelve music
+player, Recorder and Glimpse gallery); the zip is named `…-debloat.zip`. Calls,
+SMS, camera, the file picker, calendar storage and OTA are untouched by it.
+One-click updates from Settings are **planned, not shipped**: the next builds
+carry the Updater endpoint patch, see `PLAN.md`.
+
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
 android.googlesource.com rate-limits parallel fetches with `HTTP 429` /

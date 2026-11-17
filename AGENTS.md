@@ -47,9 +47,10 @@ build.sh
   worktree tree incl. untracked files. Unchanged patch + unchanged tree ⇒
   project untouched (mtimes kept, no rebuild); otherwise it is reset and
   re-applied. Removed/renamed patches are reverted.
-- `@SKIN_THROTTLE_MC@` is the only placeholder: replaced with
-  `SKIN_THROTTLE_C * 1000` when rendering. The rendered blob is what the
-  stamp compares, so changing the variable re-applies the patch.
+- Placeholders are rendered when patches are applied: `@SKIN_THROTTLE_MC@` →
+  `SKIN_THROTTLE_C * 1000`, `@DEBLOAT@` → 0/1 and `@UPDATER_CHANNEL@` →
+  `standard`/`debloat`. The rendered blob is what the stamp compares, so
+  changing any of them re-applies the affected patches.
 
 ## Key Directories
 
@@ -101,6 +102,7 @@ Build-affecting environment variables (pass as `-e NAME=value` in Docker):
 | `ZIP_DIR` | artifact destination | `zips/` next to the source dir |
 | `SKIN_THROTTLE_C` | °C where the thermal HAL reports throttling | `40` |
 | `VARIANT` | `userdebug`/`user`/`eng` | `userdebug` |
+| `DEBLOAT` | `1` leaves out the optional crDroid extras (GameSpace, floating windows, battery stats, MatLog, Twelve, Recorder, Glimpse); the zip gets a `-debloat` suffix and its own OTA channel | `0` |
 | `ADB_KEY` | test builds only: `adbkey.pub` baked into recovery+system; zip gets `-adbkey` suffix, **never distribute** | unset |
 | `MANIFEST_URL`, `MANIFEST_BRANCH` | manifest source | this clone / its current branch |
 

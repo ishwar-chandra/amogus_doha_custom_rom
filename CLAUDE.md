@@ -56,7 +56,8 @@ against this clone's manifest, (2) resets each patched project and applies
 
 Useful environment variables: `SKIP_SYNC=1` (skip init/sync — use this
 when iterating), `JOBS`, `SYNC_JOBS`, `CCACHE_SIZE`, `ZIP_DIR`,
-`SKIN_THROTTLE_C`, `ADB_KEY` (test builds only), `MANIFEST_BRANCH`.
+`SKIN_THROTTLE_C`, `DEBLOAT` (variant: 0 standard, 1 without the optional
+crDroid extras), `ADB_KEY` (test builds only), `MANIFEST_BRANCH`.
 With Docker, pass them as `-e NAME=value`.
 
 There is **no test suite, linter, or CI**. Correctness is verified by
@@ -118,9 +119,10 @@ patches:
   before producing the diff). Hand edits to a patched project are wiped
   on the next run — change the patch, not the tree.
 
-`@SKIN_THROTTLE_MC@` is the only placeholder: `build.sh` substitutes
-`SKIN_THROTTLE_C * 1000` when rendering patches, and the rendered blob is
-what the stamp compares (so changing the variable re-applies patches).
+Placeholders rendered when patches are applied: `@SKIN_THROTTLE_MC@` →
+`SKIN_THROTTLE_C * 1000`, `@DEBLOAT@` → 0/1, `@UPDATER_CHANNEL@` →
+`standard`/`debloat`. The rendered blob is what the stamp compares, so
+changing any of them re-applies the affected patches.
 
 `build.sh` also generates `vendor/extra/product.mk` for `ADB_KEY` test
 builds and deletes it otherwise; that directory is not in the manifest and
