@@ -57,7 +57,11 @@
 #   JOBS          compile jobs         (default: MACHINE's vCPUs)
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
-#   REPO, BRANCH, OUT, RCLONE_REMOTE, RCLONE_PATH, GH_REPO, TAG
+#   REPO, BRANCH, OUT, GH_REPO, TAG
+#   BACKUP_REMOTE backup destination: an rclone remote (default
+#                 gdrive:doha-backup) or a gs:// bucket. Drive needs its own
+#                 client_id eventually — rclone's shared one is being retired
+#                 (see "Make your own client_id" in the rclone Drive docs).
 #   NO_RELEASE=1 / NO_DELETE=1         for `finish`
 set -euo pipefail
 
@@ -83,6 +87,7 @@ REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
 BRANCH=${BRANCH:-crdroid-android-17}
 OUT=${OUT:-$PWD/gcp-out}
 SESSION=doha
+BACKUP_REMOTE=${BACKUP_REMOTE:-gdrive:doha-backup}
 RCLONE_REMOTE=${RCLONE_REMOTE:-gdrive}
 RCLONE_PATH=${RCLONE_PATH:-amogus-doha}
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
@@ -136,14 +141,14 @@ publish_release() {
 # settings, passed as arguments because the heredoc is quoted.
 remote_exec() {
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '${2:-0}'" \
+    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '${2:-0}' '$BACKUP_REMOTE'" \
     <<'REMOTE'
 set -euo pipefail
 MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
 VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
 # The heredoc is quoted, so $JOBS_BUILD/$REPO_DEPTH below are expanded by
 # this remote shell: they have to arrive as arguments, not from the caller.
-JOBS_BUILD=${10} REPO_DEPTH=${11} ADB_KEY_BUILD=${12:-0}
+JOBS_BUILD=${10} REPO_DEPTH=${11} ADB_KEY_BUILD=${12:-0} BACKUP_REMOTE=${13:-}
 
 BUILD=/mnt/build CACHE=/mnt/cache
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
@@ -227,13 +232,31 @@ EXCLUDES=(--exclude "/**/hooks/*.sample")
 # compares it. A new set is one line, not three edits.
 SETS=("$SRC/.repo:src/.repo" "$CCACHE:ccache" "$ZIPS:zips" "$MANIFEST:manifest")
 each_set() {  # $1 = push|pull|check; remaining args are extra flags
-  local action=$1 flag; shift
+  local action=$1; shift
   for pair in "${SETS[@]}"; do
-    local local_path=${pair%%:*} remote_path=$RCLONE_REMOTE:$RCLONE_PATH/${pair#*:}
-    case $action in
-      push)  mkdir -p "$local_path"; rclone_ sync "$local_path" "$remote_path" "${EXCLUDES[@]}" "$@" ;;
-      pull)  mkdir -p "$local_path"; rclone_ sync "$remote_path" "$local_path" "${EXCLUDES[@]}" "$@" ;;
-      check) rclone_ check --size-only "$local_path" "$remote_path" "$@" ;;
+    local local_path=${pair%%:*} sub=${pair#*:}
+    case $BACKUP_REMOTE in
+      gs://*)
+        # GCS: the VM's service account already has access, and `rsync`
+        # compares size+checksum in one pass, so a re-run only moves what
+        # changed. No --delete: an interrupted upload must never remove the
+        # copy that did survive.
+        local remote_path="${BACKUP_REMOTE%/}/$sub"
+        case $action in
+          push)  mkdir -p "$local_path"
+                 gcloud storage rsync -r "$local_path" "$remote_path" 2>&1 | tail -2 ;;
+          pull)  mkdir -p "$local_path"
+                 gcloud storage rsync -r "$remote_path" "$local_path" 2>&1 | tail -2 ;;
+          check) echo "== $sub"
+                 gcloud storage rsync -r --dry-run "$local_path" "$remote_path" 2>&1 | tail -3 ;;
+        esac ;;
+      *)
+        local remote_path=$RCLONE_REMOTE:$RCLONE_PATH/$sub
+        case $action in
+          push)  mkdir -p "$local_path"; rclone_ sync "$local_path" "$remote_path" "${EXCLUDES[@]}" "$@" ;;
+          pull)  mkdir -p "$local_path"; rclone_ sync "$remote_path" "$local_path" "${EXCLUDES[@]}" "$@" ;;
+          check) rclone_ check --size-only "$local_path" "$remote_path" "$@" ;;
+        esac ;;
     esac
   done
 }
@@ -253,7 +276,19 @@ setup)  install_deps; ensure_swap
         [ -d "$MANIFEST/.git" ] || git clone -b "$BRANCH" "$REPO" "$MANIFEST"
         echo "setup done: $(nproc) cpus, $(free -g | awk 'NR==2{print $2}') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')" ;;
 
-build)  cat > "$HOME/run-build.sh" <<'EOS'
+build)
+        # The VM builds from its own clone of this recipe, so a change that was
+        # not pushed never reaches it. Pull the branch first and say which
+        # commit is being built; the caller checks for uncommitted work.
+        if [ -d "$MANIFEST/.git" ]; then
+          if git -C "$MANIFEST" fetch -q origin "$BRANCH" 2>/dev/null &&
+             git -C "$MANIFEST" reset -q --hard "origin/$BRANCH" 2>/dev/null; then
+            echo "manifest: $(git -C "$MANIFEST" log -1 --format='%h %s')"
+          else
+            echo "manifest: fetch/reset failed, building the clone as it is" >&2
+          fi
+        fi
+        cat > "$HOME/run-build.sh" <<'EOS'
 #!/bin/bash
 # Started by tools/gcp-build.sh inside tmux; records the exit code for
 # `finish`, whatever happens.
@@ -306,14 +341,17 @@ verify) fail=0
         [ "$fail" = 0 ] && echo "artifacts ok: $(ls "$ZIPS" | tr '\n' ' ')"
         exit "$fail" ;;
 
-backup)  install_rclone; each_set push
-         du -sh "$SRC/.repo" "$CCACHE" "$ZIPS"; echo "backup done (log: $RLOG)" ;;
+backup)  case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
+         each_set push
+         du -sh "$SRC/.repo" "$CCACHE" "$ZIPS"; echo "backup done -> $BACKUP_REMOTE" ;;
 
-restore) install_rclone; each_set pull
+restore) case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
+         each_set pull
          echo "restored $(du -sh "$SRC/.repo" | cut -f1) of .repo; build.sh will"
          echo "re-create the worktrees from these local objects (no download)" ;;
 
-check)   install_rclone; each_set check ;;
+check)   case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
+         each_set check ;;
 
 release) install_gh
          [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
@@ -386,6 +424,15 @@ finish)
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 
 build)
+  # The VM builds from its own clone of this repo: anything uncommitted or
+  # unpushed simply will not be there, which has bitten this project before.
+  ROOT=$(cd "$HERE/.." && pwd)
+  if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
+    echo "WARN: $ROOT has uncommitted changes; the VM builds origin/$BRANCH only" >&2
+  fi
+  if [ -n "$(git -C "$ROOT" log --oneline "origin/$BRANCH..HEAD" 2>/dev/null)" ]; then
+    echo "WARN: local commits are not pushed to origin/$BRANCH; the VM will not see them" >&2
+  fi
   # ADB_KEY is a path on *this* machine; the VM needs the key itself. Its
   # content is validated here so a bad path fails before the build starts.
   adb_arg=0
