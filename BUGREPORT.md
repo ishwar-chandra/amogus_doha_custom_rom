@@ -153,7 +153,7 @@ The rest is expected noise: 19 × `untrusted_app -> system_adbd_prop: read` (app
 props on a `user` build), 8 × `mediaprovider_app -> radio_service: find` (upstream AOSP quirk),
 plus single digits for shell/dumpstate checks.
 
-### D6 — keystore2 refuses attestation without an attestation key (informational)
+### D6 — key attestation fails with Km(-10003): this is why Play Integrity apps break (high)
 
 `keystore2` logs, whenever an app asks for an attested key:
 
@@ -161,9 +161,19 @@ plus single digits for shell/dumpstate checks.
 While generating without a provided attestation key and parameter…
 ```
 
-Keymaster on this device has no provisioned attestation keys, so keys are generated but cannot
-be attested. Consequence: Play Integrity basic checks may pass via the SafetyNet spoof, but
-hardware attestation does not exist; nothing to fix in the ROM and no app misbehaviour observed.
+Keymaster has no attestation key to sign with, so `KeyGenParameterSpec` with an attestation
+challenge always fails with `KM_ERROR_KEY_NOT_FOUND`. The bugreport carries 68 of these in six
+minutes, all from uid 10316 = `com.google.android.apps.nbu.paisa.user` (**Google Pay India**), and the
+Keymaster HAL logs `Attest key send cmd failed / resp->status: -10003` alongside.
+
+This is not cosmetic. On Android 13+ every Play Integrity device label — including
+`MEETS_BASIC_INTEGRITY` — requires a key-attestation chain rooted at Google, so with no chain the
+verdict is empty and any app that checks it refuses to run. `MEETS_DEVICE_INTEGRITY` would additionally
+require a locked bootloader and a certified OEM image, and `MEETS_STRONG_INTEGRITY` patch levels for
+all partitions including Motorola's 2022 vendor blob. None of that is reachable on an unlocked,
+self-signed build; the attestation key lives in the TEE and cannot be created by the OS. Full
+analysis, the decisive KeyAttestation test, and what is deliberately *not* done about it (keybox
+spoofing) are in `PLAYINTEGRITY.md`.
 
 ### D8 — No Wi-Fi RTT service (low, feature missing)
 

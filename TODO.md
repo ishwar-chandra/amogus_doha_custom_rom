@@ -240,7 +240,11 @@ Caveats worth remembering:
   wakeup38 wakelock stats). Regenerate `patches/device/lineage/sepolicy.patch` from the tree.
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
-- [ ] D6 keystore2 attestation errors: documented in BUGREPORT §D6, no action.
+- [ ] Play Integrity / D6: blocked on hardware attestation (`Km(-10003)`, 68 hits from Google Pay in
+  one report). Analysis in `PLAYINTEGRITY.md`; the decisive test needs `KeyAttestation` (vvb2060)
+  installed on the phone — `-10003` there means the TEE has no attestation key and nothing ROM-side can
+  fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
+  `MEETS_BASIC_INTEGRITY` is reachable.
 
 ## Home-screen drag (D7), from the 18:29 report
 
