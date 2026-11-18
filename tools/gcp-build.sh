@@ -219,6 +219,21 @@ mount_ssds() {
 }
 mount_ssds
 
+# A custom boot disk can be much larger than the 10 GB image. Google's Ubuntu
+# image normally grows the root partition at first boot; do it again here in
+# case the image did not, so /mnt/build sees the full 500 GB.
+grow_root() {
+  local src disk part
+  src=$(findmnt -n -o SOURCE / 2>/dev/null) || return 0
+  case $src in /dev/*) ;; *) return 0 ;; esac
+  disk=${src%[0-9]*}
+  part=${src##*[!0-9]}
+  [ -b "$disk" ] || return 0
+  command -v growpart >/dev/null || return 0
+  sudo growpart "$disk" "$part" >/dev/null 2>&1 || true
+  sudo resize2fs "$src" >/dev/null 2>&1 || true
+}
+
 ensure_swap() {
   local f=$CACHE/swap
   mkdir -p "$CACHE"
@@ -325,6 +340,7 @@ release_assets() {
 case "$MODE" in
 
 setup)  install_deps
+        grow_root
         mkdir -p "$SRC" "$ZIPS" "$CCACHE"
         ensure_swap
         [ -d "$MANIFEST/.git" ] || git clone -b "$BRANCH" "$REPO" "$MANIFEST"
@@ -511,6 +527,22 @@ create)
     echo "Either request a quota increase, or MACHINE=n2-custom-${have%.*}-49152." >&2
     exit 1
   fi
+  case "$DISK_TYPE" in
+    pd-ssd|pd-balanced)
+      disk_gb=${DISK%GB}
+      case "$disk_gb" in
+        ''|*[!0-9]*) ;;
+        *)
+          ssd_have=$(gcloud compute regions describe "${ZONE%-*}" --project "$PROJECT" \
+            --format='value(quotas[metric=SSD_TOTAL_GB].limit)' 2>/dev/null || echo "")
+          echo "ssd: ${DISK} $DISK_TYPE wants ${disk_gb} GB, regional SSD_TOTAL_GB is ${ssd_have:-?}"
+          if [ -n "$ssd_have" ] && awk "BEGIN{exit !($disk_gb > $ssd_have)}"; then
+            echo "refusing: ${DISK} does not fit SSD_TOTAL_GB=${ssd_have}." >&2
+            echo "Use DISK_TYPE=pd-standard, a smaller DISK, or raise the SSD quota." >&2
+            exit 1
+          fi ;;
+      esac ;;
+  esac
   gcloud_ compute instances create "$NAME" \
     --machine-type "$SYNC_MACHINE" \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \

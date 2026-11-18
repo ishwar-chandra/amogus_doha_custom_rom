@@ -298,6 +298,8 @@ Commit messages: plain-language subject, optional area prefix
 - Storage shape (`create`):
   - Default: one 500 GB `pd-ssd` boot disk holds the OS, tree, `out/`, ccache
     and swap. No local SSD and no second disk; deleting the VM deletes it.
+    This region's `SSD_TOTAL_GB` quota is 250 GB, so a 500 GB `pd-ssd` is refused
+    before create; raise that quota if you want SSD speed.
   - `SSD_COUNT=2` (or 4/8/…) opts into local NVMe: 2×375 GB = 750 GB, fastest,
     but GCP only attaches them in pairs and the tree dies with the instance.
   - `DISK_MODE=pd [DATA_DISK_GB=400] [DATA_DISK_TYPE=pd-ssd]`: optional
