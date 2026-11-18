@@ -25,9 +25,10 @@ The device tree and vendor blobs come from the community doha port by
 Aldair402 and moto-common. We didn't write those. Our work is the
 patches that get that port building and booting on Android 17.
 
-The kernel is our fork of Aldair402's
-([`christiaan/android_kernel_motorola_msm-4.14`](https://github.com/christiaan/android_kernel_motorola_msm-4.14),
-branch `lts`). Aldair402's kernel is Motorola's 4.14.190. Ours merges the
+The kernel is our fork of Christiaan's `android_kernel_motorola_msm-4.14`:
+[`ishwar-chandra/android_kernel_motorola_msm-4.14`](https://github.com/ishwar-chandra/android_kernel_motorola_msm-4.14),
+currently pinned to `73b7957` on branch `doha-kernel-fixes-2026-11-19`; `lts` carries the
+4.14.357 baseline. Aldair402's kernel is Motorola's 4.14.190. Ours merges the
 4.14 LTS updates up to 4.14.357 (OpenELA) on top of it, so it carries
 several years of upstream security and stability fixes. `uname -r` shows
 `4.14.357-openela+`.
@@ -37,7 +38,7 @@ device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 (Android 16) version is on `main`. This branch is `crdroid-android-17`.
 
 New here? [`GUIDE.md`](GUIDE.md) walks through a build end to end: local and
-GCP, backups, flashing, GApps, releasing and troubleshooting.
+GCP, flashing, GApps, releasing and troubleshooting.
 
 ## Requirements
 
@@ -131,10 +132,13 @@ vendor tree here and pulls in crDroid's own packages and settings.
 
 Variants: `DEBLOAT=1` builds the same ROM without the optional crDroid extras
 (Game Space, floating windows, battery stats viewer, MatLog, the Twelve music
-player, Recorder and Glimpse gallery); the zip is named `…-debloat.zip`. Calls,
+player, Recorder and Glimpse gallery); the zip is named `...-debloat.zip`. Calls,
 SMS, camera, the file picker, calendar storage and OTA are untouched by it.
-One-click updates from Settings are **planned, not shipped**: this build carries the Updater
-endpoint patch and a per-channel guard; the feed itself is tracked in `TODO.md`.
+One-click updates use a self-hosted feed and per-channel guard: a standard build
+reads `standard/doha.json`, a debloat build reads `debloat/doha.json`. The feed
+is generated automatically by `tools/gcp-build.sh finish`; it requires the
+public `ishwar-chandra/doha-ota` repo and a token with write access to it. Until
+that one-time setup exists, the Updater has nothing to download.
 
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
@@ -389,10 +393,12 @@ LineageOS's [device support
 requirements](https://github.com/LineageOS/charter/blob/main/device-support-requirements.md)
 (which crDroid builds on), it differs in these ways:
 
-- **No updates through the Updater app.** There is no OTA entry for
-  `amogus_doha` in crDroid's OTA repo, so the build writes its own JSON
-  with empty maintainer fields and the Updater app has nothing to
-  download. Update with `adb sideload` as described under Installing.
+- **OTA is self-hosted.** The build does not use crDroid's OTA repo; it reads
+  `ishwar-chandra/doha-ota` at `<channel>/doha.json`. `tools/gcp-build.sh
+  finish` publishes the release and updates that feed, so a standard build
+  only offers standard zips and a debloat build only debloat zips. The feed
+  repo and its write token are a one-time setup; without them, update with
+  `adb sideload` as described under Installing.
 - **Firmware is not managed for you.** The zip doesn't contain Motorola
   firmware, and the install steps don't copy it to the second slot. Both
   slots should run the latest stock firmware for doha (Android 10)
@@ -725,3 +731,34 @@ crDroid's own `system/core` does the same thing
 (`SPOOF_SAFETYNET=1`), so there is no `patches/system/core.patch` on this
 branch. Our docker command still uses that image, but only as a toolchain
 container, because `build.sh` replaces its entrypoint.
+
+### 2026-11-18 bugreport follow-ups
+
+**Launcher3 themed-icon crash** (`frameworks/libs/systemui.patch`). The
+launcher's `IconProvider$ThemeData.loadPaddedDrawable()` treated a resource
+ID from an updated or removed package as valid and called
+`getResourceTypeName()`/`getDrawable()` on it. `Resources$NotFoundException`
+killed the Launcher process (dropbox `system_app_crash`, IDs
+`0xe020f5c`/`0xe020f4b`). The patch catches the missing resource and returns
+`null`, so the caller falls back to the default icon instead of restarting
+the workspace.
+
+**Battery sysfs and power-HAL sepolicy** (`device/lineage/sepolicy.patch`).
+`system_suspend` was denied read access to `sysfs_batteryinfo`, which is why
+`android.system.suspend-service` could not read the wakelock/battery stats
+(D5). `hal_power_default` was also denied `cgroup:file` reads for
+`schedtune.boost`/`prefer_high_cap`. The patch adds the two allow rules;
+it does not broaden write access.
+
+**Nearby Share AppOp** (`frameworks/base.patch`). GMS 26.46 asks for
+`ACCESS_LOCAL_NETWORK`, but the platform only registers the op when the
+`access_local_network_permission_enabled` flag is on, so the query returned
+`Operation not found` and Nearby advertising failed with a missing-permission
+exception. The patch registers the op unconditionally; the permission remains
+unenforced until the flag is enabled. The 4.14 `BpfNetMaps` local-net map skip
+is a separate limitation.
+
+**Still not fixable in a kit patch:** the GMS `AdvancedProtection` safety
+source (platform/GApps enum mismatch), Find My Device's Google-signature check,
+Motorola launcher badge provider (app-side query), and the Wi-Fi/Bluetooth/USB
+HAL/framework errors from the same captures.

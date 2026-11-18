@@ -84,25 +84,25 @@ tree.
 
 ### 2.3 Build on a GCP VM (the script)
 
-The script provisions a VM, syncs, builds, backs up and can publish a
-release. Commands (run from the repo root, `gcloud` in `PATH`):
+The script provisions a VM, syncs, builds and publishes a release. Commands
+(run from the repo root, `gcloud` in `PATH`):
 
 ```sh
 tools/gcp-build.sh create     # VM + 375 GB NVMe (SSD_COUNT=2 adds a second)
-tools/gcp-build.sh config     # copy ~/.config/rclone/rclone.conf to the VM
 tools/gcp-build.sh setup      # install deps, clone the recipe
 tools/gcp-build.sh build      # start sync+build in tmux
+AUTO_FINISH=1 tools/gcp-build.sh build   # wait, release, update OTA, delete
 tools/gcp-build.sh state      # exit file, tmux, last log lines
 tools/gcp-build.sh logs       # tail -f the build log
 tools/gcp-build.sh att        # attach to the tmux session (Ctrl-b d to detach)
 tools/gcp-build.sh fetch      # copy zips/ to ./gcp-out locally
-tools/gcp-build.sh finish     # wait, verify, back up, release, delete
+tools/gcp-build.sh finish     # wait, verify, release, update OTA, delete
 TAG=crdroid-20261118 tools/gcp-build.sh release   # release only (one tag: all variants)
 OTA_CHANNEL=debloat TAG=crdroid-20261118 tools/gcp-build.sh ota   # write <channel>/doha.json
 tools/gcp-build.sh delete     # delete the VM now
 ```
 
-Typical session: `create; config; setup; build; finish`.
+Typical session: `create; setup; build; finish`.
 
 Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
 `SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
@@ -112,58 +112,13 @@ default 48), `TAG=...`, `OTA_CHANNEL=standard|debloat`, `NO_RELEASE=1`, `NO_OTA=
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
 log reading; `finish` exits before deleting anything.
 
-### 2.4 Backups and restores
+### 2.4 No persistent backup
 
-`finish` backs up `src/.repo` (~33 GB), `ccache`, `zips` and the recipe
-clone to Google Drive (`rclone` remote `gdrive`). Restore on a new VM:
-
-```sh
-tools/gcp-build.sh create
-tools/gcp-build.sh config
-tools/gcp-build.sh setup
-tools/gcp-build.sh restore    # pull .repo + ccache + zips + manifest
-tools/gcp-build.sh build      # sync re-creates worktrees from local objects
-```
-
-Drive uses rclone's shared OAuth client by default, which is **rate
-limited** (`rateLimitExceeded`, uploads crawl). Two fixes:
-
-1. **Your own OAuth client** (best): Cloud Console → APIs & Services →
-   Credentials → Create OAuth client ID → Desktop app; put the id/secret in
-   `~/.config/rclone/rclone.conf` for the `gdrive` remote, then
-   `rclone config reconnect gdrive:`. While the app is in "Testing", add
-   your Google account under **OAuth consent screen → Test users** or you
-   get `Error 403: access_denied`.
-2. **GCS bucket** (no OAuth, works immediately with the VM's service
-   account):
-
-   ```sh
-   gcloud storage buckets create gs://<project>-doha-backup \
-     --project <project> --location asia-south1
-   ```
-
-   On the VM add to `~/.config/rclone/rclone.conf`:
-
-   ```ini
-   [gcs]
-   type = google cloud storage
-   env_auth = true
-   project_number = <project number>
-   ```
-
-   Then mirror the same layout:
-
-   ```sh
-   B=gcs:<project>-doha-backup
-   rclone sync /mnt/build/src/.repo $B/src/.repo \
-     --exclude "/**/hooks/*.sample" --transfers 16 --checkers 32
-   rclone sync /mnt/cache/ccache $B/ccache
-   rclone sync /mnt/build/zips   $B/zips
-   rclone sync /mnt/build/manifest $B/manifest
-   ```
-
-   Restore is the mirror (`rclone sync $B/src/.repo /mnt/build/src/.repo`,
-   etc. on the new VM). Delete the bucket when you no longer need it.
+There is no Drive, rclone, GCS or `.repo` backup. The VM is disposable:
+after a successful build `finish` publishes the zip and images to the GitHub
+release, updates the OTA feed, and deletes the VM. A later build re-syncs and
+rebuilds; `ccache` and `.repo` do not survive the VM. Use `fetch` if you want
+the artifacts locally before `finish` deletes the machine.
 
 ## 3. What the build produces
 
@@ -293,9 +248,7 @@ the `repo` scope (classic). `NO_RELEASE=1` skips publishing,
 | `not well-formed (invalid token)` in `snippets/*.xml` | `--` inside an XML comment | never put `--` in comments; re-validate with `python3 -c 'import xml.dom.minidom as m; m.parse("snippets/doha.xml")'` |
 | build exits 1 at `lstat .../Settings/oat` | old `mka target-files-package bacon` raced crDroid's cleanup | the fix is in `build.sh` (`mka bacon` only); pull the repo and rebuild |
 | `build.exit` missing, "no exit file yet" | still building | `tools/gcp-build.sh state` / `logs`; ninja % is action count, not time |
-| `scp` of a 1.2 GB file dies (`Broken pipe`) | gcloud scp tunnel drops | use `rclone`/Drive or `gcp-out` fetch in the background |
-| rclone `rateLimitExceeded` | shared Drive client quota | own OAuth client (§2.4) or the GCS bucket |
-| OAuth `Error 403: access_denied` | OAuth app in Testing, account not a tester | add your account under OAuth consent screen → Test users |
+| `scp` of a 1.2 GB file dies (`Broken pipe`) | gcloud scp tunnel drops | use `gcp-out` fetch in the background |
 | GApps "Insufficient storage" | system partition too small | MindTheGapps (verified) or NikGapps Core |
 | `adb root`/`dmesg` denied | `ro.debuggable=0` (spoofed props) | use `logcat`; pstore from recovery |
 | First boot only 2G | modem/SIM init | reboot once |
@@ -336,13 +289,10 @@ Commit messages: plain-language subject, optional area prefix
 - `CPUS_ALL_REGIONS` is **12** on this project, so 12 vCPU is the widest machine that can be created; the
   regional limit (32) does not help. `create` preflights the quota and refuses a wider machine with that reason
   instead of failing inside gcloud. After an increase, `MACHINE=n2-custom-16-49152` (or 24) works unchanged.
-- `HOURS` (default 48) is a hard stop that deletes the VM even if forgotten; the boot disk is created with
-  `--no-boot-disk-auto-delete`, so `~/.repo-backup` (a copy of `.repo`) survives and a later VM can mount it
-  instead of re-syncing.
-- The backup destination is your own Drive (`gdrive:doha-backup` by default),
-  which costs nothing extra. If you back up to the GCS bucket instead
-  (option 2 in §2.3), that bucket keeps billing until deleted: 46 GB standard
-  in asia-south1 is roughly $1/month — `gcloud storage rm -r gs://<bucket>`.
+- `HOURS` (default 48) is a hard stop that deletes the VM even if forgotten. There is
+  no persistent tree or ccache: a later VM re-syncs and rebuilds.
+- Nothing is uploaded to Drive or GCS. After a successful build, only the GitHub
+  release and its OTA feed survive the VM.
 
 ## 12. Where to look
 
@@ -352,4 +302,4 @@ Commit messages: plain-language subject, optional area prefix
 | `CLAUDE.md` / `AGENTS.md` | repo mechanics for humans/AI assistants |
 | `TODO.md` | live hardware-issue list with device evidence |
 | `build.sh` | sync → patch → build → artifacts |
-| `tools/gcp-build.sh` | GCP cycle, backup/restore, release |
+| `tools/gcp-build.sh` | GCP cycle, release and OTA feed; no backup |

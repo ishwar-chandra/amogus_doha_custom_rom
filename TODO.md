@@ -73,48 +73,47 @@ kernel `4.14.357-openela+ #16`).
   a first-boot GMS permission state. Candidate for a README
   troubleshooting entry.
 
-## GCP build machine and Drive backup
+## GCP build machine
 
 `tools/gcp-build.sh` does the whole cycle. Project `customrom-514215`
-(asia-south1), 12 vCPU / 96 GB (`n2-custom-12-98304`) with a 500 GB boot
-disk for the sources and a 375 GB local SSD for `out/`, ccache and swap.
-Quota preferences for 64 vCPU, spot CPUs and 500 GB SSD are submitted and
-still show `granted` = the old values; the 12 vCPU shape works without
-them, so the build does not wait.
+(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with a 50 GB boot disk
+and two 375 GB local NVMe devices for the tree, `out/`, ccache and swap
+(`DISK_MODE=pd` replaces the pair with one 400 GB pd-ssd). Quota preferences
+for 64 vCPU, spot CPUs and 500 GB SSD are submitted and still show `granted`
+= the old values; the 12 vCPU shape works without them, so the build does not
+wait.
 
-Workflow, first time:
+Workflow:
 
 ```sh
-rclone config                        # once, on your own machine: new remote,
-                                     # type drive, named gdrive
-export GH_TOKEN=...                  # a token with repo scope, for the release
+export GH_TOKEN=...                  # token with Contents write on the ROM
+                                     # and doha-ota repos
 tools/gcp-build.sh create
-tools/gcp-build.sh config            # copies rclone.conf to the VM
 tools/gcp-build.sh setup
 tools/gcp-build.sh build             # starts the build in tmux on the VM
-tools/gcp-build.sh finish            # wait, verify, back up, release, delete
+AUTO_FINISH=1 tools/gcp-build.sh build  # wait, release, update OTA, delete
+tools/gcp-build.sh finish            # or wait on an already-started build
 ```
 
 `build` runs inside tmux on the VM, so a dropped SSH connection or this
-machine going to sleep does not touch it; `att` attaches, `logs` follows
-the log, `state` says whether it is still running and what it exited with.
-Nothing is deleted on a timeout during a build: the only automatic
-deletion is the `HOURS` hard stop (default 24, `HOURS=0` disables it), and
-`finish` is what normally ends a session, in this order — wait for the
-build, verify the zip and images against their `.sha256sum`, mirror
-`.repo`/ccache/zips to Drive, publish the release, then delete the VM. A
-failed build leaves the VM alone so the log can be read.
+machine going to sleep does not touch it; `att` attaches, `logs` follows the
+log, `state` says whether it is still running and what it exited with.
+Nothing is deleted on a timeout during a build: the only automatic deletion
+is the `HOURS` hard stop (default 48, `HOURS=0` disables it), and `finish`
+normally ends a session: wait for the build, verify the zip and images
+against their `.sha256sum`, publish the release, update the matching
+standard/debloat OTA feed, then delete the VM. A failed build leaves the VM
+alone so the log can be read.
 
-The release is published from the VM, where the zip already is, so only
-the token crosses over (written to a file, removed after the upload); `gh`
-is installed there, and the local machine needs nothing but this script.
-`NO_RELEASE=1` and `NO_DELETE=1` skip those steps.
+The release is published from the VM, where the zip already is, so only the
+token crosses over (written to a file, removed after the upload); `gh` is
+installed there, and the local machine needs nothing but this script.
+`NO_RELEASE=1`, `NO_OTA=1` and `NO_DELETE=1` skip those steps.
 
-On a later VM: `create`, `config`, `restore`, `build`, `finish`. The
-restore puts `.repo` and ccache back, and `build` runs `repo init`/`repo
-sync` against those local objects, so the worktrees come back without
-downloading anything, and the warm ccache makes the rebuild minutes rather
-than hours.
+There is no Drive/GCS/rclone backup and no restore step. The VM is
+disposable: `.repo`, ccache and `out/` do not survive deletion. A later
+build re-syncs and rebuilds; `finish` is what preserves the release and OTA
+feed.
 
 Build variant: `build.sh` builds **userdebug** by default (override with
 `VARIANT=user`), which is what the debugging here needs — `adb root`,
@@ -124,27 +123,11 @@ knowing: the v2.0.0/v2.0.1 zips on GitHub were `user` builds
 be read from the device. Keep userdebug for test builds; decide
 separately whether a public crDroid release should be `user`.
 
-What is backed up, and why only that:
-
-- `src/.repo` — bare git objects for all ~1280 projects, ~180 GB.
-  Immutable once fetched, so rclone uploads only new objects. Restoring
-  this and letting `repo sync` re-create the worktrees also sidesteps the
-  fact that Drive stores neither file modes nor symlinks: a copied-out
-  worktree would restore into something that cannot build.
-- `ccache` — content-addressed, so also incremental.
-- `manifest` (this recipe clone) and `zips` (finished builds).
-
-`out/` is not backed up: ~120 GB of regenerable intermediates.
-
 Caveats worth remembering:
 
-- `backup` mirrors, so locally deleted files are deleted on Drive too.
-- Drive allows ~750 GB of uploads per account per day; the first backup is
-  the big one (~230 GB), later ones are small.
-- Egress from GCP is billed (~180 GB out of asia-south1 is a few dollars),
-  so the first backup is also the only expensive transfer.
-- The local SSD does not survive a stop/start; the boot disk does.
-- `create` sets `--max-run-duration=8h` with `instance-termination-action=
+- The local SSDs do not survive a stop/start; the boot disk does, but nothing
+  on the VM is part of the release except what `finish` uploads.
+- `create` sets `--max-run-duration=48h` with `instance-termination-action=
   DELETE`, so a forgotten VM removes itself instead of billing overnight.
 - Google always spends credits before the card, but there is no hard spend
   cap: check Console → Billing → Credits before a session, and `delete`

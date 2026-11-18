@@ -1,58 +1,40 @@
 #!/usr/bin/env bash
-# Build amogus_doha on a Google Cloud VM, back the expensive parts up to
-# Google Drive, and publish the result as a GitHub release.
+# Build amogus_doha on a Google Cloud VM and publish the result as a GitHub
+# release. No Google Drive backup: the VM is disposable and every shipped
+# artifact is copied to the GitHub release (and the OTA feed) before deletion.
 #
 # Local commands (they drive gcloud/ssh; the work happens on the VM):
-#   create    the instance: MACHINE + two local SSDs
-#   config    copy rclone.conf to the VM
+#   create    the instance: MACHINE + local SSDs
 #   setup     build deps in the VM, clone the recipe
 #   build     start the build in a tmux session (sync, then compile)
 #   gh-check  preflight the GitHub token -- run this before a build
-#   finish    wait for the build, verify, back up, release, then delete
+#   finish    wait for the build, verify, release, update OTA, then delete
 #   att|logs|state|ssh|fetch|delete
-#   backup|restore|check     Drive backup of .repo + ccache + zips
 #   release                  publish zips/ as one GitHub release tag: every
 #                            variant in zips/ (standard + debloat), creating the
 #                            tag or adding to it if it already exists
 #   ota <tag> <owner/repo>   write <channel>/doha.json to the OTA feed repo
 #                            (--dry-run prints the JSON, publishes nothing)
 #
-# Typical session:  create; config; setup; build; finish
+# Typical session:  create; setup; build; finish
+#
+# A successful build is released by `finish`: it verifies the artifacts, calls
+# `release`, writes the matching OTA channel, and only then deletes the VM. A
+# failed build keeps the VM and log for debugging.
 #
 # Sizing is one machine for the whole job. A repo sync is a download, so it
 # will not use all the cores -- that is inherent to fetching, not a
 # misconfiguration -- and the compile that follows is what drives them.
 # There is deliberately no stop/resize step: the working tree lives on
-# local SSDs, which a stop/start would throw away. `delete` ends the
-# billing, `restore` brings the tree back onto a later VM.
-#
-# What is backed up, and why only that:
-#
-#   src/.repo  bare git objects for all ~1280 projects. Immutable once
-#              fetched, so rclone uploads only what is new. Restoring it and
-#              letting `repo sync` re-create the worktrees also sidesteps the
-#              fact that Drive stores neither file modes nor symlinks -- a
-#              copied-out worktree would restore into something that cannot
-#              build.
-#   ccache     content-addressed, so also immutable and incremental.
-#   manifest   this recipe clone, a few MB.
-#   zips       finished builds, so they survive the VM.
-#
-# out/ is deliberately not backed up: regenerable intermediates.
-#
-# Two limits to plan around: Drive takes ~750 GB of upload per account per
-# day, and GCP egress is billed (~15-25 GB with REPO_DEPTH=1, ~180 GB with
-# full history -- the shallow clone is what keeps the first backup cheap).
+# local SSDs, which a stop/start would throw away. `delete` ends the billing.
 #
 # Environment (all optional):
 #   PROJECT, ZONE, NAME
-#   MACHINE       compile machine      (default: n2-custom-12-65536)
-#   SYNC_MACHINE  separate sync box    (default: MACHINE; only if you want
-#                                       the sync on a cheaper shape, which
-#                                       now means recreating, not resizing)
+#   MACHINE       compile machine      (default: n2-custom-12-49152)
+#   SYNC_MACHINE  separate sync box    (default: MACHINE)
 #   DISK, DISK_TYPE                    boot disk only (default: 50GB, OS)
-#   SWAP_GB       swap on the NVMe     (default: 48)
-#   HOURS         hard stop            (default: 24; 0 disables)
+#   SWAP_GB       swap on the NVMe     (default: 32)
+#   HOURS         hard stop            (default: 48; 0 disables)
 #   VARIANT       userdebug|user|eng   (default: userdebug)
 #   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
 #                 -debloat suffix and needs its own TAG/channel (default: 0)
@@ -63,12 +45,10 @@
 #   JOBS          compile jobs         (default: MACHINE's vCPUs)
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
-#   REPO, BRANCH, OUT, GH_REPO, TAG
-#   BACKUP_REMOTE backup destination: an rclone remote (default
-#                 gdrive:doha-backup) or a gs:// bucket. Drive needs its own
-#                 client_id eventually — rclone's shared one is being retired
-#                 (see "Make your own client_id" in the rclone Drive docs).
-#   NO_RELEASE=1 / NO_DELETE=1         for `finish`
+#   REPO, BRANCH, OUT, GH_REPO, OTA_REPO, TAG
+#   NO_RELEASE=1 / NO_OTA=1 / NO_DELETE=1   for `finish`
+#   AUTO_FINISH=1                       `build` waits for success, releases,
+#                                       updates OTA and deletes in one command
 set -euo pipefail
 
 PROJECT=${PROJECT:-customrom-514215}
@@ -114,9 +94,6 @@ BRANCH=${BRANCH:-crdroid-android-17}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT=${OUT:-$ROOT/gcp-out}
 SESSION=doha
-BACKUP_REMOTE=${BACKUP_REMOTE:-gdrive:doha-backup}
-RCLONE_REMOTE=${RCLONE_REMOTE:-gdrive}
-RCLONE_PATH=${RCLONE_PATH:-amogus-doha}
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
 OTA_REPO=${OTA_REPO:-ishwar-chandra/doha-ota}
 TAG=${TAG:-crdroid-$(date +%Y%m%d)}
@@ -178,29 +155,29 @@ publish_release() {
 # Run a mode-specific script inside the VM. The mode is $1; the rest are
 # settings, passed as arguments because the heredoc is quoted.
 remote_exec() {
-  # Positionals 1-12 are the fixed settings; the mode's own arguments (a tag,
+  # Positionals 1-10 are the fixed settings; the mode's own arguments (a tag,
   # a repo, a dry-run flag) follow them, so `release`/`ota` can see them
   # without re-parsing the shared block above.
   local mode=$1 extra="" a
   shift
   for a in "$@"; do extra+=" '$a'"; done
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$mode' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '$BACKUP_REMOTE' '$DEBLOAT'$extra" \
+    "bash -s -- '$mode' '$REPO' '$BRANCH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '$DEBLOAT'$extra" \
     <<'REMOTE'
 set -euo pipefail
-MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
-VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
+MODE=$1 REPO=$2 BRANCH=$3
+VARIANT=$4 SESSION=$5 SYNC_JOBS=$6 SWAP_GB=$7
 # The heredoc is quoted, so $JOBS_BUILD/$REPO_DEPTH below are expanded by
 # this remote shell: they have to arrive as arguments, not from the caller.
-JOBS_BUILD=${10} REPO_DEPTH=${11} BACKUP_REMOTE=${12:-} DEBLOAT_BUILD=${13:-0}
-shift 13
+JOBS_BUILD=${8} REPO_DEPTH=${9} DEBLOAT_BUILD=${10:-0}
+shift 10
 
 BUILD=/mnt/build
 # One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
 # A second one is optional and only carries ccache + swap; SSD_COUNT=2 adds it.
 CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
-LOG=$HOME/build.log RLOG=$HOME/rclone.log EXIT=$HOME/build.exit
+LOG=$HOME/build.log EXIT=$HOME/build.exit
 
 # The two local SSDs arrive blank, and fstab would fail a boot before setup
 # formatted them, so they are mounted here, idempotently: a reboot keeps
@@ -268,10 +245,6 @@ install_deps() {
 }
 
 # One place for both tools: install on first use, no-op afterwards.
-install_rclone() {
-  command -v rclone >/dev/null && return
-  curl -fsSL https://rclone.org/install.sh | sudo bash >/dev/null
-}
 install_gh() {
   command -v gh >/dev/null && return
   if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 \
@@ -282,48 +255,6 @@ install_gh() {
         "https://github.com/cli/cli/releases/download/v$v/gh_${v}_linux_amd64.tar.gz" &&
       tar xzf gh.tgz && sudo install -m755 gh_*/bin/gh /usr/local/bin/gh )
   fi
-}
-
-# Drive is slow per small file: many parallel transfers, big chunks, and
-# --fast-list to save listing round trips.
-rclone_() {
-  rclone --fast-list --transfers 16 --checkers 32 --drive-chunk-size 128M \
-         --stats 60s --stats-one-line --log-file "$RLOG" "$@"
-}
-# Sample hooks are ~15 files per project and never used.
-EXCLUDES=(--exclude "/**/hooks/*.sample")
-
-# The backup set, defined once: backup pushes it, restore pulls it, check
-# compares it. A new set is one line, not three edits.
-SETS=("$SRC/.repo:src/.repo" "$CCACHE:ccache" "$ZIPS:zips" "$MANIFEST:manifest")
-each_set() {  # $1 = push|pull|check; remaining args are extra flags
-  local action=$1; shift
-  for pair in "${SETS[@]}"; do
-    local local_path=${pair%%:*} sub=${pair#*:}
-    case $BACKUP_REMOTE in
-      gs://*)
-        # GCS: the VM's service account already has access, and `rsync`
-        # compares size+checksum in one pass, so a re-run only moves what
-        # changed. No --delete: an interrupted upload must never remove the
-        # copy that did survive.
-        local remote_path="${BACKUP_REMOTE%/}/$sub"
-        case $action in
-          push)  mkdir -p "$local_path"
-                 gcloud storage rsync -r "$local_path" "$remote_path" 2>&1 | tail -2 ;;
-          pull)  mkdir -p "$local_path"
-                 gcloud storage rsync -r "$remote_path" "$local_path" 2>&1 | tail -2 ;;
-          check) echo "== $sub"
-                 gcloud storage rsync -r --dry-run "$local_path" "$remote_path" 2>&1 | tail -3 ;;
-        esac ;;
-      *)
-        local remote_path=$RCLONE_REMOTE:$RCLONE_PATH/$sub
-        case $action in
-          push)  mkdir -p "$local_path"; rclone_ sync "$local_path" "$remote_path" "${EXCLUDES[@]}" "$@" ;;
-          pull)  mkdir -p "$local_path"; rclone_ sync "$remote_path" "$local_path" "${EXCLUDES[@]}" "$@" ;;
-          check) rclone_ check --size-only "$local_path" "$remote_path" "$@" ;;
-        esac ;;
-    esac
-  done
 }
 
 release_notes() {
@@ -478,18 +409,6 @@ verify) fail=0 newest=""
         [ "$fail" = 0 ] && echo "artifacts ok: $(ls "$ZIPS" | tr '\n' ' ')"
         exit "$fail" ;;
 
-backup)  case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
-         each_set push
-         du -sh "$SRC/.repo" "$CCACHE" "$ZIPS"; echo "backup done -> $BACKUP_REMOTE" ;;
-
-restore) case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
-         each_set pull
-         echo "restored $(du -sh "$SRC/.repo" | cut -f1) of .repo; build.sh will"
-         echo "re-create the worktrees from these local objects (no download)" ;;
-
-check)   case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
-         each_set check ;;
-
 release) TAG=${1:?release needs a tag} GH_REPO=${2:?release needs owner/repo}
          install_gh
          [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
@@ -609,15 +528,6 @@ create)
     echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-2}x 375 GB NVMe). Next: config, setup, build"
   fi ;;
 
-config)
-  CONF=${RCLONE_CONF:-$HOME/.config/rclone/rclone.conf}
-  [ -f "$CONF" ] || { echo "No $CONF. Run 'rclone config' first (new remote, type drive, name gdrive)." >&2; exit 1; }
-  gcloud_ compute scp "$CONF" "$NAME:/tmp/rclone.conf"
-  gcloud_ compute ssh "$NAME" --command \
-    'umask 077; mkdir -p ~/.config/rclone && mv /tmp/rclone.conf ~/.config/rclone/rclone.conf;
-     command -v rclone >/dev/null || curl -fsSL https://rclone.org/install.sh | sudo bash >/dev/null;
-     rclone lsd gdrive: | head' ;;
-
 gh-check)
   tok=$(resolve_token) || exit 1
   echo "token: ${tok:0:6}...${tok: -4} (${#tok} chars)"
@@ -656,12 +566,15 @@ finish)
   echo "build.sh exited $code"
   [ "$code" = 0 ] || { echo "build failed: VM kept, log at $NAME:~/build.log" >&2; exit 1; }
   remote_exec verify
-  remote_exec backup
   [ "${NO_RELEASE:-0}" = 1 ] || publish_release
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
     printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-    remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(ota_channel)" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
+    if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(ota_channel)"; then
+      echo "OTA feed not updated: check $OTA_REPO and token write access." >&2
+      echo "VM kept: fix the feed/token and rerun 'tools/gcp-build.sh finish'." >&2
+      exit 1
+    fi
   fi
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 
@@ -685,9 +598,13 @@ build)
     adb_arg=1
     echo "ADB_KEY: copied $(basename "$ADB_KEY") to $NAME, build gets -adbkey suffix"
   fi
-  remote_exec build "$adb_arg" ;;
+  remote_exec build "$adb_arg"
+  if [ "${AUTO_FINISH:-0}" = 1 ]; then
+    echo "AUTO_FINISH=1: waiting for the build and releasing it"
+    "$0" finish
+  fi ;;
 
-setup|backup|restore|check|state|verify) remote_exec "$1" ;;
+setup|state|verify) remote_exec "$1" ;;
 
 att)    gcloud compute ssh "$NAME" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
 logs)   gcloud_ compute ssh "$NAME" --command "tail -f \$HOME/build.log" ;;
