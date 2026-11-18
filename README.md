@@ -246,8 +246,7 @@ recovery. We tested
 17.0.0 arm64 (20261022): the full package fits, with about 70 MB to
 spare. crDroid's own package,
 [NikGapps-crdroid-official-arm64-17](https://sourceforge.net/projects/crdroid/files/gapps/NikGapps-crdroid-official-arm64-17-20261021.zip/download)
-(486 MB), is the alternative crDroid recommends; the `full` variant (1.2 GB,
-same folder) needs more system space than this device has spare.
+(486 MB), is the alternative crDroid recommends.
 
 - Install it right after the ROM, before the first boot: answer **Yes**
   to the additional-packages prompt (or choose **Advanced → Reboot to

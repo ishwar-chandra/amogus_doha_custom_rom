@@ -341,11 +341,10 @@ The phone is A/B and recovery lives inside \`boot\`.
 This build ships no Google apps. Flash crDroid's own NikGapps package for Android 17 / arm64 in
 the same recovery session, right after the ROM, answering **Yes** to "install additional packages":
 
-- [NikGapps-crdroid-official-arm64-17](https://sourceforge.net/projects/crdroid/files/gapps/NikGapps-crdroid-official-arm64-17-20261021.zip/download) (486 MB, recommended)
-- [NikGapps-crdroid-full-official-arm64-17](https://sourceforge.net/projects/crdroid/files/gapps/NikGapps-crdroid-full-official-arm64-17-20261021.zip/download) (1.2 GB, adds Chrome, Android Auto, extra Google apps)
+[NikGapps-crdroid-official-arm64-17](https://sourceforge.net/projects/crdroid/files/gapps/NikGapps-crdroid-official-arm64-17-20261021.zip/download) (486 MB)
 
-Both live in [crDroid's gapps folder](https://sourceforge.net/projects/crdroid/files/gapps/); pick the newest
-arm64-17 file there if the dated links above have been superseded. MindTheGapps 17.0.0 arm64
+It lives in [crDroid's gapps folder](https://sourceforge.net/projects/crdroid/files/gapps/); take the newest
+arm64-17 official file there if that date has been superseded. MindTheGapps 17.0.0 arm64
 (https://github.com/MindTheGapps/17.0.0-arm64/releases) is the smaller tested alternative.
 
 ## Checksums
