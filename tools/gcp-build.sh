@@ -11,7 +11,9 @@
 #   finish    wait for the build, verify, back up, release, then delete
 #   att|logs|state|ssh|fetch|delete
 #   backup|restore|check     Drive backup of .repo + ccache + zips
-#   release                  publish zips/ as a GitHub release
+#   release                  publish zips/ as one GitHub release tag: every
+#                            variant in zips/ (standard + debloat), creating the
+#                            tag or adding to it if it already exists
 #   ota <tag> <owner/repo>   write <channel>/doha.json to the OTA feed repo
 #                            (--dry-run prints the JSON, publishes nothing)
 #
@@ -75,7 +77,8 @@ NAME=${NAME:-crdroid-build}
 HOURS=${HOURS:-48}
 VARIANT=${VARIANT:-userdebug}
 # Same axis as build.sh's DEBLOAT: 1 leaves the optional crDroid extras out
-# and produces a -debloat zip, which needs its own release tag and OTA channel.
+# and produces a -debloat zip, which goes into the same release tag and has its
+# own OTA channel picked with OTA_CHANNEL.
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 # 12 vCPU is the project's CPUS_ALL_REGIONS cap. 64 GB RAM + 48 GB swap
@@ -484,9 +487,18 @@ release) TAG=${1:?release needs a tag} GH_REPO=${2:?release needs owner/repo}
          mapfile -t assets < <(release_assets)
          [ ${#assets[@]} -gt 0 ] || { echo "no assets for $TAG in $ZIPS" >&2; exit 1; }
          echo "assets: ${assets[*]}"
-         gh release create "$TAG" --repo "$GH_REPO" --target "$BRANCH" --title "$TAG" \
-            --notes "$(release_notes)" "${assets[@]}" && rm -f "$HOME/.gh_token"
-         echo "published $TAG to $GH_REPO" ;;
+         # One tag carries every variant, and the variants are built one after
+         # the other, so the second `release` for a date must add its files to
+         # the tag that the first one created instead of failing on it.
+         if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+           gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GH_REPO"
+           gh release edit "$TAG" --notes "$(release_notes)" --repo "$GH_REPO"
+           echo "updated $TAG on $GH_REPO ($(ls "$ZIPS" | grep -c '\.zip$') zips)"
+         else
+           gh release create "$TAG" --repo "$GH_REPO" --target "$BRANCH" --title "$TAG" \
+              --notes "$(release_notes)" "${assets[@]}" && rm -f "$HOME/.gh_token"
+           echo "published $TAG to $GH_REPO"
+         fi ;;
 
 ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       OTA_REPO=${2:?usage: ota <tag> <owner/repo> [--dry-run]}
