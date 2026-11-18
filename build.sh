@@ -279,12 +279,15 @@ suffix=""
 name=$built${suffix}${ADB_KEY:+-adbkey}
 mkdir -p "$dest"
 cp "$zip" "$dest/$name.zip"
-# Keep the zip's versioned name, but name the images plainly like every
-# other custom ROM build: boot.img, dtbo.img, vbmeta.img.
+# Name the images after their zip, not plainly: a standard and a debloat build
+# keep different boot images (the product package list is compiled into the
+# ramdisk), and both variants share ZIP_DIR, so plain boot.img/... would let
+# one variant's images overwrite the other's. flash.sh reads the names out of
+# the sha256sum below either way.
 for img in boot dtbo vbmeta; do
-  cp "$product/$img.img" "$dest/$img.img"
+  cp "$product/$img.img" "$dest/$name-$img.img"
 done
-(cd "$dest" && sha256sum "$name.zip" boot.img dtbo.img vbmeta.img > "$name.sha256sum")
+(cd "$dest" && sha256sum "$name.zip" "$name"-boot.img "$name"-dtbo.img "$name"-vbmeta.img > "$name.sha256sum")
 
 echo
 echo "Done. Build copied to $dest:"

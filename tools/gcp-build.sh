@@ -314,16 +314,20 @@ each_set() {  # $1 = push|pull|check; remaining args are extra flags
 }
 
 release_notes() {
-  local variant=standard
-  case $TAG in *-debloat) variant=debloat ;; esac
+  # One tag carries every variant built that day, so the notes list what is
+  # actually in ZIP_DIR instead of deriving a single variant from the tag.
+  local variants="standard"
+  ls "$ZIPS"/*-debloat*.zip >/dev/null 2>&1 && variants="standard + debloat"
   cat <<EOF
 Unofficial crDroid 13 (Android 17) for the Motorola Moto G8 Plus — device \`doha\`, tree \`amogus_doha\`.
 
-**Variant:** $variant · **branch:** $BRANCH · **manifest:** $(git -C "$MANIFEST" rev-parse --short HEAD 2>/dev/null || echo unknown)
+**Variants:** $variants · **branch:** $BRANCH · **manifest:** $(git -C "$MANIFEST" rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 ## Flash it
 
-The phone is A/B and recovery lives inside \`boot\`.
+The phone is A/B and recovery lives inside \`boot\`. Each zip has its own images, named after it:
+\`crDroidAndroid-*-boot.img\` for the standard build, \`crDroidAndroid-*-debloat-boot.img\` for the
+debloat build. Flash the images that match the zip you are going to sideload.
 
 1. Unlock the bootloader. From stock or another ROM, flash the images of this release:
    \`\`\`
@@ -363,18 +367,10 @@ release_assets() {
   for f in "$ZIPS"/*; do
     [ -e "$f" ] || continue
     base=${f##*/}
+    # One release holds every variant built into ZIP_DIR (standard and
+    # -debloat), each with its own zip, images and sha256sum. Test builds are
+    # still excluded: they trust the builder's adb key.
     case $base in *-adbkey*) continue ;; esac
-    case $TAG in
-      *-debloat)
-        # The debloat build also writes the boot/dtbo/vbmeta images and the
-        # sha256sum that names them; without those the release cannot be
-        # flashed from a clean phone.
-        case $base in
-          *-debloat*|boot.img|dtbo.img|vbmeta.img) ;;
-          *) continue ;;
-        esac ;;
-      *) case $base in *-debloat*) continue ;; esac ;;
-    esac
     echo "$f"
   done
 }
@@ -496,8 +492,9 @@ ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       OTA_REPO=${2:?usage: ota <tag> <owner/repo> [--dry-run]}
       OTA_DRY=${3:-}
       GH_REPO=${4:-}
-      channel=standard
-      case $TAG in *-debloat) channel=debloat ;; esac
+      # One tag now holds both variants, so the channel can no longer be read
+      # off the tag: pick it with OTA_CHANNEL (run twice for both feeds).
+      channel=${OTA_CHANNEL:-standard}
       prop=""
       for c in "$SRC/out/target/product/amogus_doha/system/build.prop" \
                "$SRC/out/target/product/amogus_doha/obj/ETC/system_build_prop_intermediates/build.prop"; do

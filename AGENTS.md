@@ -179,7 +179,9 @@ Build-affecting environment variables (pass as `-e NAME=value` in Docker):
   machine wider than the project allows; defaults are `MACHINE=n2-custom-12-49152`, `SSD_COUNT=2` (375 GB NVMe
   pair, or `DISK_MODE=pd`), `HOURS=48`; `DEBLOAT=1` builds the debloat variant, `VARIANT`/`JOBS`/`ADB_KEY`/`REPO_DEPTH`
   pass through to `build.sh`. `gh-check` preflights the token, `backup|restore|check` handle the Drive
-  copy, and `finish` waits, verifies, backs up, releases with `gh`, then deletes the VM. It mirrors
+  copy, and `finish` waits, verifies, backs up, releases with `gh`, then deletes the VM. A release is
+  one tag per build date (`crdroid-YYYYMMDD`) holding **both** variants — every non-`-adbkey` file in
+  `ZIP_DIR`, each zip with its own images and sha256sum. It mirrors
   `.repo`+ccache+zips to Drive (`rclone`, `gdrive:doha-backup`). `REPO_DEPTH=1` (the script's default) keeps the
   first backup/egress cheap. There is no stop/resize: the working tree lives on local SSDs.
 

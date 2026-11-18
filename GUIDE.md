@@ -97,9 +97,8 @@ tools/gcp-build.sh logs       # tail -f the build log
 tools/gcp-build.sh att        # attach to the tmux session (Ctrl-b d to detach)
 tools/gcp-build.sh fetch      # copy zips/ to ./gcp-out locally
 tools/gcp-build.sh finish     # wait, verify, back up, release, delete
-TAG=crdroid-20261117-standard tools/gcp-build.sh release   # release only
-TAG=… OTA_DRY=--dry-run tools/gcp-build.sh ota             # print the feed JSON
-TAG=crdroid-20261117-standard tools/gcp-build.sh ota       # write <channel>/doha.json
+TAG=crdroid-20261118 tools/gcp-build.sh release   # release only (one tag: all variants)
+OTA_CHANNEL=debloat TAG=crdroid-20261118 tools/gcp-build.sh ota   # write <channel>/doha.json
 tools/gcp-build.sh delete     # delete the VM now
 ```
 
@@ -107,7 +106,8 @@ Typical session: `create; config; setup; build; finish`.
 
 Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
 `SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
-default 48), `NO_RELEASE=1`, `NO_OTA=1`, `NO_DELETE=1`, `TAG=...`.
+default 48), `TAG=...`, `OTA_CHANNEL=standard|debloat`, `NO_RELEASE=1`, `NO_OTA=1`,
+`NO_DELETE=1`.
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
 log reading; `finish` exits before deleting anything.
