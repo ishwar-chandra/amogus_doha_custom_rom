@@ -25,9 +25,9 @@ Build: `ro.build.date=Wed Nov 18 02:13:54 UTC 2026`, `ro.build.version.sdk=37`,
 |---|---|---|
 | Fixed in code, device-unverified | 3 (P1, P3, D5) | 5 |
 | Partially fixed | 3 (P2, P10, P14) | 3 entries, several sub-items open |
-| Mitigation only | 2 (P8, P9) | 2 |
+| Mitigation only | 3 (P6, P8, P9) | 3 |
 | Likely fixed upstream, unverified | 1 (P4) | 1 |
-| Open | 12 (P5/P6/P7/P11/P12/P13/P15/P16/P17, D6, D8, D9) | 36 |
+| Open | 11 (P5/P7/P11/P12/P13/P15/P16/P17, D6, D8, D9) | 35 |
 | **Tracked total** | **21** | **44** |
 
 `P5` is the old `D4`; `D2` is closed (the green verified-boot property is crDroid's SafetyNet spoof).
@@ -75,7 +75,16 @@ resource; `KillApplicationHandler` restarted the workspace.
   `dumpsys dropbox -p system_app_crash`.
 - [ ] Home screen drag and widget placement still work after the update.
 
-`keystore2` logs, whenever an app asks for an attested key:
+## P4 — Settings crash opening the Sidebar preference
+**Status:** likely fixed upstream, unverified. **Severity:** high.
+**Summary:** Clicking the Sidebar preference threw `ActivityNotFoundException` for
+`com.libremobileos.sidebar/...SidebarSettingsActivity`, which is not installed.
+**Fix:** no kit patch; current `packages/apps/Settings` branch `17.0` no longer contains that
+preference/activity (HEAD 2026-11-18 19:09, after the build under test).
+- [ ] Sync Settings to current `17.0` and rebuild.
+- [ ] Open every crDroid Settings entry; no `SettingsBaseActivity` crash.
+- [ ] If the preference is still present, either package Sidebar or hide the preference when
+  `com.libremobileos.sidebar` is absent.
 
 ## P5 — GMS crashes on `AdvancedProtection` safety source
 **Status:** open (platform/GApps mismatch). **Severity:** medium; this is old D4.
@@ -86,14 +95,18 @@ resource; `KillApplicationHandler` restarted the workspace.
 - [ ] Do not add a third-party-project patch unless the platform enum is extended intentionally.
 
 ## P6 — Nearby Share cannot advertise: local-network AppOp missing
-**Status:** open. **Severity:** medium.
+**Status:** mitigation in kit (AppOp registered), device-unverified. **Severity:** medium.
 **Summary:** GMS 26.46 asks for `ACCESS_LOCAL_NETWORK`; AppOps reports
 `Operation not found`, then `SecurityException: Missing local network permission`; 12×
 `BpfNetMaps local_net_access unsupported`.
-**Fix:** no kit patch. The platform aconfig flag `access_local_network_permission_enabled` is off;
-enabling it changes the permission model. `BpfNetMaps` is the 4.14 limitation.
-- [ ] Decide whether to enable the aconfig flag; if not, document Nearby as unsupported.
-- [ ] With NFC/BLE on, start Quick Share and verify `startAdvertising` succeeds.
+**Fix:** `patches/frameworks/base.patch` registers `OP_ACCESS_LOCAL_NETWORK` even when the
+`access_local_network_permission_enabled` flag is off, so GMS finds the op. The permission stays
+unenforced; `BpfNetMaps` still skips the 4.14 local-net maps.
+- [x] AppOps patch applies to `frameworks/base` branch `17.0`.
+- [ ] Rebuild and start Quick Share/Nearby advertising with BLE on.
+- [ ] Bugreport must have no `Operation not found ... ACCESS_LOCAL_NETWORK`.
+- [ ] If advertising still fails, capture `NearbyMediums`/`BpfNetMaps` lines; the 4.14 BPF
+  limitation remains separate.
 
 ## P7 — Find My Device first-party signature rejected
 **Status:** open; not fixable in AOSP. **Severity:** medium.

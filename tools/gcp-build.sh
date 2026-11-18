@@ -529,9 +529,13 @@ create)
     else
       gcloud_ compute instances set-disk-auto-delete "$NAME" --device-name data --auto-delete
     fi
-    echo "Created $NAME ($SYNC_MACHINE, ${DATA_DISK_GB} GB $DATA_DISK_TYPE at /mnt/build). Next: config, setup, build"
+    echo "Created $NAME ($SYNC_MACHINE, ${DATA_DISK_GB} GB $DATA_DISK_TYPE at /mnt/build). Next: setup, build, finish"
   else
-    echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT:-2}x 375 GB NVMe). Next: config, setup, build"
+    if [ "${SSD_COUNT:-0}" = 0 ]; then
+      echo "Created $NAME ($SYNC_MACHINE, one $DISK $DISK_TYPE disk). Next: setup, build, finish"
+    else
+      echo "Created $NAME ($SYNC_MACHINE, ${SSD_COUNT}x 375 GB NVMe). Next: setup, build, finish"
+    fi
   fi ;;
 
 gh-check)

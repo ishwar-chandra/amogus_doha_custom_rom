@@ -146,10 +146,12 @@ inherits it first, so the mechanism works unchanged. Never distribute an
    hazard.
 4. Commit the patch (and any `default.xml` change) before building.
 
-Kernel work is split: doha's kernel is the separately maintained fork
-`christiaan/android_kernel_motorola_msm-4.14`, branch `lts`. Either add
-the change to `patches/kernel/motorola/msm-4.14.patch` or land it in the
-fork and bump the kernel project's revision in `snippets/doha.xml`.
+Kernel work is split: doha's kernel is our fork
+`ishwar-chandra/android_kernel_motorola_msm-4.14`. `lts` carries the
+4.14.357 baseline; the build currently pins `73b7957` on
+`doha-kernel-fixes-2026-11-19`. Either add the change to
+`patches/kernel/motorola/msm-4.14.patch` or land it in the fork and bump
+the kernel project's revision in `snippets/doha.xml`.
 
 ## Gotchas
 
