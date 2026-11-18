@@ -238,14 +238,22 @@ launcher_apk=$(find "$product" -path '*priv-app*' -name 'Launcher3*.apk' 2>/dev/
 if [ -n "$launcher_apk" ]; then
   aapt2_bin=$SRC/out/host/linux-x86/bin/aapt2
   if [ -x "$aapt2_bin" ]; then
-    if "$aapt2_bin" dump resources "$launcher_apk" 2>/dev/null | grep -q widget_internal_focus_bg; then
+    # Dump once to a file instead of piping into `grep -q`: grep exits on its
+    # first match, aapt2 then dies of SIGPIPE over the remaining ~3 MB of
+    # resource table, and with pipefail that 141 reads as "drawable missing"
+    # even when it is present.
+    resdump=$(mktemp)
+    if "$aapt2_bin" dump resources "$launcher_apk" >"$resdump" 2>/dev/null &&
+       grep -q widget_internal_focus_bg "$resdump"; then
       echo "launcher resource table OK (widget_internal_focus_bg present)"
     else
       echo "ERROR: $(basename "$launcher_apk") has no widget_internal_focus_bg." >&2
       echo "       Code and resource table are out of step (stale resources.arsc)." >&2
       echo "       Delete out/ (or the Launcher3 intermediates) and build again." >&2
+      rm -f "$resdump"
       exit 1
     fi
+    rm -f "$resdump"
   else
     echo "WARNING: no aapt2 at $aapt2_bin; launcher resources unverified" >&2
   fi
