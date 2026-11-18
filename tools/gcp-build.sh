@@ -359,13 +359,21 @@ EOF
 # Only this variant's artifacts, and never a test build: a release must not
 # contain an -adbkey zip (it trusts the builder's key) or the other variant.
 release_assets() {
-  local f
+  local f base
   for f in "$ZIPS"/*; do
     [ -e "$f" ] || continue
-    case $f in *-adbkey*) continue ;; esac
+    base=${f##*/}
+    case $base in *-adbkey*) continue ;; esac
     case $TAG in
-      *-debloat) case $f in *-debloat*) ;; *) continue ;; esac ;;
-      *)         case $f in *-debloat*) continue ;; esac ;;
+      *-debloat)
+        # The debloat build also writes the boot/dtbo/vbmeta images and the
+        # sha256sum that names them; without those the release cannot be
+        # flashed from a clean phone.
+        case $base in
+          *-debloat*|boot.img|dtbo.img|vbmeta.img) ;;
+          *) continue ;;
+        esac ;;
+      *) case $base in *-debloat*) continue ;; esac ;;
     esac
     echo "$f"
   done
@@ -438,12 +446,26 @@ state)  [ -f "$EXIT" ] && echo "finished exit=$(cat "$EXIT")" || echo "no exit f
         tmux ls 2>/dev/null || echo "no tmux session"
         tail -n 3 "$LOG" 2>/dev/null || true ;;
 
-verify) fail=0
+verify) fail=0 newest=""
         ls "$ZIPS"/crDroidAndroid-*.zip >/dev/null 2>&1 || { echo "no crDroidAndroid-*.zip in $ZIPS"; fail=1; }
         for f in boot dtbo vbmeta; do
           ls "$ZIPS"/"$f".img >/dev/null 2>&1 || { echo "missing $f.img"; fail=1; }
         done
-        [ "$fail" = 0 ] && { ( cd "$ZIPS" && sha256sum -c ./*.sha256sum ) || fail=1; }
+        # Both variants share the image names, so an older sum can no longer
+        # match once the other variant is built into the same directory. Only
+        # the newest set (the one about to ship) decides pass/fail.
+        newest=$(ls -t "$ZIPS"/*.sha256sum 2>/dev/null | head -1)
+        for s in "$ZIPS"/*.sha256sum; do
+          [ -e "$s" ] || continue
+          if ( cd "$ZIPS" && sha256sum -c "$(basename "$s")" >/dev/null ); then
+            echo "checksums ok: $(basename "${s%.sha256sum}")"
+          elif [ "$s" = "$newest" ]; then
+            echo "FAIL: $(basename "$s") does not match its files" >&2
+            fail=1
+          else
+            echo "WARN: $(basename "$s") is superseded (images are shared between variants)" >&2
+          fi
+        done
         [ "$fail" = 0 ] && echo "artifacts ok: $(ls "$ZIPS" | tr '\n' ' ')"
         exit "$fail" ;;
 
