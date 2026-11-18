@@ -221,6 +221,7 @@ mount_ssds
 
 ensure_swap() {
   local f=$CACHE/swap
+  mkdir -p "$CACHE"
   if [ ! -e "$f" ]; then
     fallocate -l "${SWAP_GB}G" "$f" 2>/dev/null ||
       dd if=/dev/zero of="$f" bs=1M count=$((SWAP_GB * 1024)) status=none
@@ -323,8 +324,9 @@ release_assets() {
 
 case "$MODE" in
 
-setup)  install_deps; ensure_swap
+setup)  install_deps
         mkdir -p "$SRC" "$ZIPS" "$CCACHE"
+        ensure_swap
         [ -d "$MANIFEST/.git" ] || git clone -b "$BRANCH" "$REPO" "$MANIFEST"
         echo "setup done: $(nproc) cpus, $(free -g | awk 'NR==2{print $2}') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')" ;;
 
