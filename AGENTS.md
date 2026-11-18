@@ -132,6 +132,11 @@ GCP is the CI substitute: `tools/gcp-build.sh create|setup|build|finish`, plus
 stop/resize. The VM clones this repo and builds `origin/$BRANCH`, so commit **and push** before
 `build`. One tag per build date holds both variants.
 
+`tools/gcp-build-both.sh` builds both variants at the same time on two VMs
+(`<name>-std`, `<name>-debloat`). Each VM defaults to `n2-custom-6-49152` so the two fit
+`CPUS_ALL_REGIONS=12`; releases are run sequentially so they cannot race on the same tag or on the
+two OTA feeds.
+
 Phone side (adb/fastboot in PATH):
 
 ```sh
@@ -184,6 +189,7 @@ tools/app-trace.sh com.example.app 60 [--no-launch]
 |`TODO.md`|Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors)|
 |`BUGREPORT.md`|On-device sweep results: defects, evidence, what was ruled out|
 |`tools/gcp-build.sh`|Remote build cycle, GitHub release and OTA feed; no persistent backup|
+|`tools/gcp-build-both.sh`|Standard + debloat on two VMs in parallel; serialized releases|
 
 ## Runtime/Tooling Preferences
 
