@@ -158,6 +158,16 @@ EOF
   return 1
 }
 
+ota_channel() {
+  if [ -n "${OTA_CHANNEL:-}" ]; then
+    printf '%s\n' "$OTA_CHANNEL"
+  elif [ "${DEBLOAT:-0}" = 1 ]; then
+    echo debloat
+  else
+    echo standard
+  fi
+}
+
 # The VM gets the token, uses it, and deletes it again -- one place, so
 # `finish` and `release` cannot drift apart.
 publish_release() {
@@ -504,9 +514,13 @@ ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       OTA_REPO=${2:?usage: ota <tag> <owner/repo> [--dry-run]}
       OTA_DRY=${3:-}
       GH_REPO=${4:-}
-      # One tag now holds both variants, so the channel can no longer be read
-      # off the tag: pick it with OTA_CHANNEL (run twice for both feeds).
-      channel=${OTA_CHANNEL:-standard}
+      # `finish` passes the variant explicitly. A manual `ota` call on a VM
+      # falls back to the DEBLOAT_BUILD fixed argument, then to standard.
+      channel=${5:-}
+      [ -n "$channel" ] || {
+        if [ "${DEBLOAT_BUILD:-0}" = 1 ]; then channel=debloat; else channel=standard; fi
+      }
+      case $channel in standard|debloat) ;; *) echo "bad OTA channel: $channel" >&2; exit 1 ;; esac
       prop=""
       for c in "$SRC/out/target/product/amogus_doha/system/build.prop" \
                "$SRC/out/target/product/amogus_doha/obj/ETC/system_build_prop_intermediates/build.prop"; do
@@ -632,7 +646,7 @@ ota)
   # Writes the feed entry, so the ROM's Updater finds this release. Runs after
   # the release exists: the JSON points at its download URL.
   printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" ;;
+  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(ota_channel)" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
   while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
@@ -647,7 +661,7 @@ finish)
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
     printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-    remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
+    remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(ota_channel)" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
   fi
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 
