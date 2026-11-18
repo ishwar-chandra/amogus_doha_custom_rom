@@ -95,14 +95,15 @@ AUTO_FINISH=1 tools/gcp-build.sh build  # wait, release, update OTA, delete
 tools/gcp-build.sh finish            # or wait on an already-started build
 ```
 
-For both variants at once:
+For both variants on one VM:
 
 ```sh
-tools/gcp-build-both.sh             # two 6-vCPU VMs, serialized release/OTA
+tools/gcp-build-both.sh             # standard, release, then debloat, release
 ```
 
-The wrapper defaults to `n2-custom-6-49152` per VM so both fit
-`CPUS_ALL_REGIONS=12`; it refuses a wider machine.
+The wrapper builds sequentially on `n2-custom-12-49152`; the first `finish`
+uses `NO_DELETE=1`, the second deletes the VM. Both use the same `TAG` and
+update only their own OTA channel.
 
 `build` runs inside tmux on the VM, so a dropped SSH connection or this
 machine going to sleep does not touch it; `att` attaches, `logs` follows the

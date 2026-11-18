@@ -120,22 +120,23 @@ release, updates the OTA feed, and deletes the VM. A later build re-syncs and
 rebuilds; `ccache` and `.repo` do not survive the VM. Use `fetch` if you want
 the artifacts locally before `finish` deletes the machine.
 
-### 2.5 Both variants at the same time
+### 2.5 Both variants on one VM
 
 ```sh
 tools/gcp-build-both.sh
 ```
 
-This creates `<name>-std` and `<name>-debloat` (default `crdroid-build-std`
-and `crdroid-build-debloat`), runs `setup` and `build` in parallel, then runs
-`finish` sequentially so the two variants cannot race on the same release tag
-or OTA feed. Each VM is deleted only after its own release and OTA write.
+This creates one VM (`crdroid-build` by default), builds **standard**, runs
+`finish` with `NO_DELETE=1` so the VM survives, then builds **debloat** on the
+same VM and runs the final `finish` (which releases and deletes). Both
+`finish` calls use the same `TAG`, so the two variants land in one release;
+each updates only its own OTA channel.
 
-Defaults: `MACHINE=n2-custom-6-49152` per VM, so two fit the project's
-`CPUS_ALL_REGIONS=12` quota and give 96 GB total RAM. Both VMs use the same
-`TAG`, `GH_TOKEN` (or token file), `HOURS`, and other `gcp-build.sh`
-variables. If you raise `MACHINE` above 6 vCPU, the wrapper refuses before
-creating anything.
+Defaults: `MACHINE=n2-custom-12-49152` (the full `CPUS_ALL_REGIONS` quota).
+The builds are sequential; the second waits for the first `finish` to finish.
+`GH_TOKEN` (or the token file) and the other `gcp-build.sh` variables pass
+through. If the standard build or release fails, the wrapper stops and keeps
+the VM for inspection.
 
 ## 3. What the build produces
 

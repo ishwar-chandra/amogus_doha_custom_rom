@@ -386,10 +386,13 @@ state)  [ -f "$EXIT" ] && echo "finished exit=$(cat "$EXIT")" || echo "no exit f
         tmux ls 2>/dev/null || echo "no tmux session"
         tail -n 3 "$LOG" 2>/dev/null || true ;;
 
-verify) fail=0 newest=""
-        ls "$ZIPS"/crDroidAndroid-*.zip >/dev/null 2>&1 || { echo "no crDroidAndroid-*.zip in $ZIPS"; fail=1; }
+verify) fail=0 newest="" latest_zip="" base=""
+        latest_zip=$(ls -t "$ZIPS"/crDroidAndroid-*.zip 2>/dev/null | head -1)
+        [ -n "$latest_zip" ] || { echo "no crDroidAndroid-*.zip in $ZIPS"; fail=1; }
+        base=${latest_zip%.zip}
         for f in boot dtbo vbmeta; do
-          ls "$ZIPS"/"$f".img >/dev/null 2>&1 || { echo "missing $f.img"; fail=1; }
+          [ -e "$base-$f.img" ] || [ -e "$ZIPS/$f.img" ] ||
+            { echo "missing $f.img for $(basename "${latest_zip:-zip}")"; fail=1; }
         done
         # Both variants share the image names, so an older sum can no longer
         # match once the other variant is built into the same directory. Only
