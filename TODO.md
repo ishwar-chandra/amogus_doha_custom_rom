@@ -76,9 +76,9 @@ kernel `4.14.357-openela+ #16`).
 ## GCP build machine
 
 `tools/gcp-build.sh` does the whole cycle. Project `customrom-514215`
-(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with a 50 GB boot disk
-and two 375 GB local NVMe devices for the tree, `out/`, ccache and swap
-(`DISK_MODE=pd` replaces the pair with one 400 GB pd-ssd). Quota preferences
+(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with one 500 GB pd-ssd
+boot disk for the OS, tree, `out/`, ccache and swap. `SSD_COUNT=2` opts into
+local NVMe; `DISK_MODE=pd` uses a separate data disk instead. Quota preferences
 for 64 vCPU, spot CPUs and 500 GB SSD are submitted and still show `granted`
 = the old values; the 12 vCPU shape works without them, so the build does not
 wait.
@@ -135,8 +135,9 @@ separately whether a public crDroid release should be `user`.
 
 Caveats worth remembering:
 
-- The local SSDs do not survive a stop/start; the boot disk does, but nothing
-  on the VM is part of the release except what `finish` uploads.
+- The boot disk is deleted with the VM (`--boot-disk-auto-delete`); a stop/start
+  keeps it. Nothing on the VM is part of the release except what `finish`
+  uploads.
 - `create` sets `--max-run-duration=48h` with `instance-termination-action=
   DELETE`, so a forgotten VM removes itself instead of billing overnight.
 - Google always spends credits before the card, but there is no hard spend

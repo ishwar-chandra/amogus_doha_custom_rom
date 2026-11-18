@@ -4,7 +4,7 @@
 # artifact is copied to the GitHub release (and the OTA feed) before deletion.
 #
 # Local commands (they drive gcloud/ssh; the work happens on the VM):
-#   create    the instance: MACHINE + local SSDs
+#   create    the instance: MACHINE + one 500 GB disk
 #   setup     build deps in the VM, clone the recipe
 #   build     start the build in a tmux session (sync, then compile)
 #   gh-check  preflight the GitHub token -- run this before a build
@@ -25,15 +25,16 @@
 # Sizing is one machine for the whole job. A repo sync is a download, so it
 # will not use all the cores -- that is inherent to fetching, not a
 # misconfiguration -- and the compile that follows is what drives them.
-# There is deliberately no stop/resize step: the working tree lives on
-# local SSDs, which a stop/start would throw away. `delete` ends the billing.
+# There is deliberately no stop/resize step: the working tree lives on the
+# boot disk; `delete` ends the billing and removes it.
 #
 # Environment (all optional):
 #   PROJECT, ZONE, NAME
 #   MACHINE       compile machine      (default: n2-custom-12-49152)
 #   SYNC_MACHINE  separate sync box    (default: MACHINE)
-#   DISK, DISK_TYPE                    boot disk only (default: 50GB, OS)
-#   SWAP_GB       swap on the NVMe     (default: 32)
+#   DISK, DISK_TYPE                    boot disk (default: 500GB pd-ssd; no local SSDs)
+#   SSD_COUNT     local NVMe count     (default: 0; 2/4/8/16/24 optional)
+#   SWAP_GB       swap on the boot disk (default: 32)
 #   HOURS         hard stop            (default: 48; 0 disables)
 #   VARIANT       userdebug|user|eng   (default: userdebug)
 #   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
@@ -61,29 +62,27 @@ VARIANT=${VARIANT:-userdebug}
 # own OTA channel picked with OTA_CHANNEL.
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
-# 12 vCPU is the project's CPUS_ALL_REGIONS cap. 64 GB RAM + 48 GB swap
+# 12 vCPU is the project's CPUS_ALL_REGIONS cap. 48 GB RAM + 32 GB swap
 # covers Soong's ~100 GB analysis peak; RAM is the expensive resource
-# ($0.005/GB/h), so the swap file covers the top of the peak instead of
-# paying for 96 GB of it. The 350 GB of NVMe (two 375 GB local SSDs -- N2
-# takes them in pairs) is >100 GB more than the shallow path needs, and the
-# boot disk stays small: it only holds the OS.
+# ($0.005/GB/h), so the swap file covers the top of the peak. The single
+# 500 GB boot disk is >100 GB more than the shallow path needs.
 # CPUS_ALL_REGIONS is 12 on this project (the regional limit of 32 does not
 # help: the global cap is what a create trips over), so 12 vCPU is the widest
 # machine that can be created today. Raise the quota, then MACHINE=n2-custom-16-49152.
 MACHINE=${MACHINE:-n2-custom-12-49152}
-# GCP attaches local SSDs in multiples of two (0, 2, 4, 8, 16, 24); one
-# is rejected by the API, so two is the smallest usable count.
-SSD_COUNT=${SSD_COUNT:-2}
-# DISK_MODE=local : local SSDs, fastest, billed for the whole 750 GB because GCP
-#                   attaches them in pairs (0,2,4,8,16,24) - nothing smaller exists.
-# DISK_MODE=pd    : no local SSD, one exactly-sized pd-ssd for the tree. Slower
-#                   (about 0.5 MB/s of sustained throughput per GB) but no idle disk.
+# One 500 GB pd-ssd boot disk holds the OS, tree, out/, ccache and swap.
+# SSD_COUNT=0 keeps local NVMe out of the create; set 2/4/8/16/24 later if
+# you want the pair (GCP rejects a single local SSD).
+SSD_COUNT=${SSD_COUNT:-0}
+# DISK_MODE=local : the default; with SSD_COUNT=0 the boot disk is the only
+#                   disk and /mnt/build sits on it.
+# DISK_MODE=pd    : optional separate data disk (DATA_DISK_GB) at /mnt/build.
 DISK_MODE=${DISK_MODE:-local}
 DATA_DISK_GB=${DATA_DISK_GB:-400}
 DATA_DISK_TYPE=${DATA_DISK_TYPE:-pd-ssd}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
-DISK=${DISK:-50GB}
-DISK_TYPE=${DISK_TYPE:-pd-standard}
+DISK=${DISK:-500GB}
+DISK_TYPE=${DISK_TYPE:-pd-ssd}
 SWAP_GB=${SWAP_GB:-32}
 SYNC_JOBS=${SYNC_JOBS:-nproc}
 REPO_DEPTH=${REPO_DEPTH-1}
@@ -173,15 +172,14 @@ JOBS_BUILD=${8} REPO_DEPTH=${9} DEBLOAT_BUILD=${10:-0}
 shift 10
 
 BUILD=/mnt/build
-# One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
-# A second one is optional and only carries ccache + swap; SSD_COUNT=2 adds it.
+# One disk holds the tree, out/, ccache and swap.
 CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
 SRC=$BUILD/src MANIFEST=$BUILD/manifest ZIPS=$BUILD/zips CCACHE=$CACHE/ccache
 LOG=$HOME/build.log EXIT=$HOME/build.exit
 
-# The two local SSDs arrive blank, and fstab would fail a boot before setup
-# formatted them, so they are mounted here, idempotently: a reboot keeps
-# them, and reformatting would throw away a synced tree.
+# DISK_MODE=local with SSD_COUNT=0: /mnt/build is a directory on the boot
+# disk. With local NVMe, the first device is /mnt/build and the second
+# /mnt/cache; DISK_MODE=pd uses /dev/disk/by-id/google-data.
 mount_ssds() {
   local n=0 dev mnt
   # DISK_MODE=pd: no local SSD; the tree lives on a persistent data disk that
@@ -197,7 +195,11 @@ mount_ssds() {
         sudo chown "$(id -u):$(id -g)" "$mnt"
       fi
     else
-      echo "no local SSD and no /dev/disk/by-id/google-data: nothing to mount" >&2
+      # Default single-disk setup: /mnt/build is a directory on the 500 GB
+      # boot disk. Create and own it here so setup can write as the user.
+      sudo mkdir -p "$BUILD"
+      sudo chown "$(id -u):$(id -g)" "$BUILD"
+      echo "using $BUILD on the boot disk (no local SSD)"
     fi
     return 0
   fi
@@ -345,8 +347,7 @@ build)
 # `finish`, whatever happens.
 set -o pipefail
 BUILD=/mnt/build
-# One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
-# A second one is optional and only carries ccache + swap; SSD_COUNT=2 adds it.
+# One disk holds the tree, out/, ccache and swap.
 CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
 export PATH="$HOME/bin:$PATH"
 export CCACHE_DIR="$CACHE/ccache" ZIP_DIR="$BUILD/zips" TMPDIR="$BUILD/tmp"
@@ -489,14 +490,14 @@ case "${1:-}" in
 create)
   extra=()
   [ "$HOURS" != 0 ] && extra=(--max-run-duration="$((HOURS * 3600))s" --instance-termination-action=DELETE)
-  case "${SSD_COUNT:-2}" in
+  case "${SSD_COUNT:-0}" in
     0|2|4|8|16|24) ;;
-    *) echo "SSD_COUNT=${SSD_COUNT:-2} is not allowed: GCP takes 0, 2, 4, 8, 16 or 24 local SSDs." >&2
+    *) echo "SSD_COUNT=${SSD_COUNT:-0} is not allowed: GCP takes 0, 2, 4, 8, 16 or 24 local SSDs." >&2
        exit 1 ;;
   esac
   ssd=()
   if [ "$DISK_MODE" = local ]; then
-    for _ in $(seq 1 "${SSD_COUNT:-2}"); do ssd+=(--local-ssd interface=nvme,size=375gb); done
+    for _ in $(seq 1 "${SSD_COUNT:-0}"); do ssd+=(--local-ssd interface=nvme,size=375gb); done
   fi
   # Fail before the create with a readable reason: a 16-vCPU machine on a
   # 12-vCPU global quota costs nothing to attempt but confuses the log.
@@ -513,7 +514,7 @@ create)
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type "$DISK_TYPE" \
     "${ssd[@]}" \
-    --no-boot-disk-auto-delete \
+    --boot-disk-auto-delete \
     "${extra[@]}" --scopes cloud-platform
   if [ "$DISK_MODE" = pd ]; then
     # A data disk has no pair rule: exactly the size asked for, and it can outlive

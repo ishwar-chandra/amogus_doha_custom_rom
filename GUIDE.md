@@ -19,9 +19,9 @@ version.
   - A host with `repo` + AOSP build dependencies, or
   - A GCP project with `gcloud` (hands-off build; recommended for a laptop).
 - Disk/time: a full build needs ~350 GB of scratch space and a lot of RAM.
-  On GCP the script sizes this for you (12 vCPU, 64 GB RAM + 48 GB swap,
-  375 GB NVMe; `SSD_COUNT=2` adds a second). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
-  takes minutes.
+  On GCP the script sizes this for you (12 vCPU, 48 GB RAM + 32 GB swap, one
+  500 GB pd-ssd). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
+  takes minutes. The single disk is the default; `SSD_COUNT=2` opts into local NVMe.
 - Optional: an `adb`/`fastboot` setup on the machine you flash from.
 - Optional for releases: a GitHub token (see §8).
 
@@ -88,7 +88,7 @@ The script provisions a VM, syncs, builds and publishes a release. Commands
 (run from the repo root, `gcloud` in `PATH`):
 
 ```sh
-tools/gcp-build.sh create     # VM + 375 GB NVMe (SSD_COUNT=2 adds a second)
+tools/gcp-build.sh create     # VM + one 500 GB disk
 tools/gcp-build.sh setup      # install deps, clone the recipe
 tools/gcp-build.sh build      # start sync+build in tmux
 AUTO_FINISH=1 tools/gcp-build.sh build   # wait, release, update OTA, delete
@@ -294,16 +294,15 @@ Commit messages: plain-language subject, optional area prefix
 ## 11. Costs and cleanup
 
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
-  (~$1/h for 12 vCPU + 64 GB).
-- Storage shape, two options (`create`):
-  - `DISK_MODE=local` (default): 2x 375 GB local SSD = 750 GB for ~$0.099/h. GCP only attaches local SSDs in
-    pairs (0, 2, 4, 8, 16, 24), so a single 375 GB device cannot be bought; about 331 GB of the 750 is used.
-    Fastest by far (several GB/s), and the tree dies with the instance.
-  - `DISK_MODE=pd [DATA_DISK_GB=400] [DATA_DISK_TYPE=pd-ssd]`: no local SSD, one exactly-sized data disk at
-    /mnt/build for ~$0.093/h at 400 GB pd-ssd. No idle capacity, and `DATA_DISK_KEEP=1` keeps the disk after the
-    instance goes (so a later VM resumes without a 1,280-project sync) at ~$68/month idle. Cost of the trade:
-    pd-ssd sustains roughly 0.5 MB/s per GB (about 190 MB/s at 400 GB), so the compile takes noticeably longer
-    -- check `DATA_DISK_TYPE=pd-balanced` only if you accept it being slower still for ~$0.03/h less.
+  (~$1/h for 12 vCPU + 48 GB).
+- Storage shape (`create`):
+  - Default: one 500 GB `pd-ssd` boot disk holds the OS, tree, `out/`, ccache
+    and swap. No local SSD and no second disk; deleting the VM deletes it.
+  - `SSD_COUNT=2` (or 4/8/…) opts into local NVMe: 2×375 GB = 750 GB, fastest,
+    but GCP only attaches them in pairs and the tree dies with the instance.
+  - `DISK_MODE=pd [DATA_DISK_GB=400] [DATA_DISK_TYPE=pd-ssd]`: optional
+    separate data disk at `/mnt/build`; `DATA_DISK_KEEP=1` keeps it after the
+    instance goes at extra cost.
 - `CPUS_ALL_REGIONS` is **12** on this project, so 12 vCPU is the widest machine that can be created; the
   regional limit (32) does not help. `create` preflights the quota and refuses a wider machine with that reason
   instead of failing inside gcloud. After an increase, `MACHINE=n2-custom-16-49152` (or 24) works unchanged.
