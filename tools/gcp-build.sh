@@ -32,7 +32,7 @@
 #   PROJECT, ZONE, NAME
 #   MACHINE       compile machine      (default: n2-custom-12-49152)
 #   SYNC_MACHINE  separate sync box    (default: MACHINE)
-#   DISK, DISK_TYPE                    boot disk (default: 500GB pd-ssd; no local SSDs)
+#   DISK, DISK_TYPE                    boot disk (default: 500GB pd-standard; no local SSDs)
 #   SSD_COUNT     local NVMe count     (default: 0; 2/4/8/16/24 optional)
 #   SWAP_GB       swap on the boot disk (default: 32)
 #   HOURS         hard stop            (default: 48; 0 disables)
@@ -70,7 +70,7 @@ case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 # help: the global cap is what a create trips over), so 12 vCPU is the widest
 # machine that can be created today. Raise the quota, then MACHINE=n2-custom-16-49152.
 MACHINE=${MACHINE:-n2-custom-12-49152}
-# One 500 GB pd-ssd boot disk holds the OS, tree, out/, ccache and swap.
+# One 500 GB pd-standard boot disk holds the OS, tree, out/, ccache and swap.
 # SSD_COUNT=0 keeps local NVMe out of the create; set 2/4/8/16/24 later if
 # you want the pair (GCP rejects a single local SSD).
 SSD_COUNT=${SSD_COUNT:-0}
@@ -82,7 +82,7 @@ DATA_DISK_GB=${DATA_DISK_GB:-400}
 DATA_DISK_TYPE=${DATA_DISK_TYPE:-pd-ssd}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
 DISK=${DISK:-500GB}
-DISK_TYPE=${DISK_TYPE:-pd-ssd}
+DISK_TYPE=${DISK_TYPE:-pd-standard}
 SWAP_GB=${SWAP_GB:-32}
 SYNC_JOBS=${SYNC_JOBS:-nproc}
 REPO_DEPTH=${REPO_DEPTH-1}

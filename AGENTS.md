@@ -128,7 +128,7 @@ GCP is the CI substitute: `tools/gcp-build.sh create|setup|build|finish`, plus
 `state|logs|att|ssh|fetch|delete`, `verify`, `gh-check`, and
 `TAG=... tools/gcp-build.sh release|ota` (`OTA_DRY=--dry-run`). Defaults: project
 `customrom-514215`, zone `asia-south1-a`, `MACHINE=n2-custom-12-49152`,
-one 500 GB `pd-ssd` (`SSD_COUNT=0`), `HOURS=48`, `REPO_DEPTH=1`. `create` refuses a machine wider
+one 500 GB `pd-standard` (`SSD_COUNT=0`), `HOURS=48`, `REPO_DEPTH=1`. `create` refuses a machine wider
 than the `CPUS_ALL_REGIONS` quota; there is no stop/resize. The VM clones this repo and builds
 `origin/$BRANCH`, so commit **and push** before `build`. One tag per build date holds both variants.
 

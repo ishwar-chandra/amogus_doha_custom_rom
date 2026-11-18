@@ -76,7 +76,7 @@ kernel `4.14.357-openela+ #16`).
 ## GCP build machine
 
 `tools/gcp-build.sh` does the whole cycle. Project `customrom-514215`
-(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with one 500 GB pd-ssd
+(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with one 500 GB pd-standard
 boot disk for the OS, tree, `out/`, ccache and swap. `SSD_COUNT=2` opts into
 local NVMe; `DISK_MODE=pd` uses a separate data disk instead. Quota preferences
 for 64 vCPU, spot CPUs and 500 GB SSD are submitted and still show `granted`

@@ -20,7 +20,7 @@ version.
   - A GCP project with `gcloud` (hands-off build; recommended for a laptop).
 - Disk/time: a full build needs ~350 GB of scratch space and a lot of RAM.
   On GCP the script sizes this for you (12 vCPU, 48 GB RAM + 32 GB swap, one
-  500 GB pd-ssd). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
+  500 GB pd-standard). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
   takes minutes. The single disk is the default; `SSD_COUNT=2` opts into local NVMe.
 - Optional: an `adb`/`fastboot` setup on the machine you flash from.
 - Optional for releases: a GitHub token (see §8).
@@ -296,7 +296,7 @@ Commit messages: plain-language subject, optional area prefix
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
   (~$1/h for 12 vCPU + 48 GB).
 - Storage shape (`create`):
-  - Default: one 500 GB `pd-ssd` boot disk holds the OS, tree, `out/`, ccache
+  - Default: one 500 GB `pd-standard` boot disk holds the OS, tree, `out/`, ccache
     and swap. No local SSD and no second disk; deleting the VM deletes it.
     This region's `SSD_TOTAL_GB` quota is 250 GB, so a 500 GB `pd-ssd` is refused
     before create; raise that quota if you want SSD speed.
