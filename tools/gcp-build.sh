@@ -477,11 +477,16 @@ ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       rtype=$(sed -n 's/^ro.build.type=//p' "$prop" | head -1)
       ver=$(sed -n 's/^ro.cm.version=//p' "$prop" | head -1)
       [ -n "$ver" ] || ver=$(sed -n 's/^ro.crdroid.version=//p' "$prop" | head -1)
+      patch=$(sed -n 's/^ro.build.version.security_patch=//p' "$prop" | head -1)
+      sdk=$(sed -n 's/^ro.build.version.sdk=//p' "$prop" | head -1)
       base=$(basename "$zip")
-      id=$(sha256sum "$zip" | cut -d' ' -f1)
+      sha256=$(sha256sum "$zip" | cut -d' ' -f1)
       size=$(stat -c %s "$zip")
-      body=$(printf '{\n  "response": [\n    {\n      "datetime": %s,\n      "filename": "%s",\n      "id": "%s",\n      "romtype": "%s",\n      "size": %s,\n      "url": "https://github.com/%s/releases/download/%s/%s",\n      "version": "%s"\n    }\n  ]\n}\n' \
-             "${dt:-0}" "$base" "$id" "${rtype:-userdebug}" "$size" "$GH_REPO" "$TAG" "$base" "${ver:-13.1}")
+      # crDroid/Lineage 17 Updater schema: download/timestamp/sha256/buildtype/
+      # os_sdk_level. The old datetime/id/url/romtype shape fails JSON parsing.
+      body=$(printf '{\n  "response": [\n    {\n      "filename": "%s",\n      "download": "https://github.com/%s/releases/download/%s/%s",\n      "timestamp": %s,\n      "sha256": "%s",\n      "size": %s,\n      "version": "%s",\n      "buildtype": "%s",\n      "os_patch_level": "%s",\n      "os_sdk_level": %s\n    }\n  ]\n}\n' \
+             "$base" "$GH_REPO" "$TAG" "$base" "${dt:-0}" "$sha256" "$size" "${ver:-13.1}" \
+             "${rtype:-userdebug}" "${patch:-}" "${sdk:-37}")
       if [ "$OTA_DRY" = --dry-run ]; then printf '%s\n' "$body"; exit 0; fi
       [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
       token=$(cat "$HOME/.gh_token")
