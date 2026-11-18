@@ -52,6 +52,8 @@
 #   SWAP_GB       swap on the NVMe     (default: 48)
 #   HOURS         hard stop            (default: 24; 0 disables)
 #   VARIANT       userdebug|user|eng   (default: userdebug)
+#   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
+#                 -debloat suffix and needs its own TAG/channel (default: 0)
 #   ADB_KEY       path to an adb public key on this machine; `build` copies
 #                 it to the VM and bakes it in (build.sh's ADB_KEY), so adb
 #                 works from the phone's first boot. Test builds only: the
@@ -72,6 +74,10 @@ ZONE=${ZONE:-asia-south1-a}
 NAME=${NAME:-crdroid-build}
 HOURS=${HOURS:-48}
 VARIANT=${VARIANT:-userdebug}
+# Same axis as build.sh's DEBLOAT: 1 leaves the optional crDroid extras out
+# and produces a -debloat zip, which needs its own release tag and OTA channel.
+DEBLOAT=${DEBLOAT:-0}
+case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 # 12 vCPU is the project's CPUS_ALL_REGIONS cap. 64 GB RAM + 48 GB swap
 # covers Soong's ~100 GB analysis peak; RAM is the expensive resource
 # ($0.005/GB/h), so the swap file covers the top of the peak instead of
@@ -159,15 +165,22 @@ publish_release() {
 # Run a mode-specific script inside the VM. The mode is $1; the rest are
 # settings, passed as arguments because the heredoc is quoted.
 remote_exec() {
+  # Positionals 1-12 are the fixed settings; the mode's own arguments (a tag,
+  # a repo, a dry-run flag) follow them, so `release`/`ota` can see them
+  # without re-parsing the shared block above.
+  local mode=$1 extra="" a
+  shift
+  for a in "$@"; do extra+=" '$a'"; done
   gcloud_ compute ssh "$NAME" --command \
-    "bash -s -- '$1' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '${2:-0}' '$BACKUP_REMOTE'" \
+    "bash -s -- '$mode' '$REPO' '$BRANCH' '$RCLONE_REMOTE' '$RCLONE_PATH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '$BACKUP_REMOTE' '$DEBLOAT'$extra" \
     <<'REMOTE'
 set -euo pipefail
 MODE=$1 REPO=$2 BRANCH=$3 RCLONE_REMOTE=$4 RCLONE_PATH=$5
 VARIANT=$6 SESSION=$7 SYNC_JOBS=$8 SWAP_GB=$9
 # The heredoc is quoted, so $JOBS_BUILD/$REPO_DEPTH below are expanded by
 # this remote shell: they have to arrive as arguments, not from the caller.
-JOBS_BUILD=${10} REPO_DEPTH=${11} ADB_KEY_BUILD=${12:-0} BACKUP_REMOTE=${13:-}
+JOBS_BUILD=${10} REPO_DEPTH=${11} BACKUP_REMOTE=${12:-} DEBLOAT_BUILD=${13:-0}
+shift 13
 
 BUILD=/mnt/build
 # One 375 GB device holds the tree, ccache and swap (274 + 25 + 32 = 331 of 369).
@@ -361,6 +374,7 @@ setup)  install_deps; ensure_swap
         echo "setup done: $(nproc) cpus, $(free -g | awk 'NR==2{print $2}') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')" ;;
 
 build)
+        ADB_KEY_BUILD=${1:-0}
         # The VM builds from its own clone of this recipe, so a change that was
         # not pushed never reaches it. Pull the branch first and say which
         # commit is being built; the caller checks for uncommitted work.
@@ -411,7 +425,7 @@ EOS
         adb_env=
         [ "$ADB_KEY_BUILD" = 1 ] && adb_env="ADB_KEY='$HOME/adbkey.pub' "
         tmux new-session -d -s "$SESSION" \
-          "$adb_env VARIANT='$VARIANT' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+          "$adb_env VARIANT='$VARIANT' DEBLOAT='$DEBLOAT_BUILD' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
         sleep 3; tmux ls
         echo "started in tmux '$SESSION'; log: $LOG" ;;
 
@@ -440,19 +454,23 @@ restore) case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
 check)   case $BACKUP_REMOTE in gs://*) ;; *) install_rclone ;; esac
          each_set check ;;
 
-release) install_gh
+release) TAG=${1:?release needs a tag} GH_REPO=${2:?release needs owner/repo}
+         install_gh
          [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
          export GH_TOKEN=$(cat "$HOME/.gh_token")
          mapfile -t assets < <(release_assets)
-         [ ${#assets[@]} -gt 0 ] || { echo "no assets for $1 in $ZIPS" >&2; exit 1; }
+         [ ${#assets[@]} -gt 0 ] || { echo "no assets for $TAG in $ZIPS" >&2; exit 1; }
          echo "assets: ${assets[*]}"
-         gh release create "$1" --repo "$2" --target "$BRANCH" --title "$1" \
+         gh release create "$TAG" --repo "$GH_REPO" --target "$BRANCH" --title "$TAG" \
             --notes "$(release_notes)" "${assets[@]}" && rm -f "$HOME/.gh_token"
-         echo "published $1 to $2" ;;
+         echo "published $TAG to $GH_REPO" ;;
 
-ota)  [ -n "$1" ] || { echo "usage: ota <tag> <owner/repo> [--dry-run]" >&2; exit 1; }
+ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
+      OTA_REPO=${2:?usage: ota <tag> <owner/repo> [--dry-run]}
+      OTA_DRY=${3:-}
+      GH_REPO=${4:-}
       channel=standard
-      case $1 in *-debloat) channel=debloat ;; esac
+      case $TAG in *-debloat) channel=debloat ;; esac
       prop=""
       for c in "$SRC/out/target/product/amogus_doha/system/build.prop" \
                "$SRC/out/target/product/amogus_doha/obj/ETC/system_build_prop_intermediates/build.prop"; do
@@ -473,11 +491,11 @@ ota)  [ -n "$1" ] || { echo "usage: ota <tag> <owner/repo> [--dry-run]" >&2; exi
       id=$(sha256sum "$zip" | cut -d' ' -f1)
       size=$(stat -c %s "$zip")
       body=$(printf '{\n  "response": [\n    {\n      "datetime": %s,\n      "filename": "%s",\n      "id": "%s",\n      "romtype": "%s",\n      "size": %s,\n      "url": "https://github.com/%s/releases/download/%s/%s",\n      "version": "%s"\n    }\n  ]\n}\n' \
-             "${dt:-0}" "$base" "$id" "${rtype:-userdebug}" "$size" "$2" "$1" "$base" "${ver:-13.1}")
-      if [ "$3" = --dry-run ]; then printf '%s\n' "$body"; exit 0; fi
+             "${dt:-0}" "$base" "$id" "${rtype:-userdebug}" "$size" "$GH_REPO" "$TAG" "$base" "${ver:-13.1}")
+      if [ "$OTA_DRY" = --dry-run ]; then printf '%s\n' "$body"; exit 0; fi
       [ -s "$HOME/.gh_token" ] || { echo "no ~/.gh_token on the VM" >&2; exit 1; }
       token=$(cat "$HOME/.gh_token")
-      api="https://api.github.com/repos/$2/contents/$channel/doha.json"
+      api="https://api.github.com/repos/$OTA_REPO/contents/$channel/doha.json"
       sha=$(curl -fsS -H "Authorization: Bearer $token" "$api" 2>/dev/null \
               | sed -n 's/.*"sha": "\([^"]*\)".*/\1/p' | head -1)
       curl -fsS -X PUT -H "Authorization: Bearer $token" \
@@ -486,9 +504,9 @@ ota)  [ -n "$1" ] || { echo "usage: ota <tag> <owner/repo> [--dry-run]" >&2; exi
 body,tag,sha=sys.argv[1],sys.argv[2],sys.argv[3]
 d={"message":"ota: "+tag,"content":base64.b64encode(body.encode()).decode()}
 if sha: d["sha"]=sha
-print(json.dumps(d))' "$body" "$1" "$sha")" \
+print(json.dumps(d))' "$body" "$TAG" "$sha")" \
         "$api" >/dev/null && rm -f "$HOME/.gh_token"
-      echo "published $channel/doha.json to $2" ;;
+      echo "published $channel/doha.json to $OTA_REPO" ;;
 
 *) echo "unknown mode: $MODE" >&2; exit 1 ;;
 esac
@@ -578,7 +596,7 @@ ota)
   # Writes the feed entry, so the ROM's Updater finds this release. Runs after
   # the release exists: the JSON points at its download URL.
   printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" ;;
+  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
   while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
@@ -593,7 +611,7 @@ finish)
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
     printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-    remote_exec ota "${TAG:-}" "$OTA_REPO" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
+    remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" || echo "OTA feed not updated: does $OTA_REPO exist?" >&2
   fi
   [ "${NO_DELETE:-0}" = 1 ] && echo "NO_DELETE=1: $NAME left running" || delete_instance ;;
 

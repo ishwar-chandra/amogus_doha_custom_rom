@@ -105,9 +105,9 @@ tools/gcp-build.sh delete     # delete the VM now
 
 Typical session: `create; config; setup; build; finish`.
 
-Knobs: `VARIANT`, `JOBS`, `SYNC_JOBS`, `REPO_DEPTH` (default `1`),
-`SWAP_GB`, `HOURS` (hard stop/auto-delete, default 48), `NO_RELEASE=1`, `NO_OTA=1`,
-`NO_DELETE=1`, `TAG=...`.
+Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
+`SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
+default 48), `NO_RELEASE=1`, `NO_OTA=1`, `NO_DELETE=1`, `TAG=...`.
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
 log reading; `finish` exits before deleting anything.
