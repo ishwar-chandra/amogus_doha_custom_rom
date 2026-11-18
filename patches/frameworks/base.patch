@@ -1,0 +1,19 @@
+diff --git a/core/java/android/app/AppOpsManager.java b/core/java/android/app/AppOpsManager.java
+index dfdd8b0..e9b68ab 100644
+--- a/core/java/android/app/AppOpsManager.java
++++ b/core/java/android/app/AppOpsManager.java
+@@ -2994,7 +2994,13 @@ public class AppOpsManager {
+             OP_UWB_RANGING,
+             OP_NEARBY_WIFI_DEVICES,
+             Flags.rangingPermissionEnabled() ? OP_RANGING : OP_NONE,
+-            Flags.accessLocalNetworkPermissionEnabled() ? OP_ACCESS_LOCAL_NETWORK : OP_NONE,
++            /*
++             * Register the op even when the local-network permission flag is
++             * off. GMS 26.46 asks for it and treats "Operation not found" as
++             * a fatal missing permission, which breaks Nearby/Quick Share.
++             * The permission stays unenforced until the flag is enabled.
++             */
++            OP_ACCESS_LOCAL_NETWORK,
+             // Notifications
+             OP_POST_NOTIFICATION,
+             // Health
