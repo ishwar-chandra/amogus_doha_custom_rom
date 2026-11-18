@@ -227,8 +227,10 @@ Do this only after the vanilla build boots and works. Pick **one** package
 and flash it in the same recovery session as the ROM, before first boot:
 
 - **MindTheGapps 17.0.0 arm64** — verified to fit this device with ~70 MB
-  spare.
-- **NikGapps-crdroid-official-arm64-17** — crDroid's own package, ~486 MB.
+  spare. https://github.com/MindTheGapps/17.0.0-arm64/releases
+- **NikGapps-crdroid-official-arm64-17** — crDroid's own package, ~486 MB,
+  in [crDroid's gapps folder](https://sourceforge.net/projects/crdroid/files/gapps/)
+  (`NikGapps-crdroid-official-arm64-17-*.zip`; the `full` file there is 1.2 GB).
 
 ```sh
 adb sideload <gapps>.zip    # confirm the signature warning ("Yes")
