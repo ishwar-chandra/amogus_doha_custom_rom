@@ -9,3 +9,19 @@ index 28a5ab2..8df10ee 100644
  genfscon proc /sys/kernel/sched_min_task_util_for_boost         u:object_r:proc_sched:s0
  genfscon proc /sys/kernel/sched_min_task_util_for_colocation    u:object_r:proc_sched:s0
  genfscon proc /sys/kernel/sched_prefer_spread                   u:object_r:proc_sched:s0
+diff --git a/qcom/vendor/hal_power_default.te b/qcom/vendor/hal_power_default.te
+index 969819c..9490dc2 100644
+--- a/qcom/vendor/hal_power_default.te
++++ b/qcom/vendor/hal_power_default.te
+@@ -4,3 +4,4 @@ rw_dir_file(hal_power_default, sysfs_devfreq)
+ rw_dir_file(hal_power_default, sysfs_graphics)
+ rw_dir_file(hal_power_default, sysfs_kgsl)
+ rw_dir_file(hal_power_default, sysfs_scsi_host)
++allow hal_power_default cgroup:file r_file_perms;
+diff --git a/qcom/vendor/system_suspend.te b/qcom/vendor/system_suspend.te
+new file mode 100644
+index 0000000..4bcc970
+--- /dev/null
++++ b/qcom/vendor/system_suspend.te
+@@ -0,0 +1 @@
++allow system_suspend sysfs_batteryinfo:file r_file_perms;
