@@ -1,221 +1,240 @@
-# Device test report — crDroid 13 (Android 17), amogus_doha
+# Device bug report — crDroid 13 (Android 17), amogus_doha
 
-Date: 2026-11-17 · phone: XT2019-1 (`doha`), serial ZF6522633X · tester: Hermes Agent
+Actionable form: each bug has a one-line name, a short summary, the fix location, and a
+verification checklist. `code-fixed` means committed but not device-verified; no build or flash was
+possible in this workspace.
 
-Build under test: `crDroidAndroid-17.0-20261117-amogus_doha-v13.1-adbkey`
-(`ro.build.date=Tue Nov 17 09:06:03 UTC 2026`, sdk 37, `ro.build.type=user`, slot `_a`,
-ADB_KEY test build — adb works from first boot, do not distribute).
+## Capture metadata
 
-Method: `tools/device-check.sh` (read-only PASS/WARN/FAIL over adb) plus targeted probes
-(`logcat`, `dumpsys`, `aapt2` on the pulled APKs). Result of the automated pass:
-**27 passed · 3 warned · 0 failed · 3 skipped**.
+| | capture A | capture B |
+|---|---|---|
+| File | `bugreports/bugreport.zip` | `bugreports/bugreport-...23-13-33.zip` |
+| Time | 2026-11-18 19:57 | 2026-11-18 23:13 |
+| Serial | `ZY326WF2N3` | `ZF6522633X` |
+| Uptime | 3 h 0 m | 13 h 36 m |
+| SIMs | both `ABSENT` | BSNL + JIO, both LTE `IN_SERVICE` |
+| Fingerprint | Egistec (`ro.vendor.hw.fps_id=egis`) | Egistec |
+| Boot reason | `reboot` | `kernel_panic` |
 
-## 1. Defects
+Build: `ro.build.date=Wed Nov 18 02:13:54 UTC 2026`, `ro.build.version.sdk=37`,
+`ro.build.type=user`, `ro.crdroid.version=17.0`.
 
-### D2 — Verified boot reports green / `ro.boot.flash.locked=1` (needs a check, medium)
+## Status at a glance
 
-`ro.boot.verifiedbootstate=green`, `ro.boot.flash.locked=1`, yet fastboot flashed this build
-minutes earlier and the recovery run reported `orange`. A locked bootloader would refuse a
-test-key image, so either the bootloader was re-locked after flashing, or these props are being
-misreported. Verify from the bootloader (`fastboot oem device-info` / `fastboot getvar
-unlocked`) before the next flash; if it is genuinely locked, `fastboot flash` will fail and
-`fastboot flashing unlock` (which wipes) is required.
+| Status | Entries | Individual issues |
+|---|---|---|
+| Fixed in code, device-unverified | 3 (P1, P3, D5) | 5 |
+| Partially fixed | 3 (P2, P10, P14) | 3 entries, several sub-items open |
+| Mitigation only | 2 (P8, P9) | 2 |
+| Likely fixed upstream, unverified | 1 (P4) | 1 |
+| Open | 12 (P5/P6/P7/P11/P12/P13/P15/P16/P17, D6, D8, D9) | 36 |
+| **Tracked total** | **21** | **44** |
 
-### D3 — Cosmetic kernel noise
+`P5` is the old `D4`; `D2` is closed (the green verified-boot property is crDroid's SafetyNet spoof).
+`D5` is one row of P10.
 
-- `audit: rate limit exceeded` (SELinux audit queue) and
-  `suspend-service: Error opening kernel wakelock stats ... Permission denied` on a user build —
-  expected for `ro.debuggable=0`, no action.
-- `WindowOrganizerController: Attempting to externally change a non-organized container` when
-  apps close — known WM noise, not device-specific.
+Legend: `[x]` done in code, `[ ]` needs verification or work.
 
-### D4 — GMS crashes on the platform's Safety Center source list (medium, no user-visible break)
+---
 
-Three crashes inside 11 s on the 09:06 build, all the same:
+## P1 — Shutdown panic: modem notifier timeout
+**Status:** fixed in code (kernel), device-unverified. **Severity:** critical.
+**Summary:** During shutdown the modem SSR notifier chain exceeded its timeout and panicked the
+kernel (`Subsys notifier chain for modem taking too long`); pstore also records
+`androidboot.bootreason=kernel_panic`.
+**Fix:** kernel `d93bfa2` (qcacld: move SSR cleanup off `FW_DOWN`, do it on `FW_CRASHED`) plus
+`710ed46` (dump stuck task before panic). Both are in the pinned branch `doha-kernel-fixes-2026-11-19`
+at `73b7957`.
+- [x] Kernel commits present in the build pin.
+- [ ] Rebuild with a syncing `./build.sh`; no `SKIP_SYNC=1`.
+- [ ] Reboot 5× and reproduce hotspot/WLAN-SSR; `dmesg` must not contain
+  `Subsys notifier chain for modem taking too long`.
+- [ ] If it still panics, attach the new stack dump from `710ed46`.
 
-```
-FATAL EXCEPTION: [GmsIntentOperationChimeraService-Executor] idle
-Process: com.google.android.gms
-java.lang.IllegalArgumentException: Unexpected safety source: AdvancedProtection
-    at android.os.Parcel.createExceptionOrNull(Parcel.java:3396)   ← thrown by the *platform*
-```
+## P2 — Suspend ineffective; glink/smp2p wake IRQs misconfigured
+**Status:** partial (kernel flags fixed), device-unverified. **Severity:** high.
+**Summary:** Nearly every suspend attempt resumed on `misconfigured IRQ 20 glink-native`; pending
+sources also include `NETLINK`, `SensorsHAL_WAKEUP`, `smp2p-sleepstate`, and IPA.
+**Fix:** kernel `a8b9cfcea310` (glink) and `0c55710bfa99` (smp2p) drop `IRQF_NO_SUSPEND` from IRQs
+that use `enable_irq_wake()`. `NETLINK`/sensor wakeups are userspace.
+- [x] Both kernel commits in the pinned branch.
+- [ ] Screen off on battery 10 min; bugreport must have zero
+  `misconfigured IRQ 20 glink-native`.
+- [ ] Compare `PM: suspend entry`/`Some devices failed to suspend` with capture B (202/20).
+- [ ] Incoming call while suspended must wake and ring; if not, revert P2 commits and report.
 
-The binder call goes into the Safety Center service, which validates the source against the
-enum of safety sources the platform build knows. `AdvancedProtection` is newer than the AOSP 17
-list this build compiles, so the platform rejects the call and GMS dies in its intent-operation
-service; it restarts and retries. Not caused by any doha patch — the same signature is reported
-on other Android 17 builds paired with recent GApps packages.
-
-Effect: background GMS work (safety/security check-ins) restarts a few times per boot; Play
-Store and sign-in are unaffected. Fix has to come from the platform side (add the source to the
-`frameworks/base` safety-source enum) or from a GMS version that matches; not worth patching a
-third-party project for.
-
-### D5 — SELinux denials: `system_suspend` cannot read battery sysfs (low, noisy)
-
-263 audit lines, dominated by one pair:
-
-```
-avc: denied { read } for scontext=u:r:system_suspend tcontext=u:object_r:sysfs_batteryinfo
-```
-
-which is also why `android.system.suspend-service` logs `Error opening kernel wakelock stats for:
-wakeup38/…` — the suspend service walks `/sys/class/power_supply` for wakelock accounting and is
-denied. Suspend itself works (the phone dozes); only the stats are missing. Either the label or
-the rule is missing in the vendor sepolicy; a two-line `allow` in our sepolicy patch would quiet
-it, and is safe (read-only, already world-readable sysfs).
-
-The rest is expected noise: 19 × `untrusted_app -> system_adbd_prop: read` (apps probing adb
-props on a `user` build), 8 × `mediaprovider_app -> radio_service: find` (upstream AOSP quirk),
-plus single digits for shell/dumpstate checks.
-
-### D6 — key attestation fails with Km(-10003): this is why Play Integrity apps break (high)
+## P3 — Launcher3 crash loading a stale themed-icon resource
+**Status:** fixed in code (kit patch), device-unverified. **Severity:** high.
+**Summary:** Launcher3 died with `Resources$NotFoundException` in
+`IconProvider$ThemeData.loadPaddedDrawable()` after a package update invalidated a themed-icon
+resource; `KillApplicationHandler` restarted the workspace.
+**Fix:** `patches/frameworks/libs/systemui.patch` catches `Resources.NotFoundException` and returns
+`null`, so the caller falls back to the default icon.
+- [x] Patch applies to `frameworks/libs/systemui` branch `17.0`.
+- [ ] Update/remove an app with a themed icon; Launcher3 must not appear in
+  `dumpsys dropbox -p system_app_crash`.
+- [ ] Home screen drag and widget placement still work after the update.
 
 `keystore2` logs, whenever an app asks for an attested key:
 
-```
-While generating without a provided attestation key and parameter…
-```
+## P5 — GMS crashes on `AdvancedProtection` safety source
+**Status:** open (platform/GApps mismatch). **Severity:** medium; this is old D4.
+**Summary:** `SafetyCenterManager.setSafetySourceData()` rejects the source
+`AdvancedProtection`; GMS dies in `GmsIntentOperationChimeraService` and retries.
+**Fix:** no device patch. Needs a platform safety-source enum update or a matching GApps package.
+- [ ] Confirm the crash count in dropbox after a GApps update.
+- [ ] Do not add a third-party-project patch unless the platform enum is extended intentionally.
 
-Keymaster has no attestation key to sign with, so `KeyGenParameterSpec` with an attestation
-challenge always fails with `KM_ERROR_KEY_NOT_FOUND`. The bugreport carries 68 of these in six
-minutes, all from uid 10316 = `com.google.android.apps.nbu.paisa.user` (**Google Pay India**), and the
-Keymaster HAL logs `Attest key send cmd failed / resp->status: -10003` alongside.
+## P6 — Nearby Share cannot advertise: local-network AppOp missing
+**Status:** open. **Severity:** medium.
+**Summary:** GMS 26.46 asks for `ACCESS_LOCAL_NETWORK`; AppOps reports
+`Operation not found`, then `SecurityException: Missing local network permission`; 12×
+`BpfNetMaps local_net_access unsupported`.
+**Fix:** no kit patch. The platform aconfig flag `access_local_network_permission_enabled` is off;
+enabling it changes the permission model. `BpfNetMaps` is the 4.14 limitation.
+- [ ] Decide whether to enable the aconfig flag; if not, document Nearby as unsupported.
+- [ ] With NFC/BLE on, start Quick Share and verify `startAdvertising` succeeds.
 
-This is not cosmetic. On Android 13+ every Play Integrity device label — including
-`MEETS_BASIC_INTEGRITY` — requires a key-attestation chain rooted at Google, so with no chain the
-verdict is empty and any app that checks it refuses to run. `MEETS_DEVICE_INTEGRITY` would additionally
-require a locked bootloader and a certified OEM image, and `MEETS_STRONG_INTEGRITY` patch levels for
-all partitions including Motorola's 2022 vendor blob. None of that is reachable on an unlocked,
-self-signed build; the attestation key lives in the TEE and cannot be created by the OS. Full
-analysis, the decisive KeyAttestation test, and what is deliberately *not* done about it (keybox
-spoofing) are in `PLAYINTEGRITY.md`.
+## P7 — Find My Device first-party signature rejected
+**Status:** open; not fixable in AOSP. **Severity:** medium.
+**Summary:** `FirstPartyBroadcaster: Signature check failed. The calling package is not google
+signed` on the Find My Device sync path.
+**Fix:** none. Requires Google-signed system components; do not spoof the signature.
+- [ ] Document Find My Device as unsupported.
+- [ ] Verify no user-visible crash beyond the one-time registration failure.
 
-### D8 — No Wi-Fi RTT service (low, feature missing)
+## P8 — NFC writes fail with `-ENOTCONN`
+**Status:** mitigation (kernel), device-unverified. **Severity:** medium.
+**Summary:** `nq-nci` logged 7× `nfc_write: failed to write -107` and one misleading
+`NFCC HW not Supported`; NFC was off during the capture.
+**Fix:** kernel `73b7957` retries `nfc_write()` 3× at 10 ms on `-ENOTCONN`/`-EIO`.
+- [x] Retry commit in the pinned branch.
+- [ ] Enable NFC, tap an NDEF tag, read it.
+- [ ] Bugreport must have no `nfc_write: failed to write -107` during the successful session.
+- [ ] If NFC is still dead, capture the `nfcc_hw_check` chip-type value; the retry is not enough.
 
-`SystemServiceRegistry: No service published for: wifirtt` (23 times, every time an app asks).
-The Wi-Fi HAL never publishes `IWifiRttController`, so 802.11mc ranging — what apps use for
-room-level indoor positioning — is unavailable. Nothing crashes; features that call it get a
-`ServiceNotFoundException`. Either the vendor Wi-Fi HAL lacks RTT or the feature flag is off in the
-device config; would need the HAL sources to confirm.
+## P9 — Camera EEPROM/CCI read failures
+**Status:** mitigation (kernel), device-unverified. **Severity:** medium.
+**Summary:** Boot log had `msm_cci_irq MASTER_0 error 0x10000000`, `rc -22`, and
+`eeprom_parse_memory_map: read failed`; 4 cameras still enumerate.
+**Fix:** kernel `08e44ce67911` retries the EEPROM memory map 3× at 10 ms on
+`-EIO/-ENXIO/-EINVAL`. The CCI retime race is already fixed by `52885f0`.
+- [x] Retry commit in the pinned branch.
+- [ ] Open Aperture and switch through cameras 0–3; take one photo each.
+- [ ] Bugreport must not repeat `eeprom_parse_memory_map: read failed` for a present sensor.
+- [ ] Compare ultra-wide/macro focus and colour with stock; if calibration is still missing, the
+  issue is sensor/EEPROM data, not the retry.
 
-### D9 — Settings cannot show the IMEI (cosmetic, by design)
+## P10 — SELinux policy gaps
+**Status:** partial (two rules fixed), device-unverified. **Severity:** medium/low.
+**Summary:** `system_suspend` could not read `sysfs_batteryinfo`; `hal_power_default` could not read
+`schedtune` cgroup files; other denials remain (`content_capture`, `dex2oat`, `app_zygote`,
+`hal_camera`, `vendor_qtelephony`, Meta `execmod`).
+**Fix:** `patches/device/lineage/sepolicy.patch` adds:
+`allow system_suspend sysfs_batteryinfo:file r_file_perms;` and
+`allow hal_power_default cgroup:file r_file_perms;`.
+- [x] Both rules in the kit patch.
+- [ ] Bugreport must have zero `system_suspend -> sysfs_batteryinfo` denials.
+- [ ] Bugreport must have zero `hal_power_default -> cgroup` denials.
+- [ ] Remaining denial classes are intentionally not broadened; address only with a reviewed
+  per-domain policy change.
 
-`ImeiPreference: PrimaryImei not available` 112 times, i.e. every time About → IMEI is opened. The
-telephony service refuses `getDeviceId` on a `user` build without the privileged permission, which
-is exactly what `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG` gives us. Settings shows an empty field
-instead of the IMEI. Not fixable without weakening the build; the IMEI is on the box and readable
-with `fastboot getvar` anyway.
+## P11 — Wi-Fi HAL/framework errors
+**Status:** open. **Severity:** low/medium.
+**Summary:** `getUsableChannels` fails (24 lines in A), `setBtCoexistenceMode` returns code 1,
+Passpoint logs `null osuProviders`, and ConnectivityService reports a band-specifier change.
+**Fix:** no kernel/kit patch; WiFi HAL, wpa_supplicant and framework.
+- [ ] Test hotspot/SoftAP channel selection.
+- [ ] Test Wi-Fi + BT coexistence throughput.
+- [ ] File against `packages/modules/Wifi` or the vendor WiFi HAL only with a reproducer.
 
-### D10 — Fingerprint HAL error 5 once (watch item)
+## P12 — Bluetooth A2DP underruns
+**Status:** open. **Severity:** low.
+**Summary:** 30× `ONLY READ 0 BYTES OUT OF 4096` and AudioFlinger underruns while A2DP was
+starting/suspending.
+**Fix:** no kit patch; Bluetooth/audio userspace.
+- [ ] Play 10 min over A2DP and listen for glitches.
+- [ ] If audible, capture `dumpsys media.audio_flinger` and a BT HCI log.
 
-```
-E FingerprintHal: [fingerprint.c] [on_error_msg:361] on_error 5
-E FingerprintHal: [fingerprint.c] [fingerprint_cancel:976] ets_fp_verify_finger(), fps_cancel
-                 g_finger_lost_detec
-```
+## P13 — USB current-limit and dwc3 PHY errors
+**Status:** open. **Severity:** low.
+**Summary:** 30× `Failed to open limit_sink_enable`; 14× `could not transition HS PHY to L2`. USB
+data enumerated (the bugreport was captured over adb); current limiting is unverified because the
+sink-current node is absent from the 4.14 charger ABI.
+**Fix:** no kit patch; USB AIDL HAL/charger driver. Do not invent a new sysfs ABI just to silence
+the log.
+- [ ] Measure USB charge current with a meter.
+- [ ] Verify USB data and ADB.
+- [ ] Treat the log as diagnostic unless charging is actually limited.
 
-One occurrence, during an unlock: the sensor reported "finger lost" while verifying and the HAL
-cancelled. Error 5 is a cancel, so the worst case is a retry. Only if it repeats per unlock is it a
-sensor/placement problem rather than normal cancellation.
+## P14 — Battery `ONLINE` log flood and missing firmware
+**Status:** partial (battery fixed), device-unverified. **Severity:** low.
+**Summary:** 1,375× `batt power supply prop 4 not supported` from `qpnp-smb5.c`; also
+`aw8695_rtp.bin`, FTS firmware and `/vendor/bin/chre` are missing; `ro.product.bevice` is a typo.
+**Fix:** kernel `3b0be2c65bf6` reports `POWER_SUPPLY_PROP_ONLINE` from battery presence. The
+firmware blobs/typo need vendor-tree changes, not this kernel patch.
+- [x] SMB5 `ONLINE` commit in the pinned branch.
+- [ ] Boot; bugreport must have zero `batt power supply prop 4 not supported`.
+- [ ] `dumpsys battery` still shows status/capacity/temperature.
+- [ ] Add the missing firmware blobs and fix the vendor prop separately if the features matter.
 
-### D11 — Audio HAL cannot take a perf lock (cosmetic)
+## P15 — Launcher unread-badge provider missing
+**Status:** open; app-side. **Severity:** low.
+**Summary:** Instagram logs 34× `Failed to find provider info for
+com.motorola.launcher3.unread_badge`; the Motorola launcher provider is not installed.
+**Fix:** no ROM patch. The query is from the app; suppress the lookup in the app or accept no
+badges.
+- [ ] Confirm Instagram badges are the only affected feature.
+- [ ] Do not add a fake Motorola provider.
 
-`audio_hw_extn: audio_extn_perf_lock_acquire: Incorrect params, Failed to acquire perf lock` ×18,
-followed by `out_write: retry previous failed cal level set`. The QTI audio HAL asks the perf HAL
-for a boost and gets its arguments rejected; audio still plays, the boost just never happens. No
-perf HAL is present in this image (only the cameraservice/audio/sensorservice HALs are registered),
-which matches the failure.
+## P16 — GApps feature gaps
+**Status:** open; package choice. **Severity:** low.
+**Summary:** Missing `subscribedfeeds`, `MDOC_STORE`, AICore, Wear, and Carrier Services/RCS.
+**Fix:** no ROM patch; choose a fuller GApps package or accept the gaps.
+- [ ] Decide whether Discover/RCS/AICore are release requirements.
+- [ ] Test with the chosen GApps package.
 
-## 2. Verified working
-| Area | Evidence |
-| --- | --- |
-| Boot | `sys.boot_completed=1`, bootanim stopped, 16 min uptime |
-| adb from first boot | baked key works, `ro.adb.secure=1` kept |
-| Radio (voice) | SIM `LOADED,LOADED`, `mVoiceRegState=IN_SERVICE` (BSNL, GSM) |
-| Wi-Fi | service up, enabled (not associated at test time) |
-| Bluetooth | service up, switched off |
-| NFC | service up, switched off |
-| Sensors | 47 hardware sensors, accelerometer present |
-| Touch | `TOUCHSCREEN` source declared in input dump |
-| Fingerprint | HAL `FingerprintProvider/defaultHIDL` answers |
-| Camera | 4 camera devices |
-| Display | 1080x2280 @ 60 fps |
-| Audio | outputs enumerated (earpiece active) |
-| Screen record | `/system/bin/screenrecord` present; 5 s recording produced a valid 72 KB MP4; tile works |
-| Storage | `/data` 2 % used, `/sdcard` writable |
-| Power/thermal | 85 %, 31.4 °C battery · CPU 47.7 °C |
-| SELinux | enforcing, 0 denials in the buffer |
+## P17 — App-side failures (not ROM defects)
+**Status:** open; out of scope. **Severity:** low.
+**Summary:** Photos SQLite unique-constraint loop, one retained Chrome ANR, Brave custom-tab
+`Permission Denial`, Solid Explorer root probes.
+**Fix:** no ROM patch; report to the app vendors.
+- [ ] Reproduce each with the latest app version.
+- [ ] Only revisit if the same failure is seen with AOSP apps.
 
-## 3. Needs a human (not covered by adb checks)
-Calls with audio both ways · VoLTE with this carrier · mobile data with data enabled (it was
-switched off) · Wi-Fi association + browsing · camera capture including ultra-wide · video
-playback and speaker/headphone/BT audio · GNSS fix · fingerprint enrolment · NFC tap ·
-double-tap-to-wake (known broken on FocalTech panels) · Magisk boot-image patching.
+---
 
-## 4. Reproduce this report
-```sh
-./tools/device-check.sh                 # PASS/WARN/FAIL summary, exit code = failures
-adb logcat -b all -d > logcat.txt       # full buffer for the crash above
-adb shell dumpsys activity service com.android.systemui/.SystemUIService | grep ScreenRecordTile
-```
+## Legacy items
 
-## 5. Findings from the on-device bugreport (`adb bugreport`)
-Captured 2026-11-17 16:08 (3.6 MB zip, full dumpsys + all log buffers). New detail beyond the live checks:
+### D6 — Key attestation fails (`-10003`)
+**Status:** open; unfixable ROM-side. **Severity:** high for Play Integrity.
+**Summary:** Keymaster has no attestation key; attested-key requests fail, so Play Integrity labels
+cannot be met on an unlocked self-signed build.
+- [ ] Treat Play Integrity as unsupported; do not add keybox spoofing.
 
-- **SettingsIntelligence resource spam** — `com.android.settings.intelligence` logs
-  `No package ID ff found for resource ID 0xffffffff` ~5,000 times. A resource-table defect like the launcher's; a build from an empty out/ covers it.
-- **`ImeiPreference: PrimaryImei not available` (UnsupportedOperationException)** — Settings can't show
-  the IMEI. On a `user` build the telephony service refuses it; cosmetic, but Settings → About → IMEI
-  will be blank.
-- **`HealthInterface: null health service, SAD!`** — misleading: the HAL *is* running
-  (`android.hardware.health.IHealth/default`, `android.hardware.health-service.qti`). Transient
-  framework race at boot, not a missing service.
-- **`TaskPersister: File error accessing recents directory`** — recents persistence failed while the launcher was
-  crash-looping; the launcher fix is in the kit.
-- **No ANRs, no watchdog kills, no tombstones, 0 `Fatal signal`** in the whole report.
-- SELinux: the earlier capture showed 0 denials, this one shows 263 (see D5) — same build, so the
-  difference is what the phone was doing (charging + dozing), not a policy change. The kernel log
-  is otherwise clean: no `EXT4-fs error`, no `hung task`, no thermal trip, no LMK kills.
+### D8 — No Wi-Fi RTT service
+**Status:** open; feature missing. **Severity:** low.
+**Summary:** `SystemServiceRegistry: No service published for: wifirtt`.
+- [ ] Confirm the vendor WiFi HAL lacks RTT; no software patch.
 
-## 6. Full-sweep inventory (tools/bugreport-scan.py)
+### D9 — IMEI blank in Settings
+**Status:** by design on `user` builds. **Severity:** cosmetic.
+**Summary:** `ImeiPreference: PrimaryImei not available`; telephony refuses `getDeviceId` without
+the privileged permission.
+- [ ] Read the IMEI from the box or `fastboot getvar`; do not weaken the build.
 
-`tools/bugreport-scan.py` runs the same analysis over any bugreport zip and groups every error tag
-with a sample, so this section is reproducible rather than hand-collected.
+---
 
-Crashes in the 4 h capture (boot 14:36:26 → report 18:31): **3 × GMS (D4), 1 × Launcher3**.
-No ANRs, no native crashes, no `system_server` restarts, no watchdog kills, no `SYSTEM TOMBSTONE`,
-no LMK kills, no thermal trips, no `Davey`/`Slow dispatch` samples. Battery: 159 mAh computed over
-the session, screen 53.5 mAh, wakelocks 0.06 mAh, camera 1.2 mAh.
+## Closed
 
-| Count | Tag | Verdict |
-| --- | --- | --- |
-| 301 | `android.system.suspend-service` wakelock stats | D5, sepolicy |
-| 130 | `AndroidRuntime` `Unexpected safety source: AdvancedProtection` | D4, platform/GApps |
-| 112 | `ImeiPreference` | D9, `user` build |
-| 91 | `VendorCaps: Failed to read platform VT driver version` | vendor lib probing a VT driver; benign |
-| 90 | `QC2V4l2Driver: queryControl failed id 992077` | video *decoder* vendor control query (`avcD_0`, `hevcD_0`); benign, not the camera |
-| 70 | `YT.mlplayer` / `YT.qoe` | YouTube's own player/analytics |
-| 36 | `StandardCaps: FrameRateInputHelper queryParamRanges failed` | encoder caps probe; benign |
-| 25 | `TransitionChain: Can't collect into a chain` | WM noise |
-| 23 | `SystemServiceRegistry: No service published for: wifirtt` | D8 |
-| 21 | `sensors-hal: mot_disprot_event` | Motorola rotation sensor, expected |
-| 20 | `iftw: Trace … timed out after 1457038 ms` | GMS trace plumbing, app side |
-| 18 | `audio_hw_extn` perf lock | D11 |
-| 13 | `OMX-VDEC-1080P: extension not implemented` | optional codec extension, benign |
-| 13 | `system_server: poll() failed: Interrupted system call` | EINTR on a signal, expected |
-| 12 | `KeyMasterHalDevice: Attest key send cmd failed` | D6 |
-| 10 | `ConsumerBase: abandonLocked` | screen-record/camera pipeline teardown |
-| 10 | `Settings: Invalid resource ID 0x00000000` | benign null id (see below) |
-| 10 | `QcrilOemhookMsgTunnel: Unexpected serial number` | RIL oemhook noise |
+### D2 — Verified-boot state checker
+Closed: the kernel command line is `androidboot.verifiedbootstate=orange`; the `green` property is
+crDroid's SafetyNet spoof, not a locked bootloader.
 
-One hypothesis to kill before someone chases it: `Invalid resource ID 0x00000001…0x00000010` appears
-in Launcher3 (7×) and SystemUI (8×), all at **18:29:56**, i.e. inside the dumpstate run — a dump
-artifact, not runtime damage. Only the launcher's `0x7f082f07` is a real missing resource.
-`knrq: Previous channel … garbage collected` (804×) is GMS 26.45.31's own gRPC bookkeeping, uid
-10225, not a platform defect.
+---
 
-Also expected with an AOSP launcher plus GMS: `Unable to start service Intent {
-act=com.android.launcher3.WINDOW_OVERLAY … pkg=com.google.android.googlequicksearchbox }` — the
-Google app looks for its launcher overlay in its own package, which only the Google launcher has.
+## Verification limits
 
+No device build/flash was possible in this workspace: no synced Android tree
+(`~/android/crdroid-17.0` absent), no `clang`/aarch64 toolchain, and 78 GB free versus ~350 GB
+required. All `[x]` marks mean the code/patch is committed; none mean hardware-verified.
