@@ -4,7 +4,7 @@
 # artifact is copied to the GitHub release (and the OTA feed) before deletion.
 #
 # Local commands (they drive gcloud/ssh; the work happens on the VM):
-#   create    the instance: MACHINE + one 500 GB disk
+#   create    the instance: MACHINE + two 375 GB local NVMe
 #   setup     build deps in the VM, clone the recipe
 #   build     start the build in a tmux session (sync, then compile)
 #   gh-check  preflight the GitHub token -- run this before a build
@@ -32,9 +32,9 @@
 #   PROJECT, ZONE, NAME
 #   MACHINE       compile machine      (default: n2-custom-12-49152)
 #   SYNC_MACHINE  separate sync box    (default: MACHINE)
-#   DISK, DISK_TYPE                    boot disk (default: 500GB pd-standard; no local SSDs)
-#   SSD_COUNT     local NVMe count     (default: 0; 2/4/8/16/24 optional)
-#   SWAP_GB       swap on the boot disk (default: 32)
+#   DISK, DISK_TYPE                    boot disk (default: 50GB pd-standard)
+#   SSD_COUNT     local NVMe count     (default: 2; 2/4/8/16/24)
+#   SWAP_GB       swap on the NVMe     (default: 32)
 #   HOURS         hard stop            (default: 48; 0 disables)
 #   VARIANT       userdebug|user|eng   (default: userdebug)
 #   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
@@ -70,18 +70,17 @@ case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 # help: the global cap is what a create trips over), so 12 vCPU is the widest
 # machine that can be created today. Raise the quota, then MACHINE=n2-custom-16-49152.
 MACHINE=${MACHINE:-n2-custom-12-49152}
-# One 500 GB pd-standard boot disk holds the OS, tree, out/, ccache and swap.
-# SSD_COUNT=0 keeps local NVMe out of the create; set 2/4/8/16/24 later if
-# you want the pair (GCP rejects a single local SSD).
-SSD_COUNT=${SSD_COUNT:-0}
-# DISK_MODE=local : the default; with SSD_COUNT=0 the boot disk is the only
-#                   disk and /mnt/build sits on it.
-# DISK_MODE=pd    : optional separate data disk (DATA_DISK_GB) at /mnt/build.
+# Two 375 GB local NVMe devices (750 GB) are the build volume: the first
+# holds the tree/out, the second holds ccache and swap. GCP attaches local
+# SSDs in pairs, so 2 is the smallest usable count.
+SSD_COUNT=${SSD_COUNT:-2}
+# DISK_MODE=local : local NVMe (default).
+# DISK_MODE=pd    : optional separate 400 GB data disk at /mnt/build.
 DISK_MODE=${DISK_MODE:-local}
 DATA_DISK_GB=${DATA_DISK_GB:-400}
 DATA_DISK_TYPE=${DATA_DISK_TYPE:-pd-ssd}
 SYNC_MACHINE=${SYNC_MACHINE:-$MACHINE}
-DISK=${DISK:-500GB}
+DISK=${DISK:-50GB}
 DISK_TYPE=${DISK_TYPE:-pd-standard}
 SWAP_GB=${SWAP_GB:-32}
 SYNC_JOBS=${SYNC_JOBS:-nproc}

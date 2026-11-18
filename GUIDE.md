@@ -20,8 +20,8 @@ version.
   - A GCP project with `gcloud` (hands-off build; recommended for a laptop).
 - Disk/time: a full build needs ~350 GB of scratch space and a lot of RAM.
   On GCP the script sizes this for you (12 vCPU, 48 GB RAM + 32 GB swap, one
-  500 GB pd-standard). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
-  takes minutes. The single disk is the default; `SSD_COUNT=2` opts into local NVMe.
+  50 GB boot disk plus two 375 GB local NVMe). A cold build takes hours (~9 h at 12 vCPU, ~6.5 h at 16); a warm rebuild
+  takes minutes. The local NVMe pair is the default.
 - Optional: an `adb`/`fastboot` setup on the machine you flash from.
 - Optional for releases: a GitHub token (see §8).
 
@@ -88,7 +88,7 @@ The script provisions a VM, syncs, builds and publishes a release. Commands
 (run from the repo root, `gcloud` in `PATH`):
 
 ```sh
-tools/gcp-build.sh create     # VM + one 500 GB disk
+tools/gcp-build.sh create     # VM + two 375 GB local NVMe
 tools/gcp-build.sh setup      # install deps, clone the recipe
 tools/gcp-build.sh build      # start sync+build in tmux
 AUTO_FINISH=1 tools/gcp-build.sh build   # wait, release, update OTA, delete
@@ -296,12 +296,12 @@ Commit messages: plain-language subject, optional area prefix
 - `finish` deletes the VM after a successful release; `NO_DELETE=1` keeps it
   (~$1/h for 12 vCPU + 48 GB).
 - Storage shape (`create`):
-  - Default: one 500 GB `pd-standard` boot disk holds the OS, tree, `out/`, ccache
-    and swap. No local SSD and no second disk; deleting the VM deletes it.
-    This region's `SSD_TOTAL_GB` quota is 250 GB, so a 500 GB `pd-ssd` is refused
-    before create; raise that quota if you want SSD speed.
-  - `SSD_COUNT=2` (or 4/8/…) opts into local NVMe: 2×375 GB = 750 GB, fastest,
-    but GCP only attaches them in pairs and the tree dies with the instance.
+  - Default: one 50 GB `pd-standard` boot disk plus **2×375 GB local NVMe**
+    (750 GB). The first NVMe holds the tree and `out/`; the second holds
+    ccache and swap. Local NVMe is fastest and dies with the instance.
+  - `SSD_COUNT=0` switches to a single boot disk; `DISK=500GB` with
+    `DISK_TYPE=pd-standard` is the quota-safe option. A 500 GB `pd-ssd` is
+    refused because `SSD_TOTAL_GB` is 250 GB in this region.
   - `DISK_MODE=pd [DATA_DISK_GB=400] [DATA_DISK_TYPE=pd-ssd]`: optional
     separate data disk at `/mnt/build`; `DATA_DISK_KEEP=1` keeps it after the
     instance goes at extra cost.
