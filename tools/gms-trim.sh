@@ -20,6 +20,11 @@
 #   tools/gms-trim.sh -g ads,analytics,cast  # pick groups
 #   tools/gms-trim.sh -g all                 # every group (breaks Pay/Nearby/Games)
 #   tools/gms-trim.sh --restore              # re-enable what this tool disabled
+#   tools/gms-trim.sh --su                   # force `su -c pm ...` (Magisk/KernelSU)
+#
+# On a build that reports ro.debuggable=0 (this one does) plain `pm disable` is
+# refused, but a Magisk/KernelSU shell is root and works - the tool detects that
+# and switches to `su -c` by itself; --su just forces it.
 
 set -euo pipefail
 
@@ -30,7 +35,27 @@ LIST="$HERE/gms-trim.components"
 STATE_FILE="$HERE/.gms-trim.state"
 DEFAULT_GROUPS="ads,analytics,stats"
 
+SU=0
 die() { printf 'gms-trim: %s\n' "$*" >&2; exit 1; }
+
+# pm wrapper: root shell if the device has one, otherwise the adb shell user.
+pm_do() {
+    if [ "$SU" = 1 ]; then
+        "$ADB" shell "su -c 'pm $*'"
+    else
+        "$ADB" shell "pm $*"
+    fi
+}
+
+detect_root() {
+    local uid
+    uid=$("$ADB" shell id -u 2>/dev/null | tr -d '\r' || echo 2000)
+    if [ "$uid" = 0 ]; then SU=0; return; fi
+    if [ "$SU" = 0 ] && "$ADB" shell su -c id 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
+        printf 'gms-trim: root shell detected, using su -c\n'
+        SU=1
+    fi
+}
 
 [ -f "$LIST" ] || die "missing $LIST"
 
@@ -51,39 +76,54 @@ components_for() {
 
 need_device() {
     "$ADB" get-state >/dev/null 2>&1 || die "no device over adb (check adb devices)"
-    "$ADB" shell pm path "$PKG" >/dev/null 2>&1 || die "$PKG is not installed"
+    pm_do path "$PKG" >/dev/null 2>&1 || die "$PKG is not installed"
+    detect_root
 }
 
-case "${1:-}" in
-    --list)
-        need_device
-        printf '%-12s %6s\n' GROUP COUNT
-        for g in $(all_groups); do
-            printf '%-12s %6s\n' "$g" "$(awk -F'\t' -v G="$g" '!/^#/ && $1==G' "$LIST" | wc -l)"
-        done
-        printf '\nDefault groups: %s\n' "$DEFAULT_GROUPS"
-        exit 0 ;;
-    --restore)
-        need_device
-        [ -s "$STATE_FILE" ] || die "nothing recorded in $STATE_FILE"
-        ok=0; bad=0
-        while IFS= read -r comp; do
-            [ -n "$comp" ] || continue
-            if "$ADB" shell pm enable "$comp" 2>&1 | grep -qi 'new state'; then
-                printf 'enabled   %s\n' "$comp"; ok=$((ok + 1))
-            else
-                printf 'FAILED    %s\n' "$comp"; bad=$((bad + 1))
-            fi
-        done < "$STATE_FILE"
-        printf '\n%d re-enabled, %d failed\n' "$ok" "$bad"
-        [ "$bad" -eq 0 ] && rm -f "$STATE_FILE"
-        exit $([ "$bad" -eq 0 ] && echo 0 || echo 1) ;;
-    --dry-run) dry=1; groups=$DEFAULT_GROUPS ;;
-    -g|--groups) groups=${2:-}; dry=0; [ -n "$groups" ] || die "empty --groups" ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
-    "") dry=0; groups=$DEFAULT_GROUPS ;;
-    *) die "unknown argument '$1' (try --help)" ;;
-esac
+do_list() {
+    need_device
+    printf '%-12s %6s\n' GROUP COUNT
+    for g in $(all_groups); do
+        printf '%-12s %6s\n' "$g" "$(awk -F'\t' -v G="$g" '!/^#/ && $1==G' "$LIST" | wc -l)"
+    done
+    printf '\nDefault groups: %s  (root shell: %s)\n' "$DEFAULT_GROUPS" \
+        "$([ "$SU" = 1 ] && echo "su -c" || echo "adb shell")"
+}
+
+do_restore() {
+    need_device
+    [ -s "$STATE_FILE" ] || die "nothing recorded in $STATE_FILE"
+    ok=0; bad=0
+    while IFS= read -r comp; do
+        [ -n "$comp" ] || continue
+        if pm_do enable "$comp" 2>&1 | grep -qi 'new state'; then
+            printf 'enabled   %s\n' "$comp"; ok=$((ok + 1))
+        else
+            printf 'FAILED    %s\n' "$comp"; bad=$((bad + 1))
+        fi
+    done < "$STATE_FILE"
+    printf '\n%d re-enabled, %d failed\n' "$ok" "$bad"
+    [ "$bad" -eq 0 ] && rm -f "$STATE_FILE"
+    return $([ "$bad" -eq 0 ] && echo 0 || echo 1)
+}
+
+dry=0
+groups=$DEFAULT_GROUPS
+action=apply
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --list) action=list; shift ;;
+        --restore) action=restore; shift ;;
+        --dry-run) dry=1; shift ;;
+        --su) SU=1; shift ;;
+        -g|--groups) groups=${2:-}; shift 2; [ -n "$groups" ] || die "empty --groups" ;;
+        -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+        *) die "unknown argument '$1' (try --help)" ;;
+    esac
+done
+
+[ "$action" = list ] && { do_list; exit 0; }
+[ "$action" = restore ] && { do_restore; exit $?; }
 
 for g in $(printf '%s' "$groups" | tr ',' ' '); do
     [ "$g" = all ] && continue
@@ -105,7 +145,7 @@ fi
 ok=0; denied=0; : > "$STATE_FILE.tmp"
 while IFS= read -r comp; do
     [ -n "$comp" ] || continue
-    out=$("$ADB" shell pm disable "$comp" 2>&1 | tr -d '\r' || true)
+    out=$(pm_do disable "$comp" 2>&1 | tr -d '\r' || true)
     case "$out" in
         *SecurityException*|*"Permission denial"*|*"not allowed"*|*Exception*)
             printf 'denied   %s\n' "$comp"; denied=$((denied + 1)) ;;

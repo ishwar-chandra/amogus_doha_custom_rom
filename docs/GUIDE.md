@@ -209,9 +209,9 @@ tools/gms-trim.sh -g all         # also Wallet/tap-to-pay, Quick Share, Play Gam
 tools/gms-trim.sh --restore      # re-enable everything the tool disabled
 ```
 
-`gms-trim.sh` needs a build where the shell may change component state; when the
-platform refuses, it prints `denied` per component, disables nothing and exits
-non-zero. Disabled components are stored in `/data`, so they survive OTA updates
+`gms-trim.sh` needs a build where the shell may change component state. If the
+phone has Magisk/KernelSU it detects the root shell and runs `su -c pm ...`; on a
+plain unlock it prints `denied` per component, disables nothing and exits non-zero. Disabled components are stored in `/data`, so they survive OTA updates
 and re-flashing a new ROM zip without a data wipe.
 
 ## 5. Google apps (optional)
