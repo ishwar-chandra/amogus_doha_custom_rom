@@ -223,3 +223,21 @@ the number of knobs the phone is not actually running.
   dead — `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL`, `CONFIG_IOSCHED_BFQ` are
   off in `arch/arm64/configs/vendor/amogus_doha_defconfig`. KSM and THP are off
   too. `SKIN_THROTTLE_C` stays at 40 until thermal headroom is measured.
+
+## Debloat leftovers (2026-11-20)
+
+- [x] **Settings kept entries for apps the debloat build removes.** crDroid
+  Settings' preference XML is shared by both variants, so "Gaming mode"
+  (`io.chaldeaprjkt.gamespace`) and "Sidebar" (`com.libremobileos.sidebar`) stayed
+  visible and did nothing — both packages are absent on the installed debloat
+  build, verified with `pm path`. `packages/apps/crDroidSettings.patch` adds
+  `PreferenceAvailability.hideEntriesForMissingPackages()`, called from
+  `Miscellaneous` and `LockScreen`, which hides any preference whose embedded
+  intent names an uninstalled package plus any category that ends up empty.
+  OmniJaws is still shipped, so the weather entry correctly stays.
+- [ ] Verify on the next debloat build: Miscellaneous has no Gaming mode, Sidebar
+  is gone, and the weather/OmniJaws entry is still there.
+- [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
+  entry can still appear in search results; tapping it does nothing.
+- [ ] `AGENTS.md`'s patch-map row for this patch still needs the owner's approval
+  to write (the file is protected).

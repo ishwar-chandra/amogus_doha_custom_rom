@@ -140,6 +140,16 @@ is generated automatically by `tools/gcp-build.sh finish`; it requires the
 public `ishwar-chandra/doha-ota` repo and a token with write access to it. Until
 that one-time setup exists, the Updater has nothing to download.
 
+The debloat variant also hides the settings entries that pointed at the removed
+apps. `packages/apps/crDroidSettings.patch` walks the preference tree once it is
+inflated and hides any preference whose embedded intent names a package that is
+not installed (Gaming mode -> `io.chaldeaprjkt.gamespace`, Sidebar ->
+`com.libremobileos.sidebar`, and any empty category left behind), so one XML
+serves both variants instead of a build-time resource fork. Entries whose app is
+still shipped (OmniJaws weather) stay visible. Search results are indexed from
+the XML at build time, so a hidden entry can still be found by Settings search;
+tapping it does nothing.
+
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
 android.googlesource.com rate-limits parallel fetches with `HTTP 429` /
