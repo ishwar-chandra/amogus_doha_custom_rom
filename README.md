@@ -762,3 +762,19 @@ is a separate limitation.
 source (platform/GApps enum mismatch), Find My Device's Google-signature check,
 Motorola launcher badge provider (app-side query), and the Wi-Fi/Bluetooth/USB
 HAL/framework errors from the same captures.
+
+### Performance profile (`performance-tuning` branch)
+
+Two conservative device changes, no CPU/GPU overclock and no thermal override:
+
+- `patches/device/motorola/amogus.patch` — raise the boot eMMC read-ahead from
+  256 to 512 KB, the runtime read-ahead from 2048 to 4096 KB, `nr_requests`
+  from 128 to 256, and apply the same read-ahead to `dm-0`…`dm-5` for the
+  dynamic partitions.
+- `patches/device/motorola/amogus_doha.patch` — set the default app transition
+  scale to 0.8 (still user-adjustable in Developer options).
+
+These are not benchmarked on hardware. CPU/GPU governor, LMK/zram and thermal
+thresholds are deliberately unchanged: they trade heat, battery or stability
+for speed and need per-device measurements first.
+
