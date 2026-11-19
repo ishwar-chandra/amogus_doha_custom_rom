@@ -102,6 +102,41 @@ Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
 (kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the
 feature is untested here), thermal thresholds, CPU/GPU frequencies.
 
+## Evaluated and rejected: Infamick script (Magisk module)
+
+Source read in full: `github.com/Infamousmick/Infamick-script`, 1736-line shell
+menu, 39 functions, GPLv3, 91 stars, last push 2026-04-15. Its own
+`common/service.sh` and `common/post-fs-data.sh` are empty templates, so the
+module installs no boot hook at all — every action is a manual menu item, mostly
+Samsung-specific (Knox, CSC, Bixby, One UI, Device Care). There is **zero**
+kernel, VM, scheduler or I/O tuning in it: no `/proc/sys` write, no `setprop`,
+no `/sys/block` write.
+
+| Its action | What it actually runs | Verdict for doha |
+|---|---|---|
+| Boost Performance | `cmd package compile -m speed-profile -a` | no-op: that is what install + idle dexopt already do. We measured the stronger `-m speed` on 8 apps: warm reloads went 2060/3123/2512/2769 ms -> 2655/2464/4359/5972 ms, resident still 0 of 8, and rolled it back |
+| Boost Battery | `cmd package bg-dexopt-job` | triggers the platform's own idle job; needs charging + idle, changes nothing else |
+| Cache cleaner | `pm trim-caches 999999999999999999` x44 | counter-productive: throws away warmed caches, so the next cold start re-downloads and re-reads from eMMC. Repeats 2-44 are no-ops |
+| Drain Fixer / One UI fix / GMS fix | prints "open App info, clear cache/data, force stop" | manual instructions, no automation, loses logins/sync |
+| GMS services | `pm disable` on 317 GMS components (`GmsIntentOperationService`, `NearbyMessagesService`, `DiscoveryService`, Kids activities) | works, but the wrong lever here — see below, and it would undo our own `frameworks/base` fix that registers `OP_ACCESS_LOCAL_NETWORK` for GMS 26.46 Nearby |
+| Charging toggle | write to `/sys/class/power_supply/battery/charging_enabled` | not a performance setting, and smb5 on this kernel does not expose that node |
+| Boot count reset, SELinux toggle, DPI/resolution, backups | cosmetic or security-negative | not applicable |
+
+Why the GMS list is not the answer for this phone, from our own bugreport
+(`bugreports/bugreport.zip`, 3 h uptime): the top alarm source is
+`com.android.systemui` `doze_time_tick` with **160 wakeups**, `android` `TIME_TICK`
+163 alarms, Instagram `warm_heartbeat` 9, WhatsApp hourly cron 2 — while
+`com.google.android.gms` totals **5 wakeups** (`NetworkLocationScanner`). The
+wakelocks held longest are Photos': `ImageSyncLPBJ` 5m34s and
+`/metasync.DeltaSyncJobService` 5m13s. Disabling GMS services would cost Play,
+notifications and Nearby, to save 5 wakeups.
+
+Result: **nothing from this module is ported.** The levers that matter on a
+3.5 GB/4.14 device are the geometry ones already in the kit (zram 2 GB, queue
+depth, single-owner read-ahead, no continuous discard) plus the kernel pin — none
+of which this script touches. The real background cost on this phone is
+Photos/Instagram sync, which is an app-level decision, not a ROM one.
+
 ## 3. Constraints
 
 - No root on the shipping build → `/proc/sys/vm/*`, sysfs queue and zram knobs are
