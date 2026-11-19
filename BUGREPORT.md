@@ -148,6 +148,8 @@ signed` on the Find My Device sync path.
 platform type, so this cannot live in vendor policy);
 `patches/device/lineage/sepolicy.patch` adds
 `allow hal_power_default cgroup:file r_file_perms;`.
+`system/sepolicy.patch` also exempts `system_suspend` from the `coredomain`
+neverallow on `sysfs_batteryinfo`; otherwise `checkpolicy` rejects the rule.
 - [x] Both rules in the kit patch.
 - [ ] Bugreport must have zero `system_suspend -> sysfs_batteryinfo` denials.
 - [ ] Bugreport must have zero `hal_power_default -> cgroup` denials.

@@ -64,7 +64,7 @@ Patch map (fix → file):
 |`device/motorola/common`|drop `libqsap_sdk`, link `powerhal_flags-aconfig-cc`, fingerprint `fps_id` fallback, Egistec hwservice labels, QCC VINTF removal|
 |`device/motorola/targets`|`PRODUCT_VENDOR_KERNEL_HEADERS`, debloat product switch|
 |`device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `device/lineage/sepolicy`|prune duplicate/missing sepolicy types and genfs labels, `vendor_file_type` attributes, `libqsap` removal, `hal_power_default` cgroup read|
-|`system/sepolicy`|`system_suspend` reads `sysfs_batteryinfo`; private platform type, so the rule cannot live in vendor policy|
+|`system/sepolicy`|`system_suspend` reads `sysfs_batteryinfo`; private platform type, so the rule and its `neverallow` exception live in system policy|
 |`frameworks/hardware/interfaces`, `system/tools/hidl`|restore `displayservice@1.0` as a library for the camera HAL|
 |`frameworks/base`|register `OP_ACCESS_LOCAL_NETWORK` even with the permission flag off (GMS 26.46 Nearby)|
 |`frameworks/libs/systemui`|Launcher3/iconloaderlib tolerates a themed icon resource that vanished after a package update|

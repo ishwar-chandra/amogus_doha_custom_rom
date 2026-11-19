@@ -750,7 +750,9 @@ read the wakelock/battery stats (D5). The rule belongs in system policy:
 `system_suspend` is a private platform type, so a vendor policy file cannot
 name it. `hal_power_default` was also denied `cgroup:file` reads for
 `schedtune.boost`/`prefer_high_cap`; that rule stays in the device policy.
-Neither patch broadens write access.
+Neither patch broadens write access. `system/sepolicy.patch` also exempts
+`system_suspend` from the `coredomain` neverallow on `sysfs_batteryinfo`;
+without that exception `checkpolicy` rejects the allow rule.
 
 **Nearby Share AppOp** (`frameworks/base.patch`). GMS 26.46 asks for
 `ACCESS_LOCAL_NETWORK`, but the platform only registers the op when the

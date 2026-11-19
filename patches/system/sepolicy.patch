@@ -10,3 +10,14 @@ diff --git a/private/system_suspend.te b/private/system_suspend.te
 +allow system_suspend sysfs_batteryinfo:file r_file_perms;
  
  # Access to wakeup, suspend stats, and wakeup reasons.
+diff --git a/private/domain.te b/private/domain.te
+--- a/private/domain.te
++++ b/private/domain.te
+@@ -1651,5 +1651,7 @@
+     # Charger uses health HAL passthrough implementation.
+     -charger
+     # TODO(b/110891300): remove this exception
+     -incidentd
++    # system_suspend reads battery stats for suspend wakelocks on 4.14.
++    -system_suspend
+   } sysfs_batteryinfo:file { open read };
