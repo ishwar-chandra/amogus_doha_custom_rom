@@ -64,13 +64,14 @@ that use `enable_irq_wake()`. `NETLINK`/sensor wakeups are userspace.
 - [ ] Incoming call while suspended must wake and ring; if not, revert P2 commits and report.
 
 ## P3 — Launcher3 crash loading a stale themed-icon resource
-**Status:** fixed in code (kit patch), device-unverified. **Severity:** high.
+**Status:** fixed upstream, device-unverified. **Severity:** high.
 **Summary:** Launcher3 died with `Resources$NotFoundException` in
 `IconProvider$ThemeData.loadPaddedDrawable()` after a package update invalidated a themed-icon
 resource; `KillApplicationHandler` restarted the workspace.
-**Fix:** `patches/frameworks/libs/systemui.patch` catches `Resources.NotFoundException` and returns
-`null`, so the caller falls back to the default icon.
-- [x] Patch applies to `frameworks/libs/systemui` branch `17.0`.
+**Fix:** upstream `frameworks/libs/systemui` commit `f74e6a0` catches
+`Resources.NotFoundException` and returns `null`, so the caller falls back to the default icon.
+The local patch was removed after this landed.
+- [x] Fix present on the pinned `frameworks/libs/systemui` branch; no local patch.
 - [ ] Update/remove an app with a themed icon; Launcher3 must not appear in
   `dumpsys dropbox -p system_app_crash`.
 - [ ] Home screen drag and widget placement still work after the update.

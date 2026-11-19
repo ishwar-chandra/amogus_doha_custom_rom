@@ -734,14 +734,15 @@ container, because `build.sh` replaces its entrypoint.
 
 ### 2026-11-18 bugreport follow-ups
 
-**Launcher3 themed-icon crash** (`frameworks/libs/systemui.patch`). The
-launcher's `IconProvider$ThemeData.loadPaddedDrawable()` treated a resource
-ID from an updated or removed package as valid and called
+**Launcher3 themed-icon crash** (upstream `frameworks/libs/systemui`, commit
+`f74e6a0`). The launcher's `IconProvider$ThemeData.loadPaddedDrawable()`
+treated a resource ID from an updated or removed package as valid and called
 `getResourceTypeName()`/`getDrawable()` on it. `Resources$NotFoundException`
 killed the Launcher process (dropbox `system_app_crash`, IDs
-`0xe020f5c`/`0xe020f4b`). The patch catches the missing resource and returns
+`0xe020f5c`/`0xe020f4b`). crDroid now catches the missing resource and returns
 `null`, so the caller falls back to the default icon instead of restarting
-the workspace.
+the workspace. The local patch was removed once this reached the pinned
+branch.
 
 **Battery sysfs and power-HAL sepolicy** (`system/sepolicy.patch` and
 `device/lineage/sepolicy.patch`). `system_suspend` was denied read access to

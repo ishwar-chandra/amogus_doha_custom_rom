@@ -4,7 +4,7 @@
 
 Build recipe for an unofficial **crDroid 13.1 (Android 17)** ROM for the Motorola Moto G8 Plus
 (`doha`, in-tree device name `amogus_doha`; Snapdragon 665, 4.14 kernel). There are **no Android
-sources here**: the repo is a `repo` manifest, 27 per-project patches, one build driver, tools and docs.
+sources here**: the repo is a `repo` manifest, 26 per-project patches, one build driver, tools and docs.
 Everything else is fetched by `repo sync` from third-party trees (device, vendor blobs, kernel, HALs).
 
 The product is the patch set: each fix in `patches/` is what makes those upstream trees compile and boot
@@ -67,7 +67,6 @@ Patch map (fix → file):
 |`system/sepolicy`|`system_suspend` reads `sysfs_batteryinfo`; private platform type, so the rule and its `neverallow` exception live in system policy|
 |`frameworks/hardware/interfaces`, `system/tools/hidl`|restore `displayservice@1.0` as a library for the camera HAL|
 |`frameworks/base`|register `OP_ACCESS_LOCAL_NETWORK` even with the permission flag off (GMS 26.46 Nearby)|
-|`frameworks/libs/systemui`|Launcher3/iconloaderlib tolerates a themed icon resource that vanished after a package update|
 |`hardware/interfaces`|healthd power-supply filter on 4.14|
 |`hardware/motorola`|stub `libqsap_shim`|
 |`hardware/nxp/nfc`|10 ms retry delay for the PN553 NACK-on-wake window|
@@ -182,7 +181,7 @@ tools/app-trace.sh com.example.app 60 [--no-launch]
 |---|---|
 |`build.sh`|Only build entry point: sync, patch, build, gate, copy artifacts|
 |`default.xml`, `snippets/*.xml`|Source pinning; `snippets/doha.xml` is ours|
-|`patches/**` (27 files)|The product; each fix mirrored by a README section|
+|`patches/**` (26 files)|The product; each fix mirrored by a README section|
 |`README.md`|Authoritative design record: requirements, install/flash/GApps/Magisk, Status, per-fix rationale|
 |`GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
 |`CLAUDE.md`|Repo rules and the "Changing a fix" workflow|
