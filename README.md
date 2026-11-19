@@ -829,4 +829,6 @@ None of this is benchmarked on hardware yet. `tools/perf-audit.sh` prints what
 the phone actually ended up with (governor, read-ahead, `nr_requests`, zram size
 and saturation, PSI stall, thermal headroom) and exits with the number of
 mismatches, so a build that silently lost a knob is visible without a bugreport.
+`OPTIMIZATION.md` is the plan of record for the tuning work: measured baseline,
+phases, success criteria and rollback.
 

@@ -186,6 +186,9 @@ Caveats worth remembering:
 
 ## Performance tuning (2026-11-20, tree + bugreport audit)
 
+Plan of record: `OPTIMIZATION.md` (baseline numbers, phases, success criteria,
+rollback). The notes below are the source facts behind it.
+
 Read from the pinned trees and `bugreports/bugreport-doha-...-2026-11-18-23-13-33.zip`;
 nothing here is benchmarked. `tools/perf-audit.sh` is the gate — exit status is
 the number of knobs the phone is not actually running.
