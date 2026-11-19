@@ -18,10 +18,3 @@ index 969819c..9490dc2 100644
  rw_dir_file(hal_power_default, sysfs_kgsl)
  rw_dir_file(hal_power_default, sysfs_scsi_host)
 +allow hal_power_default cgroup:file r_file_perms;
-diff --git a/qcom/vendor/system_suspend.te b/qcom/vendor/system_suspend.te
-new file mode 100644
-index 0000000..4bcc970
---- /dev/null
-+++ b/qcom/vendor/system_suspend.te
-@@ -0,0 +1 @@
-+allow system_suspend sysfs_batteryinfo:file r_file_perms;

@@ -172,9 +172,10 @@ Caveats worth remembering:
 
 ## From the 18:29 bugreport (build 09:06)
 
-- [ ] D5 sepolicy: add `allow system_suspend sysfs_batteryinfo:dir r_dir_perms;` and
-  `:file r_file_perms;` (174 denials per report, and it is why `suspend-service` cannot read the
-  wakeup38 wakelock stats). Regenerate `patches/device/lineage/sepolicy.patch` from the tree.
+- [ ] D5 sepolicy: the `system_suspend` -> `sysfs_batteryinfo` rule lives in
+  `patches/system/sepolicy.patch` (`system_suspend` is private, so the vendor policy cannot name it);
+  `patches/device/lineage/sepolicy.patch` keeps the `hal_power_default` cgroup rule. Verify both on the
+  next bugreport.
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
 - [ ] Play Integrity / D6: blocked on hardware attestation (`Km(-10003)`, 68 hits from Google Pay in

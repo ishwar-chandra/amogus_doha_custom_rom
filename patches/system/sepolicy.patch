@@ -1,0 +1,12 @@
+diff --git a/private/system_suspend.te b/private/system_suspend.te
+--- a/private/system_suspend.te
++++ b/private/system_suspend.te
+@@ -13,5 +13,8 @@
+ 
+ # Access to /sys/power/{ wakeup_count, state } suspend interface.
+ allow system_suspend sysfs_power:file rw_file_perms;
++
++# Battery sysfs is read by the suspend service on 4.14.
++allow system_suspend sysfs_batteryinfo:file r_file_perms;
+ 
+ # Access to wakeup, suspend stats, and wakeup reasons.

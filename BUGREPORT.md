@@ -143,8 +143,10 @@ signed` on the Find My Device sync path.
 **Summary:** `system_suspend` could not read `sysfs_batteryinfo`; `hal_power_default` could not read
 `schedtune` cgroup files; other denials remain (`content_capture`, `dex2oat`, `app_zygote`,
 `hal_camera`, `vendor_qtelephony`, Meta `execmod`).
-**Fix:** `patches/device/lineage/sepolicy.patch` adds:
-`allow system_suspend sysfs_batteryinfo:file r_file_perms;` and
+**Fix:** `patches/system/sepolicy.patch` adds:
+`allow system_suspend sysfs_batteryinfo:file r_file_perms;` (`system_suspend` is a private
+platform type, so this cannot live in vendor policy);
+`patches/device/lineage/sepolicy.patch` adds
 `allow hal_power_default cgroup:file r_file_perms;`.
 - [x] Both rules in the kit patch.
 - [ ] Bugreport must have zero `system_suspend -> sysfs_batteryinfo` denials.

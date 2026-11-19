@@ -743,12 +743,14 @@ killed the Launcher process (dropbox `system_app_crash`, IDs
 `null`, so the caller falls back to the default icon instead of restarting
 the workspace.
 
-**Battery sysfs and power-HAL sepolicy** (`device/lineage/sepolicy.patch`).
-`system_suspend` was denied read access to `sysfs_batteryinfo`, which is why
-`android.system.suspend-service` could not read the wakelock/battery stats
-(D5). `hal_power_default` was also denied `cgroup:file` reads for
-`schedtune.boost`/`prefer_high_cap`. The patch adds the two allow rules;
-it does not broaden write access.
+**Battery sysfs and power-HAL sepolicy** (`system/sepolicy.patch` and
+`device/lineage/sepolicy.patch`). `system_suspend` was denied read access to
+`sysfs_batteryinfo`, which is why `android.system.suspend-service` could not
+read the wakelock/battery stats (D5). The rule belongs in system policy:
+`system_suspend` is a private platform type, so a vendor policy file cannot
+name it. `hal_power_default` was also denied `cgroup:file` reads for
+`schedtune.boost`/`prefer_high_cap`; that rule stays in the device policy.
+Neither patch broadens write access.
 
 **Nearby Share AppOp** (`frameworks/base.patch`). GMS 26.46 asks for
 `ACCESS_LOCAL_NETWORK`, but the platform only registers the op when the

@@ -4,7 +4,7 @@
 
 Build recipe for an unofficial **crDroid 13.1 (Android 17)** ROM for the Motorola Moto G8 Plus
 (`doha`, in-tree device name `amogus_doha`; Snapdragon 665, 4.14 kernel). There are **no Android
-sources here**: the repo is a `repo` manifest, 26 per-project patches, one build driver, tools and docs.
+sources here**: the repo is a `repo` manifest, 27 per-project patches, one build driver, tools and docs.
 Everything else is fetched by `repo sync` from third-party trees (device, vendor blobs, kernel, HALs).
 
 The product is the patch set: each fix in `patches/` is what makes those upstream trees compile and boot
@@ -63,7 +63,8 @@ Patch map (fix → file):
 |`device/motorola/amogus_doha`|`TARGET_SUPPORTS_QUICK_TAP := false`, module load list (haptics/touch/SAR/ToF), explicit recovery touch script, ext4 sizing, Aperture camera overlay|
 |`device/motorola/common`|drop `libqsap_sdk`, link `powerhal_flags-aconfig-cc`, fingerprint `fps_id` fallback, Egistec hwservice labels, QCC VINTF removal|
 |`device/motorola/targets`|`PRODUCT_VENDOR_KERNEL_HEADERS`, debloat product switch|
-|`device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `device/lineage/sepolicy`|prune duplicate/missing sepolicy types and genfs labels, `vendor_file_type` attributes, `libqsap` removal|
+|`device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `device/lineage/sepolicy`|prune duplicate/missing sepolicy types and genfs labels, `vendor_file_type` attributes, `libqsap` removal, `hal_power_default` cgroup read|
+|`system/sepolicy`|`system_suspend` reads `sysfs_batteryinfo`; private platform type, so the rule cannot live in vendor policy|
 |`frameworks/hardware/interfaces`, `system/tools/hidl`|restore `displayservice@1.0` as a library for the camera HAL|
 |`frameworks/base`|register `OP_ACCESS_LOCAL_NETWORK` even with the permission flag off (GMS 26.46 Nearby)|
 |`frameworks/libs/systemui`|Launcher3/iconloaderlib tolerates a themed icon resource that vanished after a package update|
@@ -181,7 +182,7 @@ tools/app-trace.sh com.example.app 60 [--no-launch]
 |---|---|
 |`build.sh`|Only build entry point: sync, patch, build, gate, copy artifacts|
 |`default.xml`, `snippets/*.xml`|Source pinning; `snippets/doha.xml` is ours|
-|`patches/**` (24 files)|The product; each fix mirrored by a README section|
+|`patches/**` (27 files)|The product; each fix mirrored by a README section|
 |`README.md`|Authoritative design record: requirements, install/flash/GApps/Magisk, Status, per-fix rationale|
 |`GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
 |`CLAUDE.md`|Repo rules and the "Changing a fix" workflow|
