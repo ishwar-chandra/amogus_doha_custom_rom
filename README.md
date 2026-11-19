@@ -351,11 +351,13 @@ Known issues:
   profile for (for example SIMs on KPN's network in the Netherlands) it
   falls back to a generic profile with IMS off, so calls go over 2G/3G.
   Stock firmware does the same. Being investigated.
-- **Double tap to sleep is a setting, and only on the status bar.** Turn on
-  Settings → Status bar → "Double tap to sleep"; the lock screen has its own toggle
-  and is on by default. Double-tapping the wallpaper does nothing: crDroid's
-  Launcher3 for this branch declares the gesture but does not implement it, so that
-  is by design rather than a regression.
+- **Double tap to sleep is a setting on the home screen, status bar and lock screen.**
+  Home screen: Settings → Home screen → "Double tap to sleep"; crDroid's Launcher3
+  implements the empty-space gesture, and the kit now defaults the preference on for
+  new installs. Status bar: Settings → Status bar → "Double tap to sleep"; the lock
+  screen has its own toggle and is on by default. Existing Launcher preferences are
+  preserved, so an upgrade from an older build may still need the home-screen toggle
+  turned on once.
 - **Double tap to wake: patched, not yet tested on hardware.** Three things were
   missing on doha, and `patches/kernel/motorola/msm-4.14.patch` now supplies all
   three: gesture suspend was gated on a flag only Motorola's `dt-gesture` sensor
@@ -743,6 +745,13 @@ killed the Launcher process (dropbox `system_app_crash`, IDs
 `null`, so the caller falls back to the default icon instead of restarting
 the workspace. The local patch was removed once this reached the pinned
 branch.
+
+**Launcher3 double-tap-to-sleep** (`patches/packages/apps/Launcher3.patch`).
+crDroid's `WorkspaceTouchListener` already implements double-tap on empty workspace
+space when `pref_sleep_gesture` is true, but the preference defaulted to false, so
+the home screen did nothing out of the box. The patch changes the default to true
+for new installs. Existing preferences are preserved; the setting remains available
+under Settings → Home screen → "Double tap to sleep".
 
 **Battery sysfs and power-HAL sepolicy** (`system/sepolicy.patch` and
 `device/lineage/sepolicy.patch`). `system_suspend` was denied read access to
