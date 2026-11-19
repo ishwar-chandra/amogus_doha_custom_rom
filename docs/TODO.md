@@ -179,8 +179,80 @@ Caveats worth remembering:
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
 - [ ] Play Integrity / D6: blocked on hardware attestation (`Km(-10003)`, 68 hits from Google Pay in
-  one report). Analysis in `PLAYINTEGRITY.md`; the decisive test needs `KeyAttestation` (vvb2060)
+  one report). Analysis in `BUGREPORT.md` §7 (D6); the decisive test needs `KeyAttestation` (vvb2060)
   installed on the phone — `-10003` there means the TEE has no attestation key and nothing ROM-side can
   fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
   `MEETS_BASIC_INTEGRITY` is reachable.
 
+## Performance tuning (2026-11-20, tree + bugreport audit)
+
+Plan of record: `OPTIMIZATION.md` (baseline numbers, phases, success criteria,
+rollback). The notes below are the source facts behind it.
+
+Read from the pinned trees and `bugreports/bugreport-doha-...-2026-11-18-23-13-33.zip`;
+nothing here is benchmarked. `tools/perf-audit.sh` is the gate — exit status is
+the number of knobs the phone is not actually running.
+
+- [x] **zram was 1 GB and full.** Bugreport: `MemTotal 3685120 kB`,
+  `SwapTotal 1048572 kB`, `SwapFree 2868 kB` (99.7% used), 133 LMK kills in that
+  capture. `fstab.qcom` now sets `zramsize=2147483648`; the post_boot 50%-of-RAM
+  resize can never apply (`swapon_all` in `init.target.rc` `on fs` initialises
+  zram first, and `zram_drv.c` refuses a new `disksize` once `init_done`).
+  Gate: `perf-audit.sh` reports `SwapTotal ~2047 MB` and LMK kills drop under
+  the same GApps workload.
+- [x] **read-ahead had three writers and the wrong one won.**
+  `init.aospa.perf.common.rc` re-applies its value on `vendor.post_boot.parsed=1`,
+  which `init.qcom.post_boot.legacy.sh` sets on its last line — after
+  `init.amogus.rc`'s `sys.boot_completed` writes. The branch's 4096 KB never
+  reached the kernel. Value now lives only in
+  `patches/device/qcom/common.patch`, rendered from `READAHEAD_KB` (default 128).
+  Gate: `perf-audit.sh` read_ahead PASS for `mmcblk0` and every `dm-*`.
+- [x] **`nr_requests` 256 → 128** (kernel default; eMMC + CFQ gains nothing from
+  a deeper queue and nothing measured justified 256).
+- [ ] **Governor not verified on device.** `post_boot.legacy.sh` selects
+  `schedutil` only for trinket `soc_id` 394/467/468 with
+  `hispeed_freq` 1305600/1401600 and `hispeed_load` 85. If the phone boots on
+  `performance` instead (the defconfig default), every core runs at max and the
+  thermal throttling in BUGREPORT makes sense. Check with `perf-audit.sh` cpu.
+- [ ] **First A/B if LMK still kills too eagerly:** `config_extraFreeKbytesAdjust`
+  131072 → 65536 in `device/motorola/amogus`'s framework overlay (one variable
+  per build, same workload).
+- [ ] **Second A/B:** `READAHEAD_KB=512` (and back to 128) with the app-launch /
+  scroll / install timings from the README verification list.
+- [ ] **Do not tune:** `walt`, `core_ctl`, `bfq` writes in the vendor scripts are
+  dead — `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL`, `CONFIG_IOSCHED_BFQ` are
+  off in `arch/arm64/configs/vendor/amogus_doha_defconfig`. KSM and THP are off
+  too. `SKIN_THROTTLE_C` stays at 40 until thermal headroom is measured.
+
+## Debloat leftovers (2026-11-20)
+
+- [x] **Settings kept entries for apps the debloat build removes.** crDroid
+  Settings' preference XML is shared by both variants, so "Gaming mode"
+  (`io.chaldeaprjkt.gamespace`) and "Sidebar" (`com.libremobileos.sidebar`) stayed
+  visible and did nothing — both packages are absent on the installed debloat
+  build, verified with `pm path`. `packages/apps/crDroidSettings.patch` adds
+  `PreferenceAvailability.hideEntriesForMissingPackages()`, called from
+  `Miscellaneous` and `LockScreen`, which hides any preference whose embedded
+  intent names an uninstalled package plus any category that ends up empty.
+  OmniJaws is still shipped, so the weather entry correctly stays.
+- [ ] Verify on the next debloat build: Miscellaneous has no Gaming mode, Sidebar
+  is gone, and the weather/OmniJaws entry is still there.
+- [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
+  entry can still appear in search results; tapping it does nothing.
+- [ ] Verify the first-boot dexopt hook on the next flash: after boot, `getprop
+  persist.doha.dexopt_status` should go `running` -> `done` within ~15 min. If it
+  says `failed`, init could not reach the package service from its SELinux domain
+  (`cmd package compile` needs binder); the fix is a small sepolicy rule or running
+  the compile from an `exec` with a different domain. `tools/dexopt-all.sh` remains
+  the manual fallback.
+- [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
+  component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
+  `denied` per component and exits non-zero if the platform refuses, so a failure
+  is visible, not silent. If it is refused, the same list needs root or a
+  DEV_ROOT test build.
+- [ ] Measure the cherry-picked tools: `tools/perf-multitask.sh` before/after
+  `tools/gms-trim.sh` (default groups) so the owner's impression has numbers
+  behind it, and `tools/dexopt-all.sh` timed right after a flash.
+
+- [ ] `AGENTS.md`'s patch-map row for this patch still needs the owner's approval
+  to write (the file is protected).

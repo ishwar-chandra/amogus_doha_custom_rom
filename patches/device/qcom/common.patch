@@ -1,5 +1,5 @@
 diff --git a/sepolicy/generic/vendor/common/file.te b/sepolicy/generic/vendor/common/file.te
-index 2aecdb1..7d4feab 100644
+index 2aecdb1b..7d4feab0 100644
 --- a/sepolicy/generic/vendor/common/file.te
 +++ b/sepolicy/generic/vendor/common/file.te
 @@ -1,4 +1,2 @@
@@ -8,7 +8,7 @@ index 2aecdb1..7d4feab 100644
  #Define the files used by powermodule
  type vendor_pm_data_file, file_type, data_file_type;
 diff --git a/sepolicy/generic/vendor/common/file_contexts b/sepolicy/generic/vendor/common/file_contexts
-index 7c9dd20..24c555a 100644
+index 7c9dd200..24c555aa 100644
 --- a/sepolicy/generic/vendor/common/file_contexts
 +++ b/sepolicy/generic/vendor/common/file_contexts
 @@ -1,9 +1,3 @@
@@ -46,7 +46,7 @@ index 7c9dd20..24c555a 100644
  # Poweropt-service
  /(vendor|system/vendor)/bin/poweropt-service                        u:object_r:vendor_hal_poweroptservice_qti_exec:s0
 diff --git a/sepolicy/generic/vendor/common/genfs_contexts b/sepolicy/generic/vendor/common/genfs_contexts
-index d84641c..22afb9f 100644
+index d84641c6..22afb9fc 100644
 --- a/sepolicy/generic/vendor/common/genfs_contexts
 +++ b/sepolicy/generic/vendor/common/genfs_contexts
 @@ -1,11 +1,6 @@
@@ -62,13 +62,13 @@ index d84641c..22afb9f 100644
  # healthd-ext
  genfscon sysfs /devices/platform/soc/soc:qcom,pmic_glink/soc:qcom,pmic_glink:qcom,ucsi/power_supply/ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1 u:object_r:vendor_sysfs_battery_supply:s0
 diff --git a/sepolicy/generic/vendor/common/hal_drm_widevine.te b/sepolicy/generic/vendor/common/hal_drm_widevine.te
-index 0bc30db..e69de29 100644
+index 0bc30dbf..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/hal_drm_widevine.te
 +++ b/sepolicy/generic/vendor/common/hal_drm_widevine.te
 @@ -1 +0,0 @@
 -allow hal_drm_widevine vendor_dmabuf_qseecom_ta_heap_device:chr_file r_file_perms;
 diff --git a/sepolicy/generic/vendor/common/imsservice.te b/sepolicy/generic/vendor/common/imsservice.te
-index addd73b..20fc547 100644
+index addd73b5..20fc5475 100644
 --- a/sepolicy/generic/vendor/common/imsservice.te
 +++ b/sepolicy/generic/vendor/common/imsservice.te
 @@ -14,6 +14,5 @@ allow vendor_ims_service self:{
@@ -79,7 +79,7 @@ index addd73b..20fc547 100644
  
  set_prop(vendor_ims_service, vendor_persist_rcs_qti_prop)
 diff --git a/sepolicy/generic/vendor/common/init_shell.te b/sepolicy/generic/vendor/common/init_shell.te
-index c7bf0a5..cd5d46f 100644
+index c7bf0a52..cd5d46fb 100644
 --- a/sepolicy/generic/vendor/common/init_shell.te
 +++ b/sepolicy/generic/vendor/common/init_shell.te
 @@ -14,7 +14,6 @@ allow vendor_qti_init_shell proc_watermark_scale_factor:file w_file_perms;
@@ -91,7 +91,7 @@ index c7bf0a5..cd5d46f 100644
  # Allow tuning UFS nodes
  allow vendor_qti_init_shell vendor_sysfs_scsi_host:file rw_file_perms;
 diff --git a/sepolicy/generic/vendor/common/location_lowi_server.te b/sepolicy/generic/vendor/common/location_lowi_server.te
-index abadff3..e69de29 100644
+index abadff3b..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/location_lowi_server.te
 +++ b/sepolicy/generic/vendor/common/location_lowi_server.te
 @@ -1,4 +0,0 @@
@@ -100,25 +100,25 @@ index abadff3..e69de29 100644
 -## send to /dev/socket/location/mq/inet-agent-cs
 -allow vendor_location_lowi_server vendor_location_xtwifi_inetagent:unix_dgram_socket sendto;
 diff --git a/sepolicy/generic/vendor/common/location_slim_daemon.te b/sepolicy/generic/vendor/common/location_slim_daemon.te
-index c1e67fe..e69de29 100644
+index c1e67feb..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/location_slim_daemon.te
 +++ b/sepolicy/generic/vendor/common/location_slim_daemon.te
 @@ -1 +0,0 @@
 -allow vendor_location_slim_daemon vendor_location:unix_stream_socket connectto;
 diff --git a/sepolicy/generic/vendor/common/location_xtra_daemon.te b/sepolicy/generic/vendor/common/location_xtra_daemon.te
-index f231d69..e69de29 100644
+index f231d694..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/location_xtra_daemon.te
 +++ b/sepolicy/generic/vendor/common/location_xtra_daemon.te
 @@ -1 +0,0 @@
 -allow vendor_location_xtra_daemon vendor_location:unix_stream_socket { read write connectto};
 diff --git a/sepolicy/generic/vendor/common/mediacodec.te b/sepolicy/generic/vendor/common/mediacodec.te
-index 0489397..e69de29 100644
+index 04893979..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/mediacodec.te
 +++ b/sepolicy/generic/vendor/common/mediacodec.te
 @@ -1 +0,0 @@
 -allow mediacodec vendor_dmabuf_display_heap_device:chr_file r_file_perms;
 diff --git a/sepolicy/generic/vendor/common/poweroptservice.te b/sepolicy/generic/vendor/common/poweroptservice.te
-index d3e9752..a8d83cf 100644
+index d3e9752b..a8d83cf8 100644
 --- a/sepolicy/generic/vendor/common/poweroptservice.te
 +++ b/sepolicy/generic/vendor/common/poweroptservice.te
 @@ -40,10 +40,6 @@ init_daemon_domain(vendor_hal_poweroptservice_qti)
@@ -133,19 +133,19 @@ index d3e9752..a8d83cf 100644
  hal_client_domain(vendor_hal_poweroptservice_qti, hal_graphics_composer)
  
 diff --git a/sepolicy/generic/vendor/common/property.te b/sepolicy/generic/vendor/common/property.te
-index 6345b2e..e69de29 100644
+index 6345b2ea..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/property.te
 +++ b/sepolicy/generic/vendor/common/property.te
 @@ -1 +0,0 @@
 -vendor_restricted_prop(vendor_persist_rcs_qti_prop)
 diff --git a/sepolicy/generic/vendor/common/property_contexts b/sepolicy/generic/vendor/common/property_contexts
-index 23b587f..e69de29 100644
+index 23b587f5..e69de29b 100644
 --- a/sepolicy/generic/vendor/common/property_contexts
 +++ b/sepolicy/generic/vendor/common/property_contexts
 @@ -1 +0,0 @@
 -persist.vendor.rcs.singlereg.                        u:object_r:vendor_persist_rcs_qti_prop:s0
 diff --git a/sepolicy/generic/vendor/common/vendor_init.te b/sepolicy/generic/vendor/common/vendor_init.te
-index 40fbc06..75ba564 100644
+index 40fbc063..75ba5640 100644
 --- a/sepolicy/generic/vendor/common/vendor_init.te
 +++ b/sepolicy/generic/vendor/common/vendor_init.te
 @@ -1,11 +1,5 @@
@@ -161,7 +161,7 @@ index 40fbc06..75ba564 100644
 -# Allow changing swap settings
 -allow vendor_init vendor_proc_swappiness:file rw_file_perms;
 diff --git a/sepolicy/qva/vendor/common/file_contexts b/sepolicy/qva/vendor/common/file_contexts
-index e6245da..55c6d8f 100644
+index e6245da4..55c6d8fb 100644
 --- a/sepolicy/qva/vendor/common/file_contexts
 +++ b/sepolicy/qva/vendor/common/file_contexts
 @@ -1,14 +1,5 @@
@@ -180,7 +180,7 @@ index e6245da..55c6d8f 100644
 -# QCCVND
 -/(vendor|system/vendor)/bin/hw/vendor\.qti\.hardware\.qccvndhal@1\.0-service       u:object_r:vendor_qcc_trd_2_exec:s0
 diff --git a/sepolicy/qva/vendor/common/location_slim_daemon.te b/sepolicy/qva/vendor/common/location_slim_daemon.te
-index a3e0d68..e69de29 100644
+index a3e0d68e..e69de29b 100644
 --- a/sepolicy/qva/vendor/common/location_slim_daemon.te
 +++ b/sepolicy/qva/vendor/common/location_slim_daemon.te
 @@ -1,5 +0,0 @@
@@ -190,14 +190,14 @@ index a3e0d68..e69de29 100644
 -allow vendor_location_slim_daemon vendor_location:unix_stream_socket { read write connectto};
 -binder_call(vendor_location_slim_daemon, servicemanager)
 diff --git a/sepolicy/qva/vendor/common/location_xtwifi_client.te b/sepolicy/qva/vendor/common/location_xtwifi_client.te
-index 29a87f1..e69de29 100644
+index 29a87f1a..e69de29b 100644
 --- a/sepolicy/qva/vendor/common/location_xtwifi_client.te
 +++ b/sepolicy/qva/vendor/common/location_xtwifi_client.te
 @@ -1,2 +0,0 @@
 -# send to /dev/socket/location/ - mq/inet-agent-tdp-dl, mq/inet-agent-cs etc
 -allow vendor_location_xtwifi_client vendor_location_xtwifi_inetagent:unix_dgram_socket sendto;
 diff --git a/sepolicy/qva/vendor/common/location_xtwifi_inetagent.te b/sepolicy/qva/vendor/common/location_xtwifi_inetagent.te
-index eb318c2..8eb7be7 100644
+index eb318c2d..8eb7be76 100644
 --- a/sepolicy/qva/vendor/common/location_xtwifi_inetagent.te
 +++ b/sepolicy/qva/vendor/common/location_xtwifi_inetagent.te
 @@ -63,12 +63,3 @@ userdebug_or_eng(`
@@ -214,20 +214,148 @@ index eb318c2..8eb7be7 100644
 -## send to /dev/socket/location/mq/SLIM
 -allow vendor_location_xtwifi_inetagent vendor_location_slim_daemon:unix_dgram_socket sendto;
 diff --git a/sepolicy/qva/vendor/common/property_contexts b/sepolicy/qva/vendor/common/property_contexts
-index d393f4b..e69de29 100644
+index d393f4b9..e69de29b 100644
 --- a/sepolicy/qva/vendor/common/property_contexts
 +++ b/sepolicy/qva/vendor/common/property_contexts
 @@ -1 +0,0 @@
 -persist.vendor.bt.a2dp_offload_cap           u:object_r:vendor_bluetooth_prop:s0
 diff --git a/sepolicy/qva/vendor/common/qcc_trd.te b/sepolicy/qva/vendor/common/qcc_trd.te
-index 99a223c..e69de29 100644
+index 99a223cc..e69de29b 100644
 --- a/sepolicy/qva/vendor/common/qcc_trd.te
 +++ b/sepolicy/qva/vendor/common/qcc_trd.te
 @@ -1,2 +0,0 @@
 -allow vendor_qcc_trd_2 system_data_root_file:dir r_dir_perms;
 -allow vendor_qcc_trd_2 vendor_qccvendor_data_file:dir r_dir_perms;
+diff --git a/vendor/init/init.aospa.perf.common.rc b/vendor/init/init.aospa.perf.common.rc
+index fc0d7046..3133d2c6 100644
+--- a/vendor/init/init.aospa.perf.common.rc
++++ b/vendor/init/init.aospa.perf.common.rc
+@@ -66,64 +66,65 @@ on property:vendor.post_boot.parsed=1
+     # Disable multiple kswapd threads
+     write /proc/sys/vm/kswapd_threads 1
+ 
+-    # Reset readahead to 128KiB
+-    write /sys/block/dm-0/queue/read_ahead_kb 128
+-    write /sys/block/dm-1/queue/read_ahead_kb 128
+-    write /sys/block/dm-2/queue/read_ahead_kb 128
+-    write /sys/block/dm-3/queue/read_ahead_kb 128
+-    write /sys/block/dm-4/queue/read_ahead_kb 128
+-    write /sys/block/dm-5/queue/read_ahead_kb 128
+-    write /sys/block/dm-6/queue/read_ahead_kb 128
+-    write /sys/block/dm-7/queue/read_ahead_kb 128
+-    write /sys/block/dm-8/queue/read_ahead_kb 128
+-    write /sys/block/dm-9/queue/read_ahead_kb 128
+-    write /sys/block/dm-10/queue/read_ahead_kb 128
+-    write /sys/block/dm-11/queue/read_ahead_kb 128
+-    write /sys/block/dm-12/queue/read_ahead_kb 128
+-    write /sys/block/dm-13/queue/read_ahead_kb 128
+-    write /sys/block/dm-14/queue/read_ahead_kb 128
+-    write /sys/block/dm-15/queue/read_ahead_kb 128
+-    write /sys/block/dm-16/queue/read_ahead_kb 128
+-    write /sys/block/dm-17/queue/read_ahead_kb 128
+-    write /sys/block/dm-18/queue/read_ahead_kb 128
+-    write /sys/block/dm-19/queue/read_ahead_kb 128
+-    write /sys/block/dm-20/queue/read_ahead_kb 128
+-    write /sys/block/dm-21/queue/read_ahead_kb 128
+-    write /sys/block/dm-22/queue/read_ahead_kb 128
+-    write /sys/block/dm-23/queue/read_ahead_kb 128
+-    write /sys/block/dm-24/queue/read_ahead_kb 128
+-    write /sys/block/dm-25/queue/read_ahead_kb 128
+-    write /sys/block/dm-26/queue/read_ahead_kb 128
+-    write /sys/block/dm-27/queue/read_ahead_kb 128
+-    write /sys/block/dm-28/queue/read_ahead_kb 128
+-    write /sys/block/dm-29/queue/read_ahead_kb 128
+-    write /sys/block/dm-30/queue/read_ahead_kb 128
+-    write /sys/block/dm-31/queue/read_ahead_kb 128
+-    write /sys/block/dm-32/queue/read_ahead_kb 128
+-    write /sys/block/dm-33/queue/read_ahead_kb 128
+-    write /sys/block/dm-34/queue/read_ahead_kb 128
+-    write /sys/block/dm-35/queue/read_ahead_kb 128
+-    write /sys/block/dm-36/queue/read_ahead_kb 128
+-    write /sys/block/dm-37/queue/read_ahead_kb 128
+-    write /sys/block/dm-38/queue/read_ahead_kb 128
+-    write /sys/block/dm-39/queue/read_ahead_kb 128
+-    write /sys/block/dm-40/queue/read_ahead_kb 128
+-    write /sys/block/dm-41/queue/read_ahead_kb 128
+-    write /sys/block/dm-42/queue/read_ahead_kb 128
+-    write /sys/block/dm-43/queue/read_ahead_kb 128
+-    write /sys/block/dm-44/queue/read_ahead_kb 128
+-    write /sys/block/dm-45/queue/read_ahead_kb 128
+-    write /sys/block/dm-46/queue/read_ahead_kb 128
+-    write /sys/block/dm-47/queue/read_ahead_kb 128
+-    write /sys/block/dm-48/queue/read_ahead_kb 128
+-    write /sys/block/dm-49/queue/read_ahead_kb 128
+-    write /sys/block/mmcblk0/queue/read_ahead_kb 128
+-    write /sys/block/sda/queue/read_ahead_kb 128
+-    write /sys/block/sdb/queue/read_ahead_kb 128
+-    write /sys/block/sdc/queue/read_ahead_kb 128
+-    write /sys/block/sdd/queue/read_ahead_kb 128
+-    write /sys/block/sde/queue/read_ahead_kb 128
+-    write /sys/block/sdf/queue/read_ahead_kb 128
++    # Runtime readahead (kit knob, rendered from READAHEAD_KB;
++    # build.sh renders @READAHEAD_KB@). One owner for the value.
++    write /sys/block/dm-0/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-1/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-2/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-3/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-4/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-5/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-6/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-7/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-8/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-9/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-10/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-11/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-12/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-13/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-14/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-15/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-16/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-17/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-18/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-19/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-20/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-21/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-22/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-23/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-24/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-25/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-26/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-27/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-28/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-29/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-30/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-31/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-32/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-33/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-34/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-35/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-36/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-37/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-38/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-39/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-40/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-41/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-42/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-43/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-44/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-45/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-46/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-47/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-48/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/dm-49/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/mmcblk0/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sda/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sdb/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sdc/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sdd/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sde/queue/read_ahead_kb @READAHEAD_KB@
++    write /sys/block/sdf/queue/read_ahead_kb @READAHEAD_KB@
+ 
+     # Set CPU Boost Duration
+     write /sys/devices/system/cpu/cpu_boost/input_boost_ms 200
 diff --git a/vendor/wlan-legacy/qti-wlan-legacy.mk b/vendor/wlan-legacy/qti-wlan-legacy.mk
-index 5643a47..2d61c0c 100644
+index 5643a473..2d61c0c2 100644
 --- a/vendor/wlan-legacy/qti-wlan-legacy.mk
 +++ b/vendor/wlan-legacy/qti-wlan-legacy.mk
 @@ -41,7 +41,6 @@ PRODUCT_PACKAGES += \

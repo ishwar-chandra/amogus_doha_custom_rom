@@ -37,7 +37,7 @@ The LineageOS 24.0 (Android 17) version of this ROM, with the same
 device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 (Android 16) version is on `main`. This branch is `crdroid-android-17`.
 
-New here? [`GUIDE.md`](GUIDE.md) walks through a build end to end: local and
+New here? [`docs/GUIDE.md`](docs/GUIDE.md) walks through a build end to end: local and
 GCP, flashing, GApps, releasing and troubleshooting.
 
 ## Requirements
@@ -139,6 +139,16 @@ reads `standard/doha.json`, a debloat build reads `debloat/doha.json`. The feed
 is generated automatically by `tools/gcp-build.sh finish`; it requires the
 public `ishwar-chandra/doha-ota` repo and a token with write access to it. Until
 that one-time setup exists, the Updater has nothing to download.
+
+The debloat variant also hides the settings entries that pointed at the removed
+apps. `packages/apps/crDroidSettings.patch` walks the preference tree once it is
+inflated and hides any preference whose embedded intent names a package that is
+not installed (Gaming mode -> `io.chaldeaprjkt.gamespace`, Sidebar ->
+`com.libremobileos.sidebar`, and any empty category left behind), so one XML
+serves both variants instead of a build-time resource fork. Entries whose app is
+still shipped (OmniJaws weather) stay visible. Search results are indexed from
+the XML at build time, so a hidden entry can still be found by Settings search;
+tapping it does nothing.
 
 Options: `JOBS=<n>` sets the build job count (the default is `nproc`).
 `SYNC_JOBS=<n>` sets the sync job count (the default is 4). Keep it low:
@@ -380,11 +390,15 @@ Known issues:
 adb bugreport ./br.zip                  # from the phone, while the problem is happening
 ./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
 ./tools/app-trace.sh com.anthropic.claude # one app: its logs, screenshot, activity state
+./tools/perf-audit.sh                   # are the kit's perf knobs actually in effect?
+./tools/perf-multitask.sh               # 8-app cycle: resident count + reload times
+./tools/dexopt-all.sh                   # compile all apps now (speed-profile)
+./tools/gms-trim.sh --list              # GMS background work, grouped; --restore undoes it
 ```
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
-noise that only appears inside the dump). `BUGREPORT.md` is the record of what that sweep found.
+noise that only appears inside the dump). `docs/BUGREPORT.md` is the record of what that sweep found.
 
 ## Differences from an official crDroid device
 
@@ -779,16 +793,77 @@ HAL/framework errors from the same captures.
 
 ### Performance profile (`performance-tuning` branch)
 
-Two conservative device changes, no CPU/GPU overclock and no thermal override:
+The tuning is small because most of the obvious knobs are already written by the
+vendor scripts — from three different places, in an order that decides which
+value actually survives. On this device (4.14, `init.qcom.post_boot.sh` is the
+*legacy* script) that order is:
 
-- `patches/device/motorola/amogus.patch` — raise the boot eMMC read-ahead from
-  256 to 512 KB, the runtime read-ahead from 2048 to 4096 KB, `nr_requests`
-  from 128 to 256, and apply the same read-ahead to `dm-0`…`dm-5` for the
-  dynamic partitions.
-- `patches/device/motorola/amogus_doha.patch` — set the default app transition
-  scale to 0.8 (still user-adjustable in Developer options).
+1. `init.amogus.rc` — `on init` (boot read-ahead, `nr_requests`) and
+   `on property:sys.boot_completed=1` (runtime values).
+2. `qcom-post-boot` (`init.qcom.post_boot.legacy.sh`, started by `init.qcom.rc`
+   at `sys.boot_completed=1`) — sets the governor, `swappiness` and its own
+   read-ahead, then sets `vendor.post_boot.parsed=1` on its last line.
+3. `init.aospa.perf.common.rc` (`device/qcom/common`) —
+   `on property:vendor.post_boot.parsed=1` rewrites `read_ahead_kb` for
+   `mmcblk0`, `sda`…`sdf` and `dm-0`…`dm-49`.
 
-These are not benchmarked on hardware. CPU/GPU governor, LMK/zram and thermal
-thresholds are deliberately unchanged: they trade heat, battery or stability
-for speed and need per-device measurements first.
+Because (3) runs after (2), it is the **last** writer of read-ahead. The 2048 →
+4096 KB raise this branch originally carried in `init.amogus.rc` was therefore
+overwritten a few seconds after boot and never reached the kernel. What the
+branch does now:
+
+- **read-ahead has one owner.** The value lives in
+  `patches/device/qcom/common.patch` (`init.aospa.perf.common.rc`, the file that
+  wins), rendered from the build setting `READAHEAD_KB` (default `128`, AOSPA's
+  own value and what the phone already ran). The dead copies in
+  `init.amogus.rc` are gone, so the intended and effective values cannot drift
+  apart again. A/B test with `READAHEAD_KB=512 ./build.sh …`.
+- **`nr_requests` back to 128** (the kernel default). It was 256; nothing
+  measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
+- **zram 1 GB → 2 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
+  for consistency; doha builds non-dynamic, so `fstab.qcom` is the live file).
+  Evidence: the 2026-11-18 bugreport shows `SwapTotal 1048572 kB` with
+  `SwapFree 2868 kB` — zram 99.7% full — and 133 LMK kills in that capture.
+  `init.qcom.post_boot.legacy.sh` *tries* to size zram at 50% of RAM, but its
+  `disksize` write returns `-EBUSY` because `init.target.rc`'s `on fs`
+  `swapon_all` already enabled the device (`zram_drv.c: init_done` check), so
+  the fstab is the only write that ever applies.
+- **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
+  (still user-adjustable in Developer options).
+
+- **One full `speed-profile` compile of every installed package at first boot**
+  (`rootdir/vendor/bin/doha-dexopt-once.sh`, started from `init.amogus.rc` on
+  `sys.boot_completed=1`). A fresh flash otherwise leaves apps in verify/JIT mode
+  until the platform's idle `bg-dexopt-job` runs, which wants charging, idle and no
+  reboot — on this phone that can be days. The service waits five minutes, then
+  compiles at `nice -n 19`, once per data wipe: it records
+  `persist.doha.dexopt_status` (`running`/`done`/`failed`), and
+  `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
+  equivalent.
+- **`discard` dropped from the f2fs `/data` mount** (`rootdir/fstab.qcom`,
+  `fstab_dynamic.qcom`). With `discard` f2fs trims on every delete, which on this
+  eMMC shows up as I/O stalls while apps are being evicted — exactly when the
+  phone is already struggling. Android's periodic `fstrim` (vold idle maintenance)
+  still trims the partition, just in one batch instead of continuously.
+
+Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
+selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds
+(`SKIN_THROTTLE_C`), and `walt`/`core_ctl`/`bfq` writes in the vendor scripts,
+which are dead code: `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL` and
+`CONFIG_IOSCHED_BFQ` are all off in
+`arch/arm64/configs/vendor/amogus_doha_defconfig`.
+
+`config_extraFreeKbytesAdjust` is **not** a lever here: the 131072 in
+`device/motorola/amogus`'s overlay never reaches the build (only
+`dohaFrameworkOverlay`, `dohaSystemUIOverlay`, `dohaApertureOverlay` and
+`NoNearbySharingOverlay` are compiled in, per `gcp-out/build.log`), so the phone
+runs the AOSP default of `0`. Raising it would reserve free memory and make LMK
+kill *earlier*, the opposite of what this device needs.
+
+None of this is benchmarked on hardware yet. `tools/perf-audit.sh` prints what
+the phone actually ended up with (governor, read-ahead, `nr_requests`, zram size
+and saturation, PSI stall, thermal headroom) and exits with the number of
+mismatches, so a build that silently lost a knob is visible without a bugreport.
+`docs/OPTIMIZATION.md` is the plan of record for the tuning work: measured baseline,
+phases, success criteria and rollback.
 

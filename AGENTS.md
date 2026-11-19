@@ -41,8 +41,9 @@ patched project. The worktree tree includes untracked files (written with a temp
 match the previous run the project is left untouched (mtimes kept, no rebuild); otherwise it is reset and
 re-applied. Removed or renamed patches are reverted. Placeholders are rendered before hashing, so
 changing one re-applies the affected patch: `@SKIN_THROTTLE_MC@` (`SKIN_THROTTLE_C * 1000` in
-`vendor/qcom/opensource/thermal.patch`), `@DEBLOAT@` (0/1 in `device/motorola/targets.patch`) and
-`@UPDATER_CHANNEL@` (`standard`/`debloat` in `packages/apps/Updater.patch`).
+`vendor/qcom/opensource/thermal.patch`), `@DEBLOAT@` (0/1 in `device/motorola/targets.patch`),
+`@UPDATER_CHANNEL@` (`standard`/`debloat` in `packages/apps/Updater.patch`) and
+`@READAHEAD_KB@` (`READAHEAD_KB`, default 128, in `device/qcom/common.patch`).
 
 ## Key Directories
 
@@ -52,18 +53,18 @@ changing one re-applies the affected patch: `@SKIN_THROTTLE_MC@` (`SKIN_THROTTLE
 |`snippets/doha.xml`|The 27 `local::doha` projects, pinned; starts with two `<remove-project>` entries (`platform/external/fastrpc`, the legacy IPACM project). Ours to edit.|
 |`snippets/crdroid.xml`, `snippets/lineage.xml`|Verbatim upstream (64 and 176 projects). Never edit; they are the baseline for the next rebase.|
 |`patches/<project path>.patch`|One `git diff` per upstream project; the actual product.|
-|`tools/`|`gcp-build.sh` (remote build/release), `flash.sh`, `device-check.sh`, `bugreport-scan.py`, `app-trace.sh`.|
+|`tools/`|`gcp-build.sh` (remote build/release), `flash.sh`, `device-check.sh`, `perf-audit.sh`, `bugreport-scan.py`, `app-trace.sh`.|
 |`gcp-out/`|Fetched artifacts/`build.log`; gitignored, default input for `flash.sh`.|
 
 Patch map (fix → file):
 
 |Patch|What it changes|
 |---|---|
-|`device/motorola/amogus`|androidboot.boot_devices/`/system` mount, ext4 + 16384 inodes, kernel-header guard, VINTF kernel check off, drop nonexistent bootctrl namespace, thermal label, sepolicy types, `libmdmcutback` blobs|
+|`device/motorola/amogus`|androidboot.boot_devices/`/system` mount, ext4 + 16384 inodes, kernel-header guard, VINTF kernel check off, drop nonexistent bootctrl namespace, thermal label, sepolicy types, `libmdmcutback` blobs, zram 2 GB in `fstab.qcom` (the only zram sizing that applies), dead read-ahead writes removed from `init.amogus.rc`|
 |`device/motorola/amogus_doha`|`TARGET_SUPPORTS_QUICK_TAP := false`, module load list (haptics/touch/SAR/ToF), explicit recovery touch script, ext4 sizing, Aperture camera overlay|
 |`device/motorola/common`|drop `libqsap_sdk`, link `powerhal_flags-aconfig-cc`, fingerprint `fps_id` fallback, Egistec hwservice labels, QCC VINTF removal|
 |`device/motorola/targets`|`PRODUCT_VENDOR_KERNEL_HEADERS`, debloat product switch|
-|`device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `device/lineage/sepolicy`|prune duplicate/missing sepolicy types and genfs labels, `vendor_file_type` attributes, `libqsap` removal, `hal_power_default` cgroup read|
+|`device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `device/lineage/sepolicy`|prune duplicate/missing sepolicy types and genfs labels, `vendor_file_type` attributes, `libqsap` removal, `hal_power_default` cgroup read, runtime `read_ahead_kb` single owner (`init.aospa.perf.common.rc`, `@READAHEAD_KB@`)|
 |`system/sepolicy`|`system_suspend` reads `sysfs_batteryinfo`; private platform type, so the rule and its `neverallow` exception live in system policy|
 |`frameworks/hardware/interfaces`, `system/tools/hidl`|restore `displayservice@1.0` as a library for the camera HAL|
 |`frameworks/base`|register `OP_ACCESS_LOCAL_NETWORK` even with the permission flag off (GMS 26.46 Nearby)|
@@ -119,6 +120,7 @@ Build-affecting environment variables (pass as `-e NAME=value` in Docker):
 |`CCACHE_SIZE`|ccache limit|`50G`|
 |`ZIP_DIR`|artifact destination|`zips/` next to the source dir|
 |`SKIN_THROTTLE_C`|°C where the thermal HAL reports throttling|`40`|
+|`READAHEAD_KB`|runtime `read_ahead_kb` for `mmcblk0`/`dm-*` (single owner: `device/qcom/common`)|`128`|
 |`VARIANT`|`userdebug`/`user`/`eng`|`userdebug`|
 |`DEBLOAT=1`|omit optional crDroid extras; zip gets `-debloat`, own OTA channel|`0`|
 |`ADB_KEY`|test builds only: `adbkey.pub` baked into recovery+system; `-adbkey` zip suffix, never distribute|unset|
@@ -141,6 +143,7 @@ Phone side (adb/fastboot in PATH):
 ```sh
 tools/flash.sh gcp-out --list            # then rerun without --list
 tools/device-check.sh [--verbose]        # read-only; exit status = FAIL count
+tools/perf-audit.sh                      # read-only tuning audit; exit status = mismatch count
 tools/bugreport-scan.py br.zip [--area radio] [--max 6]
 tools/app-trace.sh com.example.app 60 [--no-launch]
 ```
@@ -183,10 +186,11 @@ tools/app-trace.sh com.example.app 60 [--no-launch]
 |`default.xml`, `snippets/*.xml`|Source pinning; `snippets/doha.xml` is ours|
 |`patches/**` (26 files)|The product; each fix mirrored by a README section|
 |`README.md`|Authoritative design record: requirements, install/flash/GApps/Magisk, Status, per-fix rationale|
-|`GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
+|`docs/GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
 |`CLAUDE.md`|Repo rules and the "Changing a fix" workflow|
-|`TODO.md`|Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors)|
-|`BUGREPORT.md`|On-device sweep results: defects, evidence, what was ruled out|
+|`docs/TODO.md`|Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors)|
+|`docs/BUGREPORT.md`|On-device sweep results: defects, evidence, what was ruled out|
+|`docs/OPTIMIZATION.md`|Optimization plan of record: measured baseline, phases, criteria, rollback|
 |`tools/gcp-build.sh`|Remote build cycle, GitHub release and OTA feed; no persistent backup|
 |`tools/gcp-build-both.sh`|Standard then debloat on one VM; one shared release tag|
 
