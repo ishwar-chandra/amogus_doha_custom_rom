@@ -55,12 +55,25 @@ val() {
 # exist PATH -> 0 if the node can be read
 exist() { [ -n "$(val "$1")" ]; }
 
+# blocked PATH -> 0 if the node exists but this shell cannot read it (root-only)
+blocked() {
+  [ -z "$FAKE_ROOT" ] || return 1
+  case "$(adb shell "[ -e $1 ] && echo e; [ -r $1 ] || echo d" 2>/dev/null | tr -d '\r')" in
+    *d*) return 0 ;;
+  esac
+  return 1
+}
+
 # expect PATH WANT LABEL [tolerance-style: exact]
 expect() {
   local path=$1 want=$2 label=$3 got
   got=$(val "$path")
   if [ -z "$got" ]; then
-    skip "$label (node $path not present)"
+    if blocked "$path"; then
+      skip "$label (needs root: $path exists, shell cannot read it)"
+    else
+      skip "$label (node $path not present)"
+    fi
   elif [ "$got" = "$want" ]; then
     pass "$label = $got"
   else
@@ -174,7 +187,9 @@ done
 
 # ----------------------------------------------------------------- thermal
 head2 "thermal"
-MAXT=0 MAXZ=
+# SKIN_THROTTLE_C is the skin threshold; lmh/cpu/gpu zones are separate limiters
+# and must not be compared to it.
+SKINT=0 SKINZ= MAXT=0 MAXZ=
 if [ -n "$FAKE_ROOT" ]; then
   ZONES=$(ls -d "$FAKE_ROOT"/sys/class/thermal/thermal_zone* 2>/dev/null | sed "s|$FAKE_ROOT||")
 else
@@ -183,18 +198,23 @@ fi
 for z in $ZONES; do
   t=$(val "$z/temp"); ty=$(val "$z/type")
   [ -n "$t" ] || continue
+  case "$ty" in
+    *skin*|*quiet_therm*|*xo_therm*)
+      if [ "$t" -gt "$SKINT" ] 2>/dev/null; then SKINT=$t; SKINZ=$ty; fi ;;
+  esac
   if [ "$t" -gt "$MAXT" ] 2>/dev/null; then MAXT=$t; MAXZ=$ty; fi
 done
-if [ "$MAXT" -gt 0 ]; then
-  MC=$((MAXT/1000))
+if [ "$SKINT" -gt 0 ]; then
+  MC=$((SKINT/1000))
   if [ "$MC" -ge "$SKIN_THROTTLE_C" ]; then
-    warn "hottest zone ${MAXZ} ${MC}C >= SKIN_THROTTLE ${SKIN_THROTTLE_C}C (throttling expected)"
+    warn "skin zone ${SKINZ} ${MC}C >= SKIN_THROTTLE ${SKIN_THROTTLE_C}C (throttling expected)"
   else
-    pass "hottest zone ${MAXZ} ${MC}C < SKIN_THROTTLE ${SKIN_THROTTLE_C}C"
+    pass "skin zone ${SKINZ} ${MC}C < SKIN_THROTTLE ${SKIN_THROTTLE_C}C"
   fi
 else
-  skip "no readable thermal zones"
+  skip "no skin*/quiet_therm* zone readable — skin headroom unknown"
 fi
+[ "$MAXT" -gt 0 ] && info "hottest zone ${MAXZ} $((MAXT/1000))C (bus/cpu limiter, not the skin threshold)"
 if [ -z "$FAKE_ROOT" ]; then
   for svc in thermal-engine android.hardware.thermal@2.0-service.qti \
              android.hardware.thermal-service.qti; do

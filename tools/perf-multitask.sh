@@ -12,10 +12,9 @@ set -uo pipefail
 
 PKGS=${PKGS:-"com.android.settings com.android.chrome com.whatsapp org.telegram.messenger com.google.android.gm com.google.android.apps.photos com.truecaller com.google.android.googlequicksearchbox"}
 
-ADB="adb"
 command -v adb >/dev/null || { echo "adb not found" >&2; exit 1; }
-[ "$(adb devices | awk 'NR>1 && $2=="device"{c++} END{print c+0}')" -ge 1 ] || {
-  echo "no device attached" >&2; exit 1; }
+ensure_device() { [ "$(adb devices | awk 'NR>1 && $2=="device"{c++} END{print c+0}')" -ge 1 ]; }
+ensure_device || { echo "no device attached" >&2; exit 1; }
 
 comp_of() {
   adb shell "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $1" 2>/dev/null \
@@ -29,7 +28,8 @@ swap() { adb shell cat /proc/meminfo | tr -d '\r' | awk '/^SwapTotal:/{t=$2} /^S
 printf '%s\n' "pass 1 — cold start after force-stop (ms)"
 printf '%-42s %10s %s\n' app cold swap
 for p in $PKGS; do
-  c=$(comp_of "$p"); [ -n "$c" ] || { printf '%-42s %10s %s\n' "$p" "-" "not installed"; continue; }
+  ensure_device || { echo "device lost during pass 1 (last: $p) — re-run when it is back" >&2; exit 3; }
+  c=$(comp_of "$p"); [ -n "$c" ] || { printf '%-42s %10s %s\n' "$p" "-" "no launcher activity"; continue; }
   adb shell "am force-stop $p" >/dev/null 2>&1
   t=$(field "$c")
   printf '%-42s %10s %s\n' "$p" "${t:--}" "$(swap)"
@@ -39,6 +39,7 @@ printf '\n%s\n' "pass 2 — relaunch in the same order (0 = still resident)"
 printf '%-42s %10s %s\n' app warm result
 reload=0 resident=0
 for p in $PKGS; do
+  ensure_device || { echo "device lost during pass 2 (last: $p) — re-run when it is back" >&2; exit 3; }
   c=$(comp_of "$p"); [ -n "$c" ] || continue
   t=$(field "$c")
   if [ "${t:-x}" = "0" ]; then

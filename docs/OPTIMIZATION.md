@@ -47,6 +47,40 @@ Three measured facts that constrain the plan:
    `/sys/block/mmcblk0/queue/*`; `ro.debuggable=0`, no `adb root`). Verification of
    I/O knobs must come from a bugreport (dumpstate runs as root) or a DEV_ROOT build.
 
+## Execution log
+
+### 2026-11-20 — Phase 1, no-flash pass (build 2026-11-18, serial ZF6522633X)
+
+Three runs of the same 8-app cycle, same GApps set, same order. zram was pinned
+at 1023/1023 MB in all three, so memory pressure did not change; what changed is
+the app compile mode.
+
+| Run | App state | Resident | Warm reload: Settings / Chrome / WhatsApp / Google app |
+|---|---|---|---|
+| A | baseline, stock compile | 0 of 8 | 2060 / 3123 / 2512 / 2769 ms |
+| B | after `cmd package compile -m speed` on 7 apps | 0 of 8 | 2655 / 2464 / 4359 / 5972 ms |
+| C | after rollback to `-m speed-profile` | 0 of 8 | 1238 / 1831 / 1839 / 1687 ms |
+
+Findings:
+
+- **AOT `speed` compile is a net loss here.** It grows the resident code footprint
+  on a device with no free pages: cold starts were flat, warm reloads got worse
+  (WhatsApp 2512 -> 4359 ms, Google app 2769 -> 5972 ms). Rolled back to
+  `speed-profile`, which is also where run C's numbers came from; they are equal
+  to or better than the baseline on 6 of 7 apps.
+- **`cached_apps_freezer` set to `enabled` changed nothing measurable**, because
+  the apps are being *killed*, not frozen — resident stayed 0 of 8.
+- **Photos is its own problem**: cold start 15.6 s in run B and 78.9 s in run C,
+  warm 7.9 s / 30.0 s. That is not compile-mode related (media scan / first-run
+  work) and needs its own look before Photos is blamed on the ROM.
+- The phone dropped off adb twice mid-run (USB), which is why `perf-multitask.sh`
+  now aborts with `device lost during pass N` instead of reporting apps as
+  "not installed".
+
+Conclusion: Phase 1 cannot meet its criteria by itself. Nothing that runs inside
+the current memory geometry keeps apps resident; the next real step is the 2 GB
+zram build (Phase 2 numeric) plus the owner's decision on optional resident apps.
+
 ## 3. Constraints
 
 - No root on the shipping build → `/proc/sys/vm/*`, sysfs queue and zram knobs are
@@ -71,22 +105,22 @@ Three measured facts that constrain the plan:
 
 Each step is measured alone with `perf-multitask.sh` + `perf-audit.sh`.
 
-- [ ] **Dexopt the hot set** (`cmd package compile -m speed -f <pkg>`): launcher3,
-      settings, chrome, whatsapp already compiled to `speed`; telegram, gmail and
-      googlequicksearchbox still need it (the run was cut when the phone dropped off
-      adb). Rollback: `-m speed-profile`.
+- [x] **Dexopt experiment — done, no gain, reverted.** `-m speed` on launcher3,
+      settings, chrome, whatsapp, telegram, gmail, googlequicksearchbox, photos;
+      measured worse warm reloads, rolled back to `-m speed-profile` (see
+      Execution log). Do not retry `speed` on this device.
 - [ ] **Free resident memory by disabling apps the owner does not use** — measured
       candidates: Truecaller 214 MB, Google app `quicksearchbox` 205+193 MB,
       Wellbeing 73 MB, naviapp 100 MB, Photos 91 MB.
       `pm disable-user --user 0 <pkg>` / rollback `pm enable <pkg>`.
       Requires the owner's decision per app.
-- [ ] **Cached apps freezer** — currently unset (`default`); set
-      `settings put global cached_apps_freezer enabled` and confirm cached processes
-      actually freeze (`dumpsys activity processes | grep -i frozen`).
+- [x] **Cached apps freezer** — set to `enabled`; no measurable effect while apps are
+      killed rather than frozen. Kept (it costs nothing and helps once memory exists).
 - [ ] **Trim per-app waste**: clear caches for the largest background offenders,
       re-check `dumpsys meminfo` total.
 - Success criteria: resident ≥ 2 of 8, at least +200 MB `MemAvailable`, no app
-  disabled that the owner uses.
+  disabled that the owner uses. **Not met** (resident 0 of 8); the remaining Phase 1
+  lever needs the owner's app decision.
 
 ## Phase 2 — the build that changes memory geometry
 
