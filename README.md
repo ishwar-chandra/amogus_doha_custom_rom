@@ -259,10 +259,10 @@ spare. crDroid's own package,
   warns that the signature can't be verified.
 - Adding GApps to a phone that has already booted without them needs a
   factory reset afterwards.
-- **Every update sideloaded from recovery removes them**, because only
-  updates from the Updater app keep add-ons, and this ROM has no update
-  server. Sideload MindTheGapps again right after each ROM update, in
-  the same recovery session, before booting.
+- **Updates from the built-in Updater keep GApps; recovery sideloads do not.**
+  On this A/B device the addon.d-v2 backup runs only through the Updater
+  path. If you update by sideloading the ROM zip, sideload MindTheGapps again
+  right after it, in the same recovery session, before booting.
 
 Things you should know:
 
