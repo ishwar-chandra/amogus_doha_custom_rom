@@ -24,8 +24,18 @@ echo "VM: $BASE"
 echo "tag: $TAG"
 echo "machine: $MACHINE"
 
-NAME=$BASE DEBLOAT=0 "$GCP" create
-NAME=$BASE DEBLOAT=0 "$GCP" setup
+# Reuse a VM that is already up (common when a previous build left it running
+# with NO_DELETE=1); only create+setup when there is nothing to reuse.
+zoned_status=$(gcloud compute instances describe "$BASE" --zone "${ZONE:-asia-south1-a}" \
+    --format='value(status)' 2>/dev/null | tr -d '[:space:]' || true)
+if [ "$zoned_status" = RUNNING ]; then
+    echo "VM $BASE is RUNNING: reusing it, skipping create/setup"
+    echo "note: artifacts already in the VM's zips/ are released with this tag too;" >&2
+    echo "      empty /mnt/build/zips first when they are stale." >&2
+else
+    NAME=$BASE DEBLOAT=0 "$GCP" create
+    NAME=$BASE DEBLOAT=0 "$GCP" setup
+fi
 
 # Standard first; keep the VM for the debloat build.
 NAME=$BASE DEBLOAT=0 "$GCP" build
