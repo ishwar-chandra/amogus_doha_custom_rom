@@ -218,6 +218,26 @@ phone has Magisk/KernelSU it detects the root shell and runs `su -c pm ...`; on 
 plain unlock it prints `denied` per component, disables nothing and exits non-zero. Disabled components are stored in `/data`, so they survive OTA updates
 and re-flashing a new ROM zip without a data wipe.
 
+## 4.4 Publishing without babysitting the build
+
+`tools/gcp-build.sh auto-finish` hands the whole tail of the cycle to the VM: it
+copies the script's own remote half (`~/doha-remote.sh`) and a small chain
+(`~/doha-chain.sh`) there, stages the GitHub token as `~/.gh_token_master`, and
+starts it in tmux session `publish`. The chain waits for `~/build.exit`, verifies
+checksums, publishes the release and the OTA channel for the variant that built,
+then builds the other variant and does the same for it. Nothing after the call
+belongs to the workstation, so a dropped connection cannot leave a finished build
+unpublished. The VM is never deleted by it.
+
+```sh
+TAG=crdroid-20261120 tools/gcp-build.sh auto-finish      # publish what is built
+FIRST_VARIANT=1 TAG=... tools/gcp-build.sh auto-finish   # if the running build is debloat
+gcloud compute ssh <vm> --command 'tail -f ~/doha-chain.log'
+```
+
+The token is shredded at the end of the chain (`shred -u ~/.gh_token_master`), and
+the VM keeps its 48 h `--max-run-duration` deletion timer.
+
 ## 5. Google apps (optional)
 
 Do this only after the vanilla build boots and works. Pick **one** package

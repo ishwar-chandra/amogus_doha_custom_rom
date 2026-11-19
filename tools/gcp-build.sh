@@ -9,6 +9,8 @@
 #   build     start the build in a tmux session (sync, then compile)
 #   gh-check  preflight the GitHub token -- run this before a build
 #   finish    wait for the build, verify, release, update OTA, then delete
+#   auto-finish              publish what is built, build+publish the other
+#                            variant, all on the VM; nothing to babysit, no delete
 #   att|logs|state|ssh|fetch|delete
 #   release                  publish zips/ as one GitHub release tag: every
 #                            variant in zips/ (standard + debloat), creating the
@@ -649,6 +651,74 @@ build)
     echo "AUTO_FINISH=1: waiting for the build and releasing it"
     "$0" finish
   fi ;;
+
+auto-finish)
+  # Publish the variant that is building, then build + publish the other one,
+  # all on the VM: nothing after this call needs this machine, so a dropped
+  # connection cannot leave a finished build unpublished. The VM is kept.
+  status=$(instance_status)
+  [ "$status" = RUNNING ] || { echo "auto-finish: $NAME is $status" >&2; exit 1; }
+  first=${FIRST_VARIANT:-${DEBLOAT:-0}}
+  case $first in 0|1) ;; *) echo "FIRST_VARIANT must be 0 or 1" >&2; exit 1 ;; esac
+  tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
+  # The remote half of every other mode, verbatim: it is the script's own heredoc.
+  sed -n "/<<'REMOTE'\$/,/^REMOTE\$/p" "$0" | sed '1d;$d' > "$tmpd/doha-remote.sh"
+  grep -q '^MODE=' "$tmpd/doha-remote.sh" || { echo "auto-finish: could not extract the remote script" >&2; exit 1; }
+  cat > "$tmpd/doha-chain.sh" <<'CHAIN'
+#!/bin/bash
+# Runs ON the VM (tools/gcp-build.sh auto-finish starts it in tmux 'publish'):
+# publish the variant that is currently building, build the other one, publish
+# that too. No workstation involvement and no VM deletion.
+set -uo pipefail
+export PATH="$HOME/bin:$PATH"
+R=$HOME/doha-remote.sh
+exec >>"$HOME/doha-chain.log" 2>&1
+FIRST=${FIRST:-0}
+SECOND=$([ "$FIRST" = 1 ] && echo 0 || echo 1)
+chan() { [ "$1" = 1 ] && echo debloat || echo standard; }
+
+run() { local mode=$1 deb=$2; shift 2
+        bash "$R" "$mode" "$REPO" "$BRANCH" "$VARIANT" "$SESS" "$SYNC" \
+             "$SWAP" "$JOBS_" "$DEPTH" "$deb" "$@"; }
+
+wait_build() {
+    while [ ! -f "$HOME/build.exit" ]; do sleep 60; done
+    code=$(cat "$HOME/build.exit")
+    echo "build.exit=$code $(date -u +%H:%M)"
+    [ "$code" = 0 ]
+}
+
+token() { cp -f "$HOME/.gh_token_master" "$HOME/.gh_token" && chmod 600 "$HOME/.gh_token"; }
+
+publish() {
+    local deb=$1 label=$2 c
+    c=$(chan "$deb")
+    token; run verify "$deb" || { echo "$label: verify FAILED"; return 1; }
+    token; run release "$deb" "$TAG" "$GHR" || { echo "$label: release FAILED"; return 1; }
+    token; run ota "$deb" "$TAG" "$OTAR" "" "$GHR" "$c" || { echo "$label: ota FAILED"; return 1; }
+    echo "$label: published $TAG ($c) $(date -u +%H:%M)"
+}
+
+echo "chain start $(date -u) branch=$BRANCH first-variant=$(chan "$FIRST")"
+wait_build && publish "$FIRST" "$(chan "$FIRST")" || { echo "first variant failed, stopping"; exit 1; }
+
+rm -f "$HOME/build.exit"
+git -C /mnt/build/manifest fetch -q origin "$BRANCH" &&
+  git -C /mnt/build/manifest reset -q --hard "origin/$BRANCH"
+echo "manifest for second build: $(git -C /mnt/build/manifest log -1 --format='%h %s')"
+run build "$SECOND" 0 || { echo "second build failed to start"; exit 1; }
+wait_build && publish "$SECOND" "$(chan "$SECOND")" || { echo "second variant failed"; exit 1; }
+
+shred -u "$HOME/.gh_token_master" 2>/dev/null || rm -f "$HOME/.gh_token_master"
+rm -f "$HOME/.gh_token"
+echo "chain done $(date -u): both variants published under $TAG, VM kept"
+CHAIN
+  gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$NAME:doha-remote.sh" >/dev/null
+  gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$NAME:doha-chain.sh" >/dev/null
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token_master'
+  gcloud_ compute ssh "$NAME" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
+  echo "auto-finish: chain runs in tmux 'publish' on $NAME; log: $NAME:~/doha-chain.log"
+  echo "auto-finish: it publishes $([ "$first" = 1 ] && echo debloat || echo standard) first, then builds and publishes $([ "$first" = 1 ] && echo standard || echo debloat); the VM is not deleted" ;;
 
 setup|state|verify) remote_exec "$1" ;;
 
