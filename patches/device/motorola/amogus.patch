@@ -174,8 +174,42 @@ index fbe42bb..e29256b 100644
  /dev/block/bootdevice/by-name/misc                      /misc                    emmc    defaults                                             defaults
 -/dev/block/zram0                                        none                     swap    defaults                                             zramsize=70%
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=50%
+diff --git a/rootdir/vendor/bin/doha-dexopt-once.sh b/rootdir/vendor/bin/doha-dexopt-once.sh
+new file mode 100644
+index 0000000..7bf323b
+--- /dev/null
++++ b/rootdir/vendor/bin/doha-dexopt-once.sh
+@@ -0,0 +1,28 @@
++#!/system/bin/sh
++# Compile every installed package with speed-profile, once per data wipe.
++#
++# Same action as the "Boost Performance" entry in the Infamick Magisk script, but
++# automatic: a freshly flashed build otherwise leaves apps in verify/JIT mode until
++# the platform's idle bg-dexopt-job gets around to them, which on this phone can be
++# days because the job wants charging + idle + no reboot.
++#
++# Started from init.amogus.rc on sys.boot_completed=1 as a oneshot service. It waits
++# five minutes for the first-boot storm to pass, then compiles at nice 19 so the UI
++# keeps priority. The outcome is recorded in persist.doha.dexopt_status
++# (running|done|failed) - check it with `getprop persist.doha.dexopt_status`.
++#
++# Skip it with: adb shell setprop persist.doha.dexopt_once 0
++# Re-run it with: adb shell setprop persist.doha.dexopt_status "" && reboot
++
++status=$(getprop persist.doha.dexopt_status)
++[ "$(getprop persist.doha.dexopt_once)" = "0" ] && exit 0
++[ "$status" = "done" ] && exit 0
++
++sleep 300
++
++setprop persist.doha.dexopt_status running
++if nice -n 19 cmd package compile -m speed-profile -a >/dev/null 2>&1; then
++    setprop persist.doha.dexopt_status done
++else
++    setprop persist.doha.dexopt_status failed
++fi
 diff --git a/rootdir/vendor/etc/init/init.amogus.rc b/rootdir/vendor/etc/init/init.amogus.rc
-index 879062c..e5bffe5 100644
+index 879062c..a918c00 100644
 --- a/rootdir/vendor/etc/init/init.amogus.rc
 +++ b/rootdir/vendor/etc/init/init.amogus.rc
 @@ -16,10 +16,10 @@ on init
@@ -192,7 +226,7 @@ index 879062c..e5bffe5 100644
  
  on boot
      # update foreground cpuset now that processors are up
-@@ -34,12 +34,13 @@ on boot
+@@ -34,12 +34,29 @@ on boot
      write /proc/irq/default_smp_affinity f
  
  on property:sys.boot_completed=1
@@ -207,6 +241,22 @@ index 879062c..e5bffe5 100644
      write /sys/block/mmcblk0/queue/iostats 1
 -    write /sys/block/dm-0/queue/read_ahead_kb 2048
 -    write /sys/block/dm-1/queue/read_ahead_kb 2048
++
++# One-time full AOT compile of every installed package (speed-profile). This is the
++# Infamick "Boost Performance" action made automatic, so a fresh flash is not stuck
++# in verify/JIT mode waiting for idle bg-dexopt-job. Records
++# persist.doha.dexopt_status; set persist.doha.dexopt_once=0 to skip.
++# /system/bin/sh reads the script, so it does not depend on the copy keeping its
++# executable bit (rootdir files are installed by copy-files-recursive).
++service doha-dexopt-once /system/bin/sh /vendor/bin/doha-dexopt-once.sh
++    class late_start
++    user root
++    group root system
++    oneshot
++    disabled
++
++on property:sys.boot_completed=1
++    start doha-dexopt-once
  
  service vendor.amogus /vendor/bin/init.amogus.sh
      class core

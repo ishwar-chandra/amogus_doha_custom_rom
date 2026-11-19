@@ -97,6 +97,7 @@ image; the running build on the VM predates all of it.
 | policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
 | GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
 | debloat | settings entries for removed apps hidden at runtime | `packages/apps/crDroidSettings.patch` |
+| dexopt | one-shot `speed-profile` compile of all packages at first boot (`persist.doha.dexopt_status`, off switch `persist.doha.dexopt_once=0`) | `patches/device/motorola/amogus.patch`, `rootdir/vendor/bin/doha-dexopt-once.sh` |
 
 Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
 (kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the

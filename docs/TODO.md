@@ -239,6 +239,12 @@ the number of knobs the phone is not actually running.
   is gone, and the weather/OmniJaws entry is still there.
 - [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
   entry can still appear in search results; tapping it does nothing.
+- [ ] Verify the first-boot dexopt hook on the next flash: after boot, `getprop
+  persist.doha.dexopt_status` should go `running` -> `done` within ~15 min. If it
+  says `failed`, init could not reach the package service from its SELinux domain
+  (`cmd package compile` needs binder); the fix is a small sepolicy rule or running
+  the compile from an `exec` with a different domain. `tools/dexopt-all.sh` remains
+  the manual fallback.
 - [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
   component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
   `denied` per component and exits non-zero if the platform refuses, so a failure

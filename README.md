@@ -831,6 +831,15 @@ branch does now:
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
 
+- **One full `speed-profile` compile of every installed package at first boot**
+  (`rootdir/vendor/bin/doha-dexopt-once.sh`, started from `init.amogus.rc` on
+  `sys.boot_completed=1`). A fresh flash otherwise leaves apps in verify/JIT mode
+  until the platform's idle `bg-dexopt-job` runs, which wants charging, idle and no
+  reboot — on this phone that can be days. The service waits five minutes, then
+  compiles at `nice -n 19`, once per data wipe: it records
+  `persist.doha.dexopt_status` (`running`/`done`/`failed`), and
+  `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
+  equivalent.
 - **`discard` dropped from the f2fs `/data` mount** (`rootdir/fstab.qcom`,
   `fstab_dynamic.qcom`). With `discard` f2fs trims on every delete, which on this
   eMMC shows up as I/O stalls while apps are being evicted — exactly when the
