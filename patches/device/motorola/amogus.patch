@@ -131,10 +131,10 @@ index 52c0155..32abba9 100644
  vendor/lib64/libril-qc-hal-qmi.so
  vendor/lib64/libril-qc-logger.so
 diff --git a/rootdir/fstab.qcom b/rootdir/fstab.qcom
-index 269265a..c13ef95 100644
+index 269265a..5ee1083 100644
 --- a/rootdir/fstab.qcom
 +++ b/rootdir/fstab.qcom
-@@ -6,8 +6,10 @@
+@@ -6,9 +6,11 @@
  # Currently we dont have e2fsck compiled. So fs check would failed.
  
  #<src>                                                 <mnt_point>               <type>  <mnt_flags and options>                            <fs_mgr_flags>
@@ -142,10 +142,12 @@ index 269265a..c13ef95 100644
 +/dev/block/by-name/system                               /system                  ext4     ro,barrier=1                       wait,slotselect,first_stage_mount
 +/dev/block/by-name/system                               /system                  erofs    ro                                 wait,slotselect,first_stage_mount
  /dev/block/by-name/vendor                               /vendor                  erofs    ro                                 wait,slotselect,first_stage_mount
+-/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
 +/dev/block/by-name/metadata                             /metadata                ext4    noatime,nosuid,nodev,discard                         wait,check,formattable,first_stage_mount
- /dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
++/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
  /devices/platform/soc/4784000.sdhci/mmc_host*           auto                     auto    defaults                                             wait,voldmanaged=sdcard1:auto
  /dev/block/bootdevice/by-name/modem                     /vendor/firmware_mnt     ext4    ro,nosuid,nodev,context=u:object_r:firmware_file:s0  wait,slotselect
+ /dev/block/bootdevice/by-name/dsp                       /vendor/dsp              ext4    ro,nosuid,nodev,barrier=1                            wait,slotselect
 @@ -22,5 +24,5 @@
  # The update_engine code looks for this entry in order to determine the boot device address
  # and fails if it does not find it.
@@ -154,9 +156,18 @@ index 269265a..c13ef95 100644
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=2147483648
  
 diff --git a/rootdir/fstab_dynamic.qcom b/rootdir/fstab_dynamic.qcom
-index fbe42bb..1ccf801 100644
+index fbe42bb..e29256b 100644
 --- a/rootdir/fstab_dynamic.qcom
 +++ b/rootdir/fstab_dynamic.qcom
+@@ -10,7 +10,7 @@ system                                                  /system
+ vendor                                                  /vendor                  erofs    ro                                         wait,slotselect,avb,logical,first_stage_mount
+ product                                                 /product                 erofs    ro                                         wait,slotselect,avb,logical,first_stage_mount
+ /dev/block/by-name/metadata                             /metadata                ext4    noatime,nosuid,nodev,discard                         wait,formattable,first_stage_mount
+-/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,nobarrier,reserve_root=32768,resgid=1065,inlinecrypt   latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,quota,reservedsize=128M,checkpoint=fs
++/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nosuid,nodev,noatime,nodiratime,nobarrier,reserve_root=32768,resgid=1065,inlinecrypt   latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,quota,reservedsize=128M,checkpoint=fs
+ /devices/platform/soc/4784000.sdhci/mmc_host*           auto                     auto    defaults                                             wait,voldmanaged=sdcard1:auto
+ /dev/block/bootdevice/by-name/modem                     /vendor/firmware_mnt     ext4    ro,nosuid,nodev,context=u:object_r:firmware_file:s0  wait,slotselect
+ /dev/block/bootdevice/by-name/dsp                       /vendor/dsp              ext4    ro,nosuid,nodev,barrier=1,defcontext=u:object_r:adsprpcd_file:s0                            wait,slotselect
 @@ -24,4 +24,4 @@ product                                                 /product
  # The update_engine code looks for this entry in order to determine the boot device address
  # and fails if it does not find it.

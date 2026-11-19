@@ -81,6 +81,27 @@ Conclusion: Phase 1 cannot meet its criteria by itself. Nothing that runs inside
 the current memory geometry keeps apps resident; the next real step is the 2 GB
 zram build (Phase 2 numeric) plus the owner's decision on optional resident apps.
 
+## What the next build ships (kit side, all committed)
+
+Everything below is in `performance-tuning` and reaches the phone with the next
+image; the running build on the VM predates all of it.
+
+| Area | Change | Where |
+|---|---|---|
+| swap | zram 1 GB -> 2 GB | `patches/device/motorola/amogus.patch` (fstab qcom/dynamic) |
+| storage | `discard` removed from f2fs `/data` mount | same patch |
+| storage | `nr_requests` 256 -> 128, dead read-ahead writes removed | same patch (init.amogus.rc) |
+| storage | read-ahead single owner, `@READAHEAD_KB@` (default 128) | `patches/device/qcom/common.patch` |
+| UI | app transition scale 0.8, Launcher3 DT2S on by default | `amogus_doha.patch`, `Launcher3.patch` |
+| kernel stability | P1 modem-notifier panic, glink/smp2p `IRQF_NO_SUSPEND`, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `73b7957` (branch `doha-kernel-fixes-2026-11-19`) |
+| policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
+| GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
+| debloat | settings entries for removed apps hidden at runtime | `packages/apps/crDroidSettings.patch` |
+
+Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
+(kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the
+feature is untested here), thermal thresholds, CPU/GPU frequencies.
+
 ## 3. Constraints
 
 - No root on the shipping build → `/proc/sys/vm/*`, sysfs queue and zram knobs are
@@ -130,6 +151,9 @@ Already committed (`4826962`) but not flashed:
       with a real mechanism behind it: doubles the spill area before LMK evicts.
 - [ ] **`nr_requests` 256 → 128**, dead read-ahead writes removed from
       `init.amogus.rc`.
+- [x] **`discard` dropped from the f2fs `/data` mount** (both fstabs). Continuous
+      trim on eMMC stalls I/O exactly while apps are being evicted; vold's periodic
+      `fstrim` still runs. Reversible by re-adding `discard,` to the mount options.
 - [ ] **Retarget the read-ahead owner to `mmcblk0`** — the current patch renders
       `@READAHEAD_KB@` into `init.aospa.perf.common.rc`'s `dm-*`/`sd*` lines, but on
       doha only `mmcblk0` exists. Add `mmcblk0` explicitly (it is already one of the
@@ -142,8 +166,10 @@ Already committed (`4826962`) but not flashed:
 
 ## Phase 3 — LMK / swap policy, one variable per build
 
-- [ ] `config_extraFreeKbytesAdjust` 131072 → 65536 (device overlay). Lower reserve →
-      fewer early kills; watch for allocation stalls.
+- [x] ~~`config_extraFreeKbytesAdjust` 131072 → 65536~~ — **invalid premise**: that
+      overlay is not compiled into the build (only `doha*Overlay` modules are), and
+      the AOSP default is `0`, so there is no reserve to lower. Raising it would make
+      LMK kill earlier. Dropped from the plan; see README's performance section.
 - [ ] `lmkd` PSI limits (`ro.lmk.*` are read-only properties → build-time only):
       currently `psi_partial_stall_ms=200`, `swap_free_low_percentage=10`,
       `thrashing_limit=30`, `thrashing_limit_decay=50`. Only touch after Phase 2

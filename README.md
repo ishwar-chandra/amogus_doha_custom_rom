@@ -827,13 +827,25 @@ branch does now:
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
 
+- **`discard` dropped from the f2fs `/data` mount** (`rootdir/fstab.qcom`,
+  `fstab_dynamic.qcom`). With `discard` f2fs trims on every delete, which on this
+  eMMC shows up as I/O stalls while apps are being evicted — exactly when the
+  phone is already struggling. Android's periodic `fstrim` (vold idle maintenance)
+  still trims the partition, just in one batch instead of continuously.
+
 Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
 selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds
-(`SKIN_THROTTLE_C`), `config_extraFreeKbytesAdjust` (128 MB — the first A/B
-candidate if LMK still kills too eagerly), and `walt`/`core_ctl`/`bfq` writes in
-the vendor scripts, which are dead code: `CONFIG_SCHED_WALT`,
-`CONFIG_SCHED_CORE_CTL` and `CONFIG_IOSCHED_BFQ` are all off in
+(`SKIN_THROTTLE_C`), and `walt`/`core_ctl`/`bfq` writes in the vendor scripts,
+which are dead code: `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL` and
+`CONFIG_IOSCHED_BFQ` are all off in
 `arch/arm64/configs/vendor/amogus_doha_defconfig`.
+
+`config_extraFreeKbytesAdjust` is **not** a lever here: the 131072 in
+`device/motorola/amogus`'s overlay never reaches the build (only
+`dohaFrameworkOverlay`, `dohaSystemUIOverlay`, `dohaApertureOverlay` and
+`NoNearbySharingOverlay` are compiled in, per `gcp-out/build.log`), so the phone
+runs the AOSP default of `0`. Raising it would reserve free memory and make LMK
+kill *earlier*, the opposite of what this device needs.
 
 None of this is benchmarked on hardware yet. `tools/perf-audit.sh` prints what
 the phone actually ended up with (governor, read-ahead, `nr_requests`, zram size
