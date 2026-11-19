@@ -53,8 +53,17 @@ VARIANT=${VARIANT:-userdebug}
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 UPDATER_CHANNEL=$([ "$DEBLOAT" = 1 ] && echo debloat || echo standard)
+# Runtime read_ahead_kb applied to mmcblk0 and dm-*. device/qcom/common's
+# init.aospa.perf.common.rc is the only writer that survives boot (it re-applies
+# on vendor.post_boot.parsed=1, after qcom-post-boot); the value is rendered into
+# patches/device/qcom/common.patch, so changing it re-applies that patch.
+# 128 is AOSPA's own value and what the device ran before this knob existed.
+READAHEAD_KB=${READAHEAD_KB:-128}
 case $SKIN_THROTTLE_C in
   ''|*[!0-9]*) echo "SKIN_THROTTLE_C must be a whole number of °C" >&2; exit 1 ;;
+esac
+case $READAHEAD_KB in
+  ''|*[!0-9]*) echo "READAHEAD_KB must be a whole number of KB" >&2; exit 1 ;;
 esac
 
 # repo needs a git identity, and git refuses to read a checkout owned by
@@ -145,6 +154,7 @@ done
 render_patch() {
   sed -e "s/@SKIN_THROTTLE_MC@/$((SKIN_THROTTLE_C * 1000))/g" \
       -e "s/@DEBLOAT@/$DEBLOAT/g" \
+      -e "s/@READAHEAD_KB@/$READAHEAD_KB/g" \
       -e "s/@UPDATER_CHANNEL@/$UPDATER_CHANNEL/g" \
       "$HERE/patches/$1.patch"
 }

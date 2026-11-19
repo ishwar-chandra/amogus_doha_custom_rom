@@ -131,7 +131,7 @@ index 52c0155..32abba9 100644
  vendor/lib64/libril-qc-hal-qmi.so
  vendor/lib64/libril-qc-logger.so
 diff --git a/rootdir/fstab.qcom b/rootdir/fstab.qcom
-index 269265a..2a20e45 100644
+index 269265a..c13ef95 100644
 --- a/rootdir/fstab.qcom
 +++ b/rootdir/fstab.qcom
 @@ -6,8 +6,10 @@
@@ -146,8 +146,25 @@ index 269265a..2a20e45 100644
  /dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
  /devices/platform/soc/4784000.sdhci/mmc_host*           auto                     auto    defaults                                             wait,voldmanaged=sdcard1:auto
  /dev/block/bootdevice/by-name/modem                     /vendor/firmware_mnt     ext4    ro,nosuid,nodev,context=u:object_r:firmware_file:s0  wait,slotselect
+@@ -22,5 +24,5 @@
+ # The update_engine code looks for this entry in order to determine the boot device address
+ # and fails if it does not find it.
+ /dev/block/bootdevice/by-name/misc                      /misc                    emmc    defaults                                             defaults
+-/dev/block/zram0                                        none                     swap    defaults                                             zramsize=1073741824
++/dev/block/zram0                                        none                     swap    defaults                                             zramsize=2147483648
+ 
+diff --git a/rootdir/fstab_dynamic.qcom b/rootdir/fstab_dynamic.qcom
+index fbe42bb..1ccf801 100644
+--- a/rootdir/fstab_dynamic.qcom
++++ b/rootdir/fstab_dynamic.qcom
+@@ -24,4 +24,4 @@ product                                                 /product
+ # The update_engine code looks for this entry in order to determine the boot device address
+ # and fails if it does not find it.
+ /dev/block/bootdevice/by-name/misc                      /misc                    emmc    defaults                                             defaults
+-/dev/block/zram0                                        none                     swap    defaults                                             zramsize=70%
++/dev/block/zram0                                        none                     swap    defaults                                             zramsize=50%
 diff --git a/rootdir/vendor/etc/init/init.amogus.rc b/rootdir/vendor/etc/init/init.amogus.rc
-index 879062c..858ba38 100644
+index 879062c..e5bffe5 100644
 --- a/rootdir/vendor/etc/init/init.amogus.rc
 +++ b/rootdir/vendor/etc/init/init.amogus.rc
 @@ -16,10 +16,10 @@ on init
@@ -164,23 +181,21 @@ index 879062c..858ba38 100644
  
  on boot
      # update foreground cpuset now that processors are up
-@@ -35,11 +35,15 @@ on boot
+@@ -34,12 +34,13 @@ on boot
+     write /proc/irq/default_smp_affinity f
  
  on property:sys.boot_completed=1
-     # Runtime fs tuning for runtime performance
+-    # Runtime fs tuning for runtime performance
 -    write /sys/block/mmcblk0/queue/read_ahead_kb 2048
--    write /sys/block/mmcblk0/queue/nr_requests 128
-+    write /sys/block/mmcblk0/queue/read_ahead_kb 4096
-+    write /sys/block/mmcblk0/queue/nr_requests 256
++    # Runtime fs tuning.
++    # read_ahead_kb is NOT written here: qcom-post-boot runs right after this
++    # trigger and init.aospa.perf.common.rc re-applies its own value on
++    # vendor.post_boot.parsed=1, so a write here is silently overwritten
++    # seconds later. Keep one owner for it (device/qcom/common).
+     write /sys/block/mmcblk0/queue/nr_requests 128
      write /sys/block/mmcblk0/queue/iostats 1
 -    write /sys/block/dm-0/queue/read_ahead_kb 2048
 -    write /sys/block/dm-1/queue/read_ahead_kb 2048
-+    write /sys/block/dm-0/queue/read_ahead_kb 4096
-+    write /sys/block/dm-1/queue/read_ahead_kb 4096
-+    write /sys/block/dm-2/queue/read_ahead_kb 4096
-+    write /sys/block/dm-3/queue/read_ahead_kb 4096
-+    write /sys/block/dm-4/queue/read_ahead_kb 4096
-+    write /sys/block/dm-5/queue/read_ahead_kb 4096
  
  service vendor.amogus /vendor/bin/init.amogus.sh
      class core

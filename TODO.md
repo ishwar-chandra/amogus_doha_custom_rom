@@ -184,3 +184,39 @@ Caveats worth remembering:
   fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
   `MEETS_BASIC_INTEGRITY` is reachable.
 
+## Performance tuning (2026-11-20, tree + bugreport audit)
+
+Read from the pinned trees and `bugreports/bugreport-doha-...-2026-11-18-23-13-33.zip`;
+nothing here is benchmarked. `tools/perf-audit.sh` is the gate — exit status is
+the number of knobs the phone is not actually running.
+
+- [x] **zram was 1 GB and full.** Bugreport: `MemTotal 3685120 kB`,
+  `SwapTotal 1048572 kB`, `SwapFree 2868 kB` (99.7% used), 133 LMK kills in that
+  capture. `fstab.qcom` now sets `zramsize=2147483648`; the post_boot 50%-of-RAM
+  resize can never apply (`swapon_all` in `init.target.rc` `on fs` initialises
+  zram first, and `zram_drv.c` refuses a new `disksize` once `init_done`).
+  Gate: `perf-audit.sh` reports `SwapTotal ~2047 MB` and LMK kills drop under
+  the same GApps workload.
+- [x] **read-ahead had three writers and the wrong one won.**
+  `init.aospa.perf.common.rc` re-applies its value on `vendor.post_boot.parsed=1`,
+  which `init.qcom.post_boot.legacy.sh` sets on its last line — after
+  `init.amogus.rc`'s `sys.boot_completed` writes. The branch's 4096 KB never
+  reached the kernel. Value now lives only in
+  `patches/device/qcom/common.patch`, rendered from `READAHEAD_KB` (default 128).
+  Gate: `perf-audit.sh` read_ahead PASS for `mmcblk0` and every `dm-*`.
+- [x] **`nr_requests` 256 → 128** (kernel default; eMMC + CFQ gains nothing from
+  a deeper queue and nothing measured justified 256).
+- [ ] **Governor not verified on device.** `post_boot.legacy.sh` selects
+  `schedutil` only for trinket `soc_id` 394/467/468 with
+  `hispeed_freq` 1305600/1401600 and `hispeed_load` 85. If the phone boots on
+  `performance` instead (the defconfig default), every core runs at max and the
+  thermal throttling in BUGREPORT makes sense. Check with `perf-audit.sh` cpu.
+- [ ] **First A/B if LMK still kills too eagerly:** `config_extraFreeKbytesAdjust`
+  131072 → 65536 in `device/motorola/amogus`'s framework overlay (one variable
+  per build, same workload).
+- [ ] **Second A/B:** `READAHEAD_KB=512` (and back to 128) with the app-launch /
+  scroll / install timings from the README verification list.
+- [ ] **Do not tune:** `walt`, `core_ctl`, `bfq` writes in the vendor scripts are
+  dead — `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL`, `CONFIG_IOSCHED_BFQ` are
+  off in `arch/arm64/configs/vendor/amogus_doha_defconfig`. KSM and THP are off
+  too. `SKIN_THROTTLE_C` stays at 40 until thermal headroom is measured.

@@ -779,16 +779,54 @@ HAL/framework errors from the same captures.
 
 ### Performance profile (`performance-tuning` branch)
 
-Two conservative device changes, no CPU/GPU overclock and no thermal override:
+The tuning is small because most of the obvious knobs are already written by the
+vendor scripts — from three different places, in an order that decides which
+value actually survives. On this device (4.14, `init.qcom.post_boot.sh` is the
+*legacy* script) that order is:
 
-- `patches/device/motorola/amogus.patch` — raise the boot eMMC read-ahead from
-  256 to 512 KB, the runtime read-ahead from 2048 to 4096 KB, `nr_requests`
-  from 128 to 256, and apply the same read-ahead to `dm-0`…`dm-5` for the
-  dynamic partitions.
-- `patches/device/motorola/amogus_doha.patch` — set the default app transition
-  scale to 0.8 (still user-adjustable in Developer options).
+1. `init.amogus.rc` — `on init` (boot read-ahead, `nr_requests`) and
+   `on property:sys.boot_completed=1` (runtime values).
+2. `qcom-post-boot` (`init.qcom.post_boot.legacy.sh`, started by `init.qcom.rc`
+   at `sys.boot_completed=1`) — sets the governor, `swappiness` and its own
+   read-ahead, then sets `vendor.post_boot.parsed=1` on its last line.
+3. `init.aospa.perf.common.rc` (`device/qcom/common`) —
+   `on property:vendor.post_boot.parsed=1` rewrites `read_ahead_kb` for
+   `mmcblk0`, `sda`…`sdf` and `dm-0`…`dm-49`.
 
-These are not benchmarked on hardware. CPU/GPU governor, LMK/zram and thermal
-thresholds are deliberately unchanged: they trade heat, battery or stability
-for speed and need per-device measurements first.
+Because (3) runs after (2), it is the **last** writer of read-ahead. The 2048 →
+4096 KB raise this branch originally carried in `init.amogus.rc` was therefore
+overwritten a few seconds after boot and never reached the kernel. What the
+branch does now:
+
+- **read-ahead has one owner.** The value lives in
+  `patches/device/qcom/common.patch` (`init.aospa.perf.common.rc`, the file that
+  wins), rendered from the build setting `READAHEAD_KB` (default `128`, AOSPA's
+  own value and what the phone already ran). The dead copies in
+  `init.amogus.rc` are gone, so the intended and effective values cannot drift
+  apart again. A/B test with `READAHEAD_KB=512 ./build.sh …`.
+- **`nr_requests` back to 128** (the kernel default). It was 256; nothing
+  measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
+- **zram 1 GB → 2 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
+  for consistency; doha builds non-dynamic, so `fstab.qcom` is the live file).
+  Evidence: the 2026-11-18 bugreport shows `SwapTotal 1048572 kB` with
+  `SwapFree 2868 kB` — zram 99.7% full — and 133 LMK kills in that capture.
+  `init.qcom.post_boot.legacy.sh` *tries* to size zram at 50% of RAM, but its
+  `disksize` write returns `-EBUSY` because `init.target.rc`'s `on fs`
+  `swapon_all` already enabled the device (`zram_drv.c: init_done` check), so
+  the fstab is the only write that ever applies.
+- **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
+  (still user-adjustable in Developer options).
+
+Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
+selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds
+(`SKIN_THROTTLE_C`), `config_extraFreeKbytesAdjust` (128 MB — the first A/B
+candidate if LMK still kills too eagerly), and `walt`/`core_ctl`/`bfq` writes in
+the vendor scripts, which are dead code: `CONFIG_SCHED_WALT`,
+`CONFIG_SCHED_CORE_CTL` and `CONFIG_IOSCHED_BFQ` are all off in
+`arch/arm64/configs/vendor/amogus_doha_defconfig`.
+
+None of this is benchmarked on hardware yet. `tools/perf-audit.sh` prints what
+the phone actually ended up with (governor, read-ahead, `nr_requests`, zram size
+and saturation, PSI stall, thermal headroom) and exits with the number of
+mismatches, so a build that silently lost a knob is visible without a bugreport.
 
