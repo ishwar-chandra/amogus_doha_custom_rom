@@ -37,7 +37,7 @@ The LineageOS 24.0 (Android 17) version of this ROM, with the same
 device work, is on the `lineage-24.0` branch. The LineageOS 23.2
 (Android 16) version is on `main`. This branch is `crdroid-android-17`.
 
-New here? [`GUIDE.md`](GUIDE.md) walks through a build end to end: local and
+New here? [`docs/GUIDE.md`](docs/GUIDE.md) walks through a build end to end: local and
 GCP, flashing, GApps, releasing and troubleshooting.
 
 ## Requirements
@@ -384,7 +384,7 @@ adb bugreport ./br.zip                  # from the phone, while the problem is h
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
-noise that only appears inside the dump). `BUGREPORT.md` is the record of what that sweep found.
+noise that only appears inside the dump). `docs/BUGREPORT.md` is the record of what that sweep found.
 
 ## Differences from an official crDroid device
 
@@ -829,6 +829,6 @@ None of this is benchmarked on hardware yet. `tools/perf-audit.sh` prints what
 the phone actually ended up with (governor, read-ahead, `nr_requests`, zram size
 and saturation, PSI stall, thermal headroom) and exits with the number of
 mismatches, so a build that silently lost a knob is visible without a bugreport.
-`OPTIMIZATION.md` is the plan of record for the tuning work: measured baseline,
+`docs/OPTIMIZATION.md` is the plan of record for the tuning work: measured baseline,
 phases, success criteria and rollback.
 

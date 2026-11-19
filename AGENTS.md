@@ -186,10 +186,11 @@ tools/app-trace.sh com.example.app 60 [--no-launch]
 |`default.xml`, `snippets/*.xml`|Source pinning; `snippets/doha.xml` is ours|
 |`patches/**` (26 files)|The product; each fix mirrored by a README section|
 |`README.md`|Authoritative design record: requirements, install/flash/GApps/Magisk, Status, per-fix rationale|
-|`GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
+|`docs/GUIDE.md`|Step-by-step local + GCP build, flash, GApps, root, release|
 |`CLAUDE.md`|Repo rules and the "Changing a fix" workflow|
-|`TODO.md`|Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors)|
-|`BUGREPORT.md`|On-device sweep results: defects, evidence, what was ruled out|
+|`docs/TODO.md`|Live hardware-issue worklist with on-device evidence (VoLTE, touch, charging, sensors)|
+|`docs/BUGREPORT.md`|On-device sweep results: defects, evidence, what was ruled out|
+|`docs/OPTIMIZATION.md`|Optimization plan of record: measured baseline, phases, criteria, rollback|
 |`tools/gcp-build.sh`|Remote build cycle, GitHub release and OTA feed; no persistent backup|
 |`tools/gcp-build-both.sh`|Standard then debloat on one VM; one shared release tag|
 

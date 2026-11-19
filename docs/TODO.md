@@ -179,7 +179,7 @@ Caveats worth remembering:
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
 - [ ] Play Integrity / D6: blocked on hardware attestation (`Km(-10003)`, 68 hits from Google Pay in
-  one report). Analysis in `PLAYINTEGRITY.md`; the decisive test needs `KeyAttestation` (vvb2060)
+  one report). Analysis in `BUGREPORT.md` §7 (D6); the decisive test needs `KeyAttestation` (vvb2060)
   installed on the phone — `-10003` there means the TEE has no attestation key and nothing ROM-side can
   fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
   `MEETS_BASIC_INTEGRITY` is reachable.

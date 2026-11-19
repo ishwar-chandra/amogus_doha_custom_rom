@@ -317,7 +317,7 @@ arm64-17 official file there if that date has been superseded. MindTheGapps 17.0
 \`sha256sum -c crDroidAndroid-*.sha256sum\`
 
 Tested items, known issues and the untested checklist: see the repository README ("Status") and
-BUGREPORT.md. Do not flash a zip from a different variant over this one without wiping data.
+docs/BUGREPORT.md. Do not flash a zip from a different variant over this one without wiping data.
 EOF
 }
 
