@@ -239,5 +239,14 @@ the number of knobs the phone is not actually running.
   is gone, and the weather/OmniJaws entry is still there.
 - [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
   entry can still appear in search results; tapping it does nothing.
+- [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
+  component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
+  `denied` per component and exits non-zero if the platform refuses, so a failure
+  is visible, not silent. If it is refused, the same list needs root or a
+  DEV_ROOT test build.
+- [ ] Measure the cherry-picked tools: `tools/perf-multitask.sh` before/after
+  `tools/gms-trim.sh` (default groups) so the owner's impression has numbers
+  behind it, and `tools/dexopt-all.sh` timed right after a flash.
+
 - [ ] `AGENTS.md`'s patch-map row for this patch still needs the owner's approval
   to write (the file is protected).

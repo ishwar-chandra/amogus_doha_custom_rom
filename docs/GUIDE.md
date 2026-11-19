@@ -194,6 +194,26 @@ This keeps data but **removes GApps** — re-sideload them in the same
 recovery session if you use them. Recovery installs to the inactive slot;
 keep a known-good ROM on the other slot until the new one boots.
 
+### 4.3 After first boot: optional per-device tuning
+
+The ROM already carries the memory, queue and read-ahead changes. Two further
+levers stay outside the build because they are reversible user-space state, not
+artifacts; both are safe to skip and both can be undone.
+
+```sh
+tools/dexopt-all.sh              # compile all apps now, instead of waiting for the
+                                 # charging+idle bg-dexopt-job to get round to it
+tools/gms-trim.sh --list         # Google Play Services background work, grouped
+tools/gms-trim.sh                # default groups: ads, analytics, stats reporting
+tools/gms-trim.sh -g all         # also Wallet/tap-to-pay, Quick Share, Play Games, Fitness
+tools/gms-trim.sh --restore      # re-enable everything the tool disabled
+```
+
+`gms-trim.sh` needs a build where the shell may change component state; when the
+platform refuses, it prints `denied` per component, disables nothing and exits
+non-zero. Disabled components are stored in `/data`, so they survive OTA updates
+and re-flashing a new ROM zip without a data wipe.
+
 ## 5. Google apps (optional)
 
 Do this only after the vanilla build boots and works. Pick **one** package

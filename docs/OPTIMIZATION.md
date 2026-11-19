@@ -102,7 +102,7 @@ Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
 (kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the
 feature is untested here), thermal thresholds, CPU/GPU frequencies.
 
-## Evaluated and rejected: Infamick script (Magisk module)
+## Evaluated: Infamick script (Magisk module) — two tools cherry-picked
 
 Source read in full: `github.com/Infamousmick/Infamick-script`, 1736-line shell
 menu, 39 functions, GPLv3, 91 stars, last push 2026-04-15. Its own
@@ -131,11 +131,34 @@ wakelocks held longest are Photos': `ImageSyncLPBJ` 5m34s and
 `/metasync.DeltaSyncJobService` 5m13s. Disabling GMS services would cost Play,
 notifications and Nearby, to save 5 wakeups.
 
-Result: **nothing from this module is ported.** The levers that matter on a
-3.5 GB/4.14 device are the geometry ones already in the kit (zram 2 GB, queue
-depth, single-owner read-ahead, no continuous discard) plus the kernel pin — none
-of which this script touches. The real background cost on this phone is
-Photos/Instagram sync, which is an app-level decision, not a ROM one.
+Result: two things are cherry-picked, both as **opt-in tools** rather than baked
+policy, because they are reversible user-space state and one of them costs
+features:
+
+- `tools/gms-trim.sh` — same `pm disable` mechanism, but the 289 components of its
+  list are grouped (ads, analytics, stats, cast, nearby, wallet, games, fitness,
+  kids, googlehelp, plus) so a group that breaks something you use stays off. Its
+  chimera and phenotype entries are dropped: chimera carries GMS push/intent
+  delivery and phenotype carries Play Services flag config. `--restore` re-enables
+  everything it disabled, from `tools/.gms-trim.state`; the state lives in `/data`
+  so it survives OTA.
+- `tools/dexopt-all.sh` — `cmd package compile -m speed-profile -a`, timed, with
+  `-m speed` warned against because that is the mode we measured regressing warm
+  reloads.
+
+Owner-reported on 2026-11-20: running the Infamick module on the debloat build
+made the phone feel faster. Most plausible cause is the GMS component disabling,
+which does not show up in the alarm dump above (alarms count wakeups, not the
+service/chimera work), so the claim and our data are not in conflict. Confirming it
+means running `gms-trim.sh` with a fixed group set, then re-running
+`tools/perf-multitask.sh` and comparing resident count and reload times.
+
+Not ported, deliberately: `pm trim-caches` (discards warmed caches),
+`boot_count` reset (cosmetic), SELinux permissive (security regression), Samsung
+Knox/CSC/Bixby actions, and the charging sysfs write (smb5 here does not expose
+`charging_enabled`). The levers that matter on a 3.5 GB/4.14 device are still the
+geometry ones in the kit (zram 2 GB, queue depth, single-owner read-ahead, no
+continuous discard) plus the kernel pin — none of which that script touches.
 
 ## 3. Constraints
 

@@ -390,6 +390,10 @@ Known issues:
 adb bugreport ./br.zip                  # from the phone, while the problem is happening
 ./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
 ./tools/app-trace.sh com.anthropic.claude # one app: its logs, screenshot, activity state
+./tools/perf-audit.sh                   # are the kit's perf knobs actually in effect?
+./tools/perf-multitask.sh               # 8-app cycle: resident count + reload times
+./tools/dexopt-all.sh                   # compile all apps now (speed-profile)
+./tools/gms-trim.sh --list              # GMS background work, grouped; --restore undoes it
 ```
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
