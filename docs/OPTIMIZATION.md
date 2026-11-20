@@ -89,7 +89,7 @@ image; the running build on the VM predates all of it.
 | Area | Change | Where |
 |---|---|---|
 | swap | zram 1 GB -> 2 GB | `patches/device/motorola/amogus.patch` (fstab qcom/dynamic) |
-| storage | `discard` removed from f2fs `/data` mount | same patch |
+| storage | discard off on f2fs `/data` (`nodiscard`; the kernel's f2fs default is on) | same patch |
 | storage | `nr_requests` 256 -> 128, dead read-ahead writes removed | same patch (init.amogus.rc) |
 | storage | read-ahead single owner, `@READAHEAD_KB@` (default 128) | `patches/device/qcom/common.patch` |
 | UI | app transition scale 0.8, Launcher3 DT2S on by default | `amogus_doha.patch`, `Launcher3.patch` |
@@ -102,6 +102,17 @@ image; the running build on the VM predates all of it.
 Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
 (kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the
 feature is untested here), thermal thresholds, CPU/GPU frequencies.
+
+### Verified on the 2026-11-19 flash (2026-11-20, build 1795129374, slot _b)
+
+| Item | Result |
+|---|---|
+| zram 2 GB | **PASS** — `SwapTotal 2097148 kB`, `SwapFree` 1.4 GB, zram full-at-boot is gone |
+| `/data` nodiscard | **FAILED as shipped** — `/proc/mounts` still showed `discard`, because the fstab edit removed an option the kernel sets anyway (`set_opt(sbi, DISCARD)` in `fs/f2fs/super.c` `default_options()`). Fix in this branch: mount option `nodiscard` |
+| first-boot dexopt | **did not run** — `init.svc.doha-dexopt-once` stayed empty and `persist.doha.dexopt_status` unset: a `disabled` service plus `on property:sys.boot_completed=1 start ...` never starts. Fix: plain `late_start` service, no trigger |
+| crash buffer | clean, 0 FATAL |
+| perf-audit | exit 0, PASS 4 / FAIL 0 / SKIP 9 (root-only nodes) |
+| thermal | skin `xo_therm` 36 C, `lmh-dcvs-00` 75 C (bus limiter, not skin) |
 
 ## Evaluated: Infamick script (Magisk module) — two tools cherry-picked
 
