@@ -838,8 +838,9 @@ branch does now:
   reboot — on this phone that can be days. init starts it from the `late_start`
   class (not `disabled` plus a `sys.boot_completed` trigger: that pair never
   started on the 2026-11-19 build), the script waits for `sys.boot_completed` and
-  two more minutes, then compiles at `nice -n 19`, once per data wipe: it records
-  `persist.doha.dexopt_status` (`running`/`done`/`failed`), and
+  two more minutes, then compiles at `nice -n 19`, once per build: it records
+  `persist.doha.dexopt_status` as `<ro.build.date.utc>:<running|done|failed>`, so an
+  OTA re-runs the compile instead of leaving the new system apps unoptimised, and
   `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
   equivalent.
 - **`discard` turned off on the f2fs `/data` mount** (`rootdir/fstab.qcom`,
