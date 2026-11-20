@@ -268,6 +268,25 @@ Defaults: `RCLONE_CONF=~/.config/rclone/rclone.conf`,
 `BACKUP_REMOTE=gdrive:doha-backup/crdroid-17.0`. Pass `SKIP_OUT=1` to skip
 `out.tar.zst` (useful if you need a clean `out/` rebuild).
 
+The Drive remote needs a re-auth roughly every 7 days. The OAuth client lives in
+Google Cloud project `gen-lang-client-0544155453` and that app is still in
+**Testing** publishing status, so Google expires its refresh tokens after 7 days
+(`unauthorized_client` from rclone). Two symptoms and their fix:
+
+- `unauthorized_client` -> `rclone config reconnect gdrive:` (browser opens;
+  rclone catches the redirect on `http://127.0.0.1:53682/` itself).
+- `Error 403: access_denied ... can only be accessed by developer-approved
+  testers` -> add the Google account under **Test users** on
+  `console.cloud.google.com/apis/credentials/consent?project=gen-lang-client-0544155453`,
+  then reconnect.
+- To stop the 7-day cycle, set that consent screen's publishing status to
+  **In production** (Google then shows an "unverified app" warning, which is
+  acceptable for a personal client).
+
+`build.sh`/`gcp-build.sh` never depend on Drive: a failed backup leaves the
+release and OTA update intact, and `tools/gcp-build.sh backup` can be re-run at
+any time while the VM still exists.
+
 ## 5. Google apps (optional)
 
 Do this only after the vanilla build boots and works. Pick **one** package
