@@ -239,22 +239,20 @@ the number of knobs the phone is not actually running.
   is gone, and the weather/OmniJaws entry is still there.
 - [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
   entry can still appear in search results; tapping it does nothing.
+- [ ] Verify the suspend-deadlock fix (P2 revert: `IRQF_NO_SUSPEND` restored on
+  `qcom_glink_native` and `smp2p`): unplug USB, lock with the Power button for 5 min,
+  confirm the screen wakes normally without needing a long-press reset (`KPDPWR_N` /
+  `hardware_reset`), and confirm `Battery History` records `-running` -> `+running`.
 - [ ] Verify the shutdown-panic fix on the next flash: `adb shell zcat /proc/config.gz
   | grep PANIC_ON_SSR` must show it unset, and a reboot must no longer leave the
   screen dark with `Kernel panic - not syncing: Subsys notifier chain for modem taking
   too long` in the next boot's `last_kmsg`.
-- [x] **Found on the 2026-11-19 flash**: the dexopt hook did not start (disabled
-  service + property trigger never fires) and `discard` survived because this
-  kernel's f2fs enables it in `default_options()`. Both fixed in the branch
-  (`late_start` service without trigger; mount option `nodiscard`); re-verify on
-  the next flash with `getprop init.svc.doha-dexopt-once` and
-  `adb shell mount | grep ' /data '`.
-- [ ] Verify the first-boot dexopt hook on the next flash: after boot, `getprop
-  persist.doha.dexopt_status` should go `running` -> `done` within ~15 min. If it
-  says `failed`, init could not reach the package service from its SELinux domain
-  (`cmd package compile` needs binder); the fix is a small sepolicy rule or running
-  the compile from an `exec` with a different domain. `tools/dexopt-all.sh` remains
-  the manual fallback.
+- [ ] `doha-dexopt-once` still did not start on build `1795135461` (`nodiscard` and
+  4 GB zram are verified live in `bugreport-...-07-07-57.zip`): a `/vendor/etc/init`
+  service running `/system/bin/sh` without a `seclabel`/domain transition is rejected
+  by init, and Treble neverallows forbid vendor domains from calling `system_server`'s
+  `package` binder service. Either remove the dead vendor service (rely on
+  `tools/dexopt-all.sh`) or move it to `system_ext`/`product` init.
 - [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
   component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
   `denied` per component and exits non-zero if the platform refuses, so a failure

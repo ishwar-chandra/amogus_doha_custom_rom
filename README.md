@@ -832,6 +832,19 @@ branch does now:
   `disksize` write returns `-EBUSY` because `init.target.rc`'s `on fs`
   `swapon_all` already enabled the device (`zram_drv.c: init_done` check), so
   the fstab is the only write that ever applies.
+- **`IRQF_NO_SUSPEND` restored on `qcom_glink_native` and `smp2p`**
+  (`patches/kernel/motorola/msm-4.14.patch`, reverting fork commits `a8b9cfc`
+  and `0c55710`). Dropping `IRQF_NO_SUSPEND` caused a 100%-reproducible
+  deadlock in `dpm_suspend_noirq()` on the first deep sleep after locking the
+  screen on battery: on Trinket (`SM6125`), RPM runs over `qcom_glink_rpm` →
+  `qcom_glink_native` (IRQ 20); without `IRQF_NO_SUSPEND`,
+  `suspend_device_irqs()` marks IRQ 20 `IRQD_WAKEUP_ARMED`, so
+  `irq_pm_check_wakeup()` disables it instead of running the ISR and any RPM
+  `wait_for_completion()` during `suspend_noirq` hangs forever with the panel
+  off and watchdog suspended (requiring a 10 s Power-key reset,
+  `KPDPWR_N` / `hardware_reset`). Restoring the stock Motorola/Qualcomm flags
+  (`IRQF_NO_SUSPEND | IRQF_SHARED` for glink, `IRQF_NO_SUSPEND | IRQF_ONESHOT`
+  for smp2p) matches the 2026-11-18 kernel that survived 22 h / 108 wakes.
 - **`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off** in the kernel defconfig (carried by
   `patches/kernel/motorola/msm-4.14.patch`). The 2026-11-20 bugreport shows a clean
   shutdown reaching `sysrq: Terminate All Tasks` and then panicking with
