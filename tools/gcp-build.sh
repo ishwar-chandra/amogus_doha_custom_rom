@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build amogus_doha on a Google Cloud VM and optionally back up the tree/cache
-# to personal Google Drive (via streaming tar+zstd archives) or publish a
-# GitHub release.
+# Build amogus_doha on a Google Cloud VM and publish the result as a GitHub
+# release. No Google Drive backup: the VM is disposable and every shipped
+# artifact is copied to the GitHub release (and the OTA feed) before deletion.
 #
 # Local commands (they drive gcloud/ssh; the work happens on the VM):
 #   create    the instance: MACHINE + two 375 GB local NVMe
@@ -10,13 +10,7 @@
 #   gh-check  preflight the GitHub token -- run this before a build
 #   finish    wait for the build, verify, release, update OTA, then delete
 #   auto-finish              build both variants, then publish them together in one
-#                            release (NO_RELEASE=1 builds+verifies only); runs on
-#                            the VM, nothing to babysit, no delete
-#   backup                   stream ccache + src-tree + out (.tar.zst) to Google
-#                            Drive in tmux 'backup' (BACKUP_WAIT=1 waits for an
-#                            active build/chain first; SKIP_OUT=1 skips out/)
-#   restore                  stream those archives back onto a fresh VM in tmux
-#                            'restore' (SKIP_OUT=1 skips out/)
+#                            release; runs on the VM, nothing to babysit, no delete
 #   att|logs|state|ssh|fetch|delete
 #   release                  publish zips/ as one GitHub release tag: every
 #                            variant in zips/ (standard + debloat), creating the
@@ -55,17 +49,9 @@
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
 #   REPO, BRANCH, OUT, GH_REPO, OTA_REPO, TAG
-#   NO_RELEASE=1 / NO_OTA=1 / NO_DELETE=1   for `finish` (NO_RELEASE=1 also
-#                                       stops `auto-finish` before releasing)
+#   NO_RELEASE=1 / NO_OTA=1 / NO_DELETE=1   for `finish`
 #   AUTO_FINISH=1                       `build` waits for success, releases,
 #                                       updates OTA and deletes in one command
-#   RCLONE_CONF                         local rclone.conf for backup/restore
-#                                       (default: ~/.config/rclone/rclone.conf)
-#   BACKUP_REMOTE                       rclone target dir for backup/restore
-#                                       (default: gdrive:doha-backup/crdroid-17.0)
-#   BACKUP_WAIT=1                       `backup` waits for active doha/publish
-#                                       tmux sessions to finish cleanly first
-#   SKIP_OUT=1                          skip out.tar.zst in backup/restore
 set -euo pipefail
 
 PROJECT=${PROJECT:-customrom-514215}
@@ -112,10 +98,6 @@ GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
 OTA_REPO=${OTA_REPO:-ishwar-chandra/doha-ota}
 TAG=${TAG:-crdroid-$(date +%Y%m%d)}
 TOKEN_FILE=${TOKEN_FILE:-$HOME/.config/crdroid-gh-token}
-RCLONE_CONF=${RCLONE_CONF:-$HOME/.config/rclone/rclone.conf}
-BACKUP_REMOTE=${BACKUP_REMOTE:-gdrive:doha-backup/crdroid-17.0}
-SKIP_OUT=${SKIP_OUT:-0}
-BACKUP_WAIT=${BACKUP_WAIT:-0}
 # mka's -j comes from the build machine, not from nproc at launch time,
 # since build.sh would otherwise cache the core count of a smaller box.
 JOBS=${JOBS:-$(printf '%s' "$MACHINE" | sed -n 's/.*-custom-\([0-9]*\)-.*/\1/p;s/.*-\([0-9]*\)$/\1/p')}
@@ -739,11 +721,6 @@ wait_build && save_prop "$(chan "$SECOND")" || { echo "second build failed, noth
 run verify "$SECOND" || { echo "second variant verify FAILED, nothing published"; exit 1; }
 
 # One release carries every variant now sitting in zips/.
-if [ "${NO_REL:-0}" = 1 ]; then
-    echo "chain done $(date -u): both variants built and verified in /mnt/build/zips; NO_RELEASE=1 so nothing published, VM kept"
-    exit 0
-fi
-
 token; run release "$SECOND" "$TAG" "$GHR" || { echo "release FAILED, nothing published"; exit 1; }
 echo "released $TAG with both variants $(date -u +%H:%M)"
 token; run ota "$SECOND" "$TAG" "$OTAR" "" "$GHR" standard || { echo "standard ota FAILED"; exit 1; }
@@ -755,163 +732,10 @@ echo "chain done $(date -u): both variants published together under $TAG, VM kep
 CHAIN
   gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$NAME:doha-remote.sh" >/dev/null
   gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$NAME:doha-chain.sh" >/dev/null
-  if [ "${NO_RELEASE:-0}" != 1 ]; then
-    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token_master'
-  else
-    gcloud_ compute ssh "$NAME" --command 'shred -u ~/.gh_token_master ~/.gh_token 2>/dev/null || rm -f ~/.gh_token_master ~/.gh_token'
-  fi
-  gcloud_ compute ssh "$NAME" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' NO_REL='${NO_RELEASE:-0}' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token_master'
+  gcloud_ compute ssh "$NAME" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
   echo "auto-finish: chain runs in tmux 'publish' on $NAME; log: $NAME:~/doha-chain.log"
-  if [ "${NO_RELEASE:-0}" = 1 ]; then
-    echo "auto-finish: NO_RELEASE=1 — builds $([ "$first" = 1 ] && echo debloat || echo standard), then $([ "$first" = 1 ] && echo standard || echo debloat), verifies both, and stops without releasing; VM kept"
-  else
-    echo "auto-finish: builds $([ "$first" = 1 ] && echo debloat || echo standard), then $([ "$first" = 1 ] && echo standard || echo debloat), and publishes both in one release; the VM is not deleted"
-  fi ;;
-
-backup)
-  # Stream ccache, src-tree (minus out/), and out/ as compressed .tar.zst
-  # archives directly to Google Drive via rclone inside tmux 'backup' on the
-  # VM. Streaming avoids writing temporary archives to NVMe and avoids Drive's
-  # per-file API rate limit while preserving POSIX modes, symlinks, and mtimes.
-  status=$(instance_status)
-  [ "$status" = RUNNING ] || { echo "backup: $NAME is $status" >&2; exit 1; }
-  [ -s "$RCLONE_CONF" ] || { echo "backup: missing rclone config: $RCLONE_CONF" >&2; exit 1; }
-  case $SKIP_OUT in 0|1) ;; *) echo "SKIP_OUT must be 0 or 1" >&2; exit 1 ;; esac
-  case $BACKUP_WAIT in 0|1) ;; *) echo "BACKUP_WAIT must be 0 or 1" >&2; exit 1 ;; esac
-  tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
-  cat > "$tmpd/doha-backup.sh" <<'BACKUP_SH'
-#!/bin/bash
-set -uo pipefail
-exec >>"$HOME/backup.log" 2>&1
-BUILD=/mnt/build
-CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
-DEST=${DEST:?missing DEST}
-SKIP_OUT=${SKIP_OUT:-0}
-BACKUP_WAIT=${BACKUP_WAIT:-0}
-SESS=${SESS:-doha}
-rm -f "$HOME/backup.exit"
-
-fail() { echo "backup FAILED: $*" ; echo 1 > "$HOME/backup.exit"; exit 1; }
-
-echo "=== backup start $(date -u) dest=$DEST skip_out=$SKIP_OUT wait=$BACKUP_WAIT ==="
-if tmux has-session -t "$SESS" 2>/dev/null || tmux has-session -t publish 2>/dev/null; then
-  if [ "$BACKUP_WAIT" != 1 ]; then
-    fail "build/publish tmux session is active; finish first or re-run with BACKUP_WAIT=1"
-  fi
-  echo "waiting for active build/publish tmux sessions to finish..."
-  while tmux has-session -t "$SESS" 2>/dev/null || tmux has-session -t publish 2>/dev/null; do
-    sleep 60
-  done
-  if [ -f "$HOME/build.exit" ] && [ "$(cat "$HOME/build.exit")" != 0 ]; then
-    fail "build exited $(cat "$HOME/build.exit"); skipping backup of broken tree"
-  fi
-  echo "build sessions finished $(date -u), starting backup"
-fi
-
-rclone mkdir "$DEST" || fail "rclone mkdir $DEST failed"
-
-stream_archive() {
-  local name=$1 dir=$2
-  shift 2
-  echo "[$(date -u +%H:%M)] uploading $name from $dir ($*)..."
-  if ! ( tar -C "$dir" -cf - "$@" | zstd -T0 -3 | rclone rcat --drive-chunk-size 128M "$DEST/$name" ); then
-    fail "upload of $name failed"
-  fi
-  echo "[$(date -u +%H:%M)] done $name"
-}
-
-[ -d "$CACHE/ccache" ] && stream_archive ccache.tar.zst "$CACHE" ccache
-[ -d "$BUILD/src" ] || fail "missing $BUILD/src"
-stream_archive src-tree.tar.zst "$BUILD" --exclude=src/out src
-if [ "$SKIP_OUT" != 1 ] && [ -d "$BUILD/src/out" ]; then
-  stream_archive out.tar.zst "$BUILD/src" out
-fi
-
-echo "=== remote listing ==="
-rclone ls "$DEST" || true
-echo 0 > "$HOME/backup.exit"
-echo "=== backup done $(date -u) ==="
-BACKUP_SH
-  gcloud_ compute scp --quiet "$RCLONE_CONF" "$NAME:.rclone.conf.tmp" >/dev/null
-  gcloud_ compute scp --quiet "$tmpd/doha-backup.sh" "$NAME:doha-backup.sh" >/dev/null
-  remote_root=${BACKUP_REMOTE%%:*}:
-  gcloud_ compute ssh "$NAME" --command "
-    set -euo pipefail
-    mkdir -p ~/.config/rclone && mv ~/.rclone.conf.tmp ~/.config/rclone/rclone.conf && chmod 600 ~/.config/rclone/rclone.conf
-    if ! command -v rclone >/dev/null || ! command -v zstd >/dev/null; then
-      sudo apt-get -o DPkg::Lock::Timeout=900 update -qq
-      sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y -qq rclone zstd
-    fi
-    rclone lsd '$remote_root' >/dev/null
-    chmod +x \$HOME/doha-backup.sh
-    tmux kill-session -t backup 2>/dev/null || true
-    tmux new-session -d -s backup \"DEST='$BACKUP_REMOTE' SKIP_OUT='$SKIP_OUT' BACKUP_WAIT='$BACKUP_WAIT' SESS='$SESSION' \$HOME/doha-backup.sh\"
-    sleep 2; tmux ls; tail -n 3 \$HOME/backup.log 2>/dev/null || true
-  "
-  echo "backup: running in tmux 'backup' on $NAME -> $BACKUP_REMOTE (log: $NAME:~/backup.log)" ;;
-
-restore)
-  # Stream ccache, src-tree, and (unless SKIP_OUT=1) out/ archives back from
-  # Google Drive onto a fresh VM inside tmux 'restore'.
-  status=$(instance_status)
-  [ "$status" = RUNNING ] || { echo "restore: $NAME is $status" >&2; exit 1; }
-  [ -s "$RCLONE_CONF" ] || { echo "restore: missing rclone config: $RCLONE_CONF" >&2; exit 1; }
-  case $SKIP_OUT in 0|1) ;; *) echo "SKIP_OUT must be 0 or 1" >&2; exit 1 ;; esac
-  tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
-  cat > "$tmpd/doha-restore.sh" <<'RESTORE_SH'
-#!/bin/bash
-set -uo pipefail
-exec >>"$HOME/restore.log" 2>&1
-BUILD=/mnt/build
-CACHE=$([ -b /dev/nvme0n2 ] && echo /mnt/cache || echo "$BUILD/cache")
-DEST=${DEST:?missing DEST}
-SKIP_OUT=${SKIP_OUT:-0}
-rm -f "$HOME/restore.exit"
-
-fail() { echo "restore FAILED: $*" ; echo 1 > "$HOME/restore.exit"; exit 1; }
-
-echo "=== restore start $(date -u) src=$DEST skip_out=$SKIP_OUT ==="
-mkdir -p "$BUILD" "$CACHE"
-
-restore_archive() {
-  local name=$1 dir=$2
-  echo "[$(date -u +%H:%M)] restoring $name into $dir..."
-  if ! ( rclone cat "$DEST/$name" | zstd -dc -T0 | tar -C "$dir" -xf - ); then
-    fail "restore of $name failed"
-  fi
-  echo "[$(date -u +%H:%M)] done $name"
-}
-
-rclone ls "$DEST/src-tree.tar.zst" >/dev/null 2>&1 || fail "$DEST/src-tree.tar.zst not found"
-if rclone ls "$DEST/ccache.tar.zst" >/dev/null 2>&1; then
-  restore_archive ccache.tar.zst "$CACHE"
-fi
-restore_archive src-tree.tar.zst "$BUILD"
-if [ "$SKIP_OUT" != 1 ] && rclone ls "$DEST/out.tar.zst" >/dev/null 2>&1; then
-  restore_archive out.tar.zst "$BUILD/src"
-fi
-
-df -h "$BUILD" "$CACHE"
-echo 0 > "$HOME/restore.exit"
-echo "=== restore done $(date -u) ==="
-RESTORE_SH
-  gcloud_ compute scp --quiet "$RCLONE_CONF" "$NAME:.rclone.conf.tmp" >/dev/null
-  gcloud_ compute scp --quiet "$tmpd/doha-restore.sh" "$NAME:doha-restore.sh" >/dev/null
-  remote_root=${BACKUP_REMOTE%%:*}:
-  gcloud_ compute ssh "$NAME" --command "
-    set -euo pipefail
-    mkdir -p ~/.config/rclone && mv ~/.rclone.conf.tmp ~/.config/rclone/rclone.conf && chmod 600 ~/.config/rclone/rclone.conf
-    if ! command -v rclone >/dev/null || ! command -v zstd >/dev/null; then
-      sudo apt-get -o DPkg::Lock::Timeout=900 update -qq
-      sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y -qq rclone zstd
-    fi
-    rclone ls '$BACKUP_REMOTE/src-tree.tar.zst' >/dev/null
-    chmod +x \$HOME/doha-restore.sh
-    tmux kill-session -t restore 2>/dev/null || true
-    tmux new-session -d -s restore \"DEST='$BACKUP_REMOTE' SKIP_OUT='$SKIP_OUT' \$HOME/doha-restore.sh\"
-    sleep 2; tmux ls; tail -n 3 \$HOME/restore.log 2>/dev/null || true
-  "
-  echo "restore: running in tmux 'restore' on $NAME <- $BACKUP_REMOTE (log: $NAME:~/restore.log)" ;;
+  echo "auto-finish: builds $([ "$first" = 1 ] && echo debloat || echo standard), then $([ "$first" = 1 ] && echo standard || echo debloat), and publishes both in one release; the VM is not deleted" ;;
 
 setup|state|verify) remote_exec "$1" ;;
 

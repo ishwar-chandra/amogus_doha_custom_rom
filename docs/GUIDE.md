@@ -234,33 +234,38 @@ variant's. Nothing after the call belongs to the workstation, so a dropped
 connection cannot leave a finished build unpublished. The VM is never deleted.
 
 ```sh
-TAG=crdroid-20261120 tools/gcp-build.sh auto-finish              # build both + publish
-NO_RELEASE=1 TAG=crdroid-20261120 tools/gcp-build.sh auto-finish # build + verify only, no release
-FIRST_VARIANT=1 TAG=... tools/gcp-build.sh auto-finish           # if the running build is debloat
+TAG=crdroid-20261120 tools/gcp-build.sh auto-finish      # build both + publish
+FIRST_VARIANT=1 TAG=... tools/gcp-build.sh auto-finish   # if the running build is debloat
 gcloud compute ssh <vm> --command 'tail -f ~/doha-chain.log'
 ```
 
 The token is shredded at the end of the chain (`shred -u ~/.gh_token_master`), and
 the VM keeps its 48 h `--max-run-duration` deletion timer.
 
+This is the only publishing path: `auto-finish` always releases once both variants
+verify. `finish` keeps its own `NO_RELEASE=1` / `NO_OTA=1` / `NO_DELETE=1` switches
+for a single already-built variant.
+
 ## 4.5 Backing up and restoring the full build tree (Google Drive)
 
-To delete the VM between sessions without paying for another 9-hour cold build,
-stream three compressed archives (`ccache.tar.zst`, `src-tree.tar.zst`, `out.tar.zst`)
-to your personal Google Drive via `rclone` (GCP ↔ Google Drive data transfer is free,
-and streaming 3 archives avoids Drive's per-file API limit while preserving POSIX
-permissions, symlinks, and mtimes):
+`tools/drive-backup.sh` is deliberately **separate** from the build/release chain —
+nothing in `tools/gcp-build.sh` or `build.sh` depends on Drive. To delete the VM
+between sessions without paying for another 9-hour cold build, it streams three
+compressed archives (`ccache.tar.zst`, `src-tree.tar.zst`, `out.tar.zst`) to your
+personal Google Drive via `rclone` (GCP ↔ Drive transfer is free, and streaming
+archives avoids Drive's per-file API limit while preserving POSIX permissions,
+symlinks and mtimes):
 
 ```sh
-# After a build finishes (or with BACKUP_WAIT=1 to wait for an active build/chain):
-tools/gcp-build.sh backup
-BACKUP_WAIT=1 tools/gcp-build.sh backup
+# After a build finishes (or BACKUP_WAIT=1 to wait for an active build/chain):
+tools/drive-backup.sh backup
+BACKUP_WAIT=1 tools/drive-backup.sh backup
+tools/drive-backup.sh status
 gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/backup.log'
 
 # On a fresh VM later:
-tools/gcp-build.sh create
-tools/gcp-build.sh setup
-tools/gcp-build.sh restore
+tools/gcp-build.sh create && tools/gcp-build.sh setup
+tools/drive-backup.sh restore
 gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/restore.log'
 ```
 
