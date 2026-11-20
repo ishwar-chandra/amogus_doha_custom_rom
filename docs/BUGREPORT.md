@@ -274,9 +274,12 @@ SIGABRT, uid 1082, ppid 1. ART's pre-reboot dexopt copies the partition layout i
 chroot and bind-mounts `system_ext/lib`; on this device there are no dynamic partitions,
 so `/system_ext` is a symlink into `/system`, and the target is a symlink's child. The
 check refuses that and the process aborts. Effect: **pre-reboot dexopt is skipped after
-an update** (one tombstone per update, no crash loop). Not fixable in this kit — it is
-ART's own check — but it is the reason the first-boot `speed-profile` compile matters;
-see the dexopt hook below.
+an update** (one tombstone per update, no crash loop). Deliberately **not** patched: the
+fix lives in ART's chroot plumbing (`dexopt_chroot_setup.cc`, `BindMount`), where a
+symlinked parent has to be resolved before mounting; a blind C++ change to a core
+runtime that cannot be compile-tested outside the build is a worse trade than one
+skipped dexopt pass. The first-boot `speed-profile` hook below is the compensation and
+now re-runs after every OTA (the flag records `ro.build.date.utc`).
 
 **C2. First-boot dexopt hook did not run on this build.** `init.svc.doha-dexopt-once`
 empty, `persist.doha.dexopt_status` unset at 4 min uptime. Cause: the service was
