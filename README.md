@@ -835,16 +835,22 @@ branch does now:
   (`rootdir/vendor/bin/doha-dexopt-once.sh`, started from `init.amogus.rc` on
   `sys.boot_completed=1`). A fresh flash otherwise leaves apps in verify/JIT mode
   until the platform's idle `bg-dexopt-job` runs, which wants charging, idle and no
-  reboot — on this phone that can be days. The service waits five minutes, then
-  compiles at `nice -n 19`, once per data wipe: it records
+  reboot — on this phone that can be days. init starts it from the `late_start`
+  class (not `disabled` plus a `sys.boot_completed` trigger: that pair never
+  started on the 2026-11-19 build), the script waits for `sys.boot_completed` and
+  two more minutes, then compiles at `nice -n 19`, once per data wipe: it records
   `persist.doha.dexopt_status` (`running`/`done`/`failed`), and
   `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
   equivalent.
-- **`discard` dropped from the f2fs `/data` mount** (`rootdir/fstab.qcom`,
-  `fstab_dynamic.qcom`). With `discard` f2fs trims on every delete, which on this
-  eMMC shows up as I/O stalls while apps are being evicted — exactly when the
-  phone is already struggling. Android's periodic `fstrim` (vold idle maintenance)
-  still trims the partition, just in one batch instead of continuously.
+- **`discard` turned off on the f2fs `/data` mount** (`rootdir/fstab.qcom`,
+  `fstab_dynamic.qcom`, option `nodiscard`). With discard f2fs trims on every
+  delete, which on this eMMC shows up as I/O stalls while apps are being evicted —
+  exactly when the phone is already struggling. Android's periodic `fstrim` (vold
+  idle maintenance) still trims the partition, in one batch instead of
+  continuously. Note the option has to be `nodiscard`: removing `discard` from the
+  fstab did nothing, because this Motorola 4.14 kernel's f2fs calls
+  `set_opt(sbi, DISCARD)` in `default_options()` (`fs/f2fs/super.c`), so discard is
+  on unless a mount option clears it.
 
 Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
 selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds

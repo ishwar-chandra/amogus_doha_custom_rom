@@ -239,6 +239,12 @@ the number of knobs the phone is not actually running.
   is gone, and the weather/OmniJaws entry is still there.
 - [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
   entry can still appear in search results; tapping it does nothing.
+- [x] **Found on the 2026-11-19 flash**: the dexopt hook did not start (disabled
+  service + property trigger never fires) and `discard` survived because this
+  kernel's f2fs enables it in `default_options()`. Both fixed in the branch
+  (`late_start` service without trigger; mount option `nodiscard`); re-verify on
+  the next flash with `getprop init.svc.doha-dexopt-once` and
+  `adb shell mount | grep ' /data '`.
 - [ ] Verify the first-boot dexopt hook on the next flash: after boot, `getprop
   persist.doha.dexopt_status` should go `running` -> `done` within ~15 min. If it
   says `failed`, init could not reach the package service from its SELinux domain

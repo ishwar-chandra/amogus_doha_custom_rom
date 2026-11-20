@@ -131,7 +131,7 @@ index 52c0155..32abba9 100644
  vendor/lib64/libril-qc-hal-qmi.so
  vendor/lib64/libril-qc-logger.so
 diff --git a/rootdir/fstab.qcom b/rootdir/fstab.qcom
-index 269265a..5ee1083 100644
+index 269265a..60a714c 100644
 --- a/rootdir/fstab.qcom
 +++ b/rootdir/fstab.qcom
 @@ -6,9 +6,11 @@
@@ -144,7 +144,7 @@ index 269265a..5ee1083 100644
  /dev/block/by-name/vendor                               /vendor                  erofs    ro                                 wait,slotselect,first_stage_mount
 -/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
 +/dev/block/by-name/metadata                             /metadata                ext4    noatime,nosuid,nodev,discard                         wait,check,formattable,first_stage_mount
-+/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
++/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nodiscard,nosuid,nodev,noatime,nodiratime,quota,nobarrier,reserve_root=32768,resgid=1065   latemount,wait,check,formattable,quota,reservedsize=128M
  /devices/platform/soc/4784000.sdhci/mmc_host*           auto                     auto    defaults                                             wait,voldmanaged=sdcard1:auto
  /dev/block/bootdevice/by-name/modem                     /vendor/firmware_mnt     ext4    ro,nosuid,nodev,context=u:object_r:firmware_file:s0  wait,slotselect
  /dev/block/bootdevice/by-name/dsp                       /vendor/dsp              ext4    ro,nosuid,nodev,barrier=1                            wait,slotselect
@@ -156,7 +156,7 @@ index 269265a..5ee1083 100644
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=2147483648
  
 diff --git a/rootdir/fstab_dynamic.qcom b/rootdir/fstab_dynamic.qcom
-index fbe42bb..e29256b 100644
+index fbe42bb..a58df71 100644
 --- a/rootdir/fstab_dynamic.qcom
 +++ b/rootdir/fstab_dynamic.qcom
 @@ -10,7 +10,7 @@ system                                                  /system
@@ -164,7 +164,7 @@ index fbe42bb..e29256b 100644
  product                                                 /product                 erofs    ro                                         wait,slotselect,avb,logical,first_stage_mount
  /dev/block/by-name/metadata                             /metadata                ext4    noatime,nosuid,nodev,discard                         wait,formattable,first_stage_mount
 -/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,discard,nosuid,nodev,noatime,nodiratime,nobarrier,reserve_root=32768,resgid=1065,inlinecrypt   latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,quota,reservedsize=128M,checkpoint=fs
-+/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nosuid,nodev,noatime,nodiratime,nobarrier,reserve_root=32768,resgid=1065,inlinecrypt   latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,quota,reservedsize=128M,checkpoint=fs
++/dev/block/bootdevice/by-name/userdata                  /data                    f2fs    rw,nodiscard,nosuid,nodev,noatime,nodiratime,nobarrier,reserve_root=32768,resgid=1065,inlinecrypt   latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,quota,reservedsize=128M,checkpoint=fs
  /devices/platform/soc/4784000.sdhci/mmc_host*           auto                     auto    defaults                                             wait,voldmanaged=sdcard1:auto
  /dev/block/bootdevice/by-name/modem                     /vendor/firmware_mnt     ext4    ro,nosuid,nodev,context=u:object_r:firmware_file:s0  wait,slotselect
  /dev/block/bootdevice/by-name/dsp                       /vendor/dsp              ext4    ro,nosuid,nodev,barrier=1,defcontext=u:object_r:adsprpcd_file:s0                            wait,slotselect
@@ -176,10 +176,10 @@ index fbe42bb..e29256b 100644
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=50%
 diff --git a/rootdir/vendor/bin/doha-dexopt-once.sh b/rootdir/vendor/bin/doha-dexopt-once.sh
 new file mode 100644
-index 0000000..7bf323b
+index 0000000..3f132cd
 --- /dev/null
 +++ b/rootdir/vendor/bin/doha-dexopt-once.sh
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,35 @@
 +#!/system/bin/sh
 +# Compile every installed package with speed-profile, once per data wipe.
 +#
@@ -188,7 +188,7 @@ index 0000000..7bf323b
 +# the platform's idle bg-dexopt-job gets around to them, which on this phone can be
 +# days because the job wants charging + idle + no reboot.
 +#
-+# Started from init.amogus.rc on sys.boot_completed=1 as a oneshot service. It waits
++# Started by init as a oneshot late_start service (init.amogus.rc). It waits
 +# five minutes for the first-boot storm to pass, then compiles at nice 19 so the UI
 +# keeps priority. The outcome is recorded in persist.doha.dexopt_status
 +# (running|done|failed) - check it with `getprop persist.doha.dexopt_status`.
@@ -200,7 +200,14 @@ index 0000000..7bf323b
 +[ "$(getprop persist.doha.dexopt_once)" = "0" ] && exit 0
 +[ "$status" = "done" ] && exit 0
 +
-+sleep 300
++# late_start can fire before the boot has finished; wait for it, then a couple of
++# minutes so the post-boot package scan and GMS setup are not competing.
++i=0
++while [ "$(getprop sys.boot_completed)" != "1" ] && [ $i -lt 180 ]; do
++    sleep 2
++    i=$((i + 1))
++done
++sleep 120
 +
 +setprop persist.doha.dexopt_status running
 +if nice -n 19 cmd package compile -m speed-profile -a >/dev/null 2>&1; then
@@ -209,7 +216,7 @@ index 0000000..7bf323b
 +    setprop persist.doha.dexopt_status failed
 +fi
 diff --git a/rootdir/vendor/etc/init/init.amogus.rc b/rootdir/vendor/etc/init/init.amogus.rc
-index 879062c..a918c00 100644
+index 879062c..074a824 100644
 --- a/rootdir/vendor/etc/init/init.amogus.rc
 +++ b/rootdir/vendor/etc/init/init.amogus.rc
 @@ -16,10 +16,10 @@ on init
@@ -248,15 +255,15 @@ index 879062c..a918c00 100644
 +# persist.doha.dexopt_status; set persist.doha.dexopt_once=0 to skip.
 +# /system/bin/sh reads the script, so it does not depend on the copy keeping its
 +# executable bit (rootdir files are installed by copy-files-recursive).
++# No `disabled` and no property trigger: the 2026-11-19 build shipped this as
++# disabled + `on property:sys.boot_completed=1 start ...` and init never started
++# it (init.svc.doha-dexopt-once stayed empty). A plain late_start service starts
++# by itself; the script exits unless persist.doha.dexopt_status is unset.
 +service doha-dexopt-once /system/bin/sh /vendor/bin/doha-dexopt-once.sh
 +    class late_start
 +    user root
 +    group root system
 +    oneshot
-+    disabled
-+
-+on property:sys.boot_completed=1
-+    start doha-dexopt-once
  
  service vendor.amogus /vendor/bin/init.amogus.sh
      class core
