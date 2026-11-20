@@ -301,6 +301,31 @@ during `Permission_syncPackages`. Standard Android boot race, no functional effe
 WhatsApp 101, Gmail 92, Launcher3 78. Truecaller is the largest non-system consumer —
 still the open app-disable decision.
 
+**C7. The phone went dark after the update — kernel panic in the shutdown path.**
+`FS/data/misc/recovery/last_kmsg.3` preserves the boot before the current one:
+`[1268] EXT4-fs (loopN): errors=remount-ro ... on umount` x38 (APEX unmounts of an
+orderly shutdown), then `[1271.039845] sysrq: Terminate All Tasks`, then
+
+    [1276.214144] Kernel panic - not syncing: Subsys notifier chain for modem taking too long
+    Call trace: panic -> notif_timeout_handler -> call_timer_fn -> run_timer_softirq
+                -> ... -> lpm_cpuidle_enter -> do_idle
+
+So during a clean shutdown the HLOS->modem sysmon step did not finish inside the 20 s
+SSR notifier timeout, and the handler **panicked** because the kernel is built with
+`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y` (`arch/arm64/configs/vendor/amogus_defconfig`,
+next to `CONFIG_SSR_SYSMON_NOTIF_TIMEOUT=20000`). The panic reboot loop stopped at
+"Rebooting in 5 seconds.." with the panel dark, so the phone looked switched off; the
+current boot then reports `hardware_reset`, i.e. a power-key reset by the owner, not
+the panic itself. Live confirmation on the device: `zcat /proc/config.gz` still lists
+`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y`.
+
+Fix (this branch): the same defconfig line is flipped to
+`# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set` in
+`patches/kernel/motorola/msm-4.14.patch`. The timeout then keeps its diagnostic value
+(`WARN` + a blocked-task dump in `subsystem_restart.c`) but can no longer turn a slow
+modem handshake during shutdown into a black screen. Not the battery: 45% at capture,
+3.75 V, health 2, charging on AC.
+
 **C6. Benign noise, explained.** `No package ID 6b found for resource ID 0x6b0b0013` in
 naviapp/truecaller/pinterest/photos right before "App measurement initialization"
 (Firebase probing a shared resource); `KeyMasterHalDevice: Attest key send cmd failed`

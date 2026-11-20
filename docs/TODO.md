@@ -195,7 +195,7 @@ the number of knobs the phone is not actually running.
 
 - [x] **zram was 1 GB and full.** Bugreport: `MemTotal 3685120 kB`,
   `SwapTotal 1048572 kB`, `SwapFree 2868 kB` (99.7% used), 133 LMK kills in that
-  capture. `fstab.qcom` now sets `zramsize=2147483648`; the post_boot 50%-of-RAM
+  capture. `fstab.qcom` now sets `zramsize=4294967296`; the post_boot 50%-of-RAM
   resize can never apply (`swapon_all` in `init.target.rc` `on fs` initialises
   zram first, and `zram_drv.c` refuses a new `disksize` once `init_done`).
   Gate: `perf-audit.sh` reports `SwapTotal ~2047 MB` and LMK kills drop under
@@ -239,6 +239,10 @@ the number of knobs the phone is not actually running.
   is gone, and the weather/OmniJaws entry is still there.
 - [ ] Known limitation: Settings search indexes the XML at build time, so a hidden
   entry can still appear in search results; tapping it does nothing.
+- [ ] Verify the shutdown-panic fix on the next flash: `adb shell zcat /proc/config.gz
+  | grep PANIC_ON_SSR` must show it unset, and a reboot must no longer leave the
+  screen dark with `Kernel panic - not syncing: Subsys notifier chain for modem taking
+  too long` in the next boot's `last_kmsg`.
 - [x] **Found on the 2026-11-19 flash**: the dexopt hook did not start (disabled
   service + property trigger never fires) and `discard` survived because this
   kernel's f2fs enables it in `default_options()`. Both fixed in the branch

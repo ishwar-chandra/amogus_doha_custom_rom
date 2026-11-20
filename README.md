@@ -820,14 +820,26 @@ branch does now:
   apart again. A/B test with `READAHEAD_KB=512 ./build.sh …`.
 - **`nr_requests` back to 128** (the kernel default). It was 256; nothing
   measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
-- **zram 1 GB → 2 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
+- **zram 1 GB → 4 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
   for consistency; doha builds non-dynamic, so `fstab.qcom` is the live file).
+  4 GB is a deliberate over-commit on a 3.6 GB device: zram holds *compressed*
+  pages, so 2 GB filled to 607 MB in use after one boot while `SwapFree` still
+  looked healthy — the cap, not the compressor, was deciding how much of the app
+  set survives.
   Evidence: the 2026-11-18 bugreport shows `SwapTotal 1048572 kB` with
   `SwapFree 2868 kB` — zram 99.7% full — and 133 LMK kills in that capture.
   `init.qcom.post_boot.legacy.sh` *tries* to size zram at 50% of RAM, but its
   `disksize` write returns `-EBUSY` because `init.target.rc`'s `on fs`
   `swapon_all` already enabled the device (`zram_drv.c: init_done` check), so
   the fstab is the only write that ever applies.
+- **`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off** in the kernel defconfig (carried by
+  `patches/kernel/motorola/msm-4.14.patch`). The 2026-11-20 bugreport shows a clean
+  shutdown reaching `sysrq: Terminate All Tasks` and then panicking with
+  `Subsys notifier chain for modem taking too long`: the HLOS->modem sysmon handshake
+  overran the 20 s `CONFIG_SSR_SYSMON_NOTIF_TIMEOUT`, and the panic turned an ordinary
+  power-off into a dark screen. The timeout stays as a diagnostic (`WARN` plus a
+  blocked-task dump); it just no longer panics.
+
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
 

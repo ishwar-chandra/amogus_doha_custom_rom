@@ -131,7 +131,7 @@ index 52c0155..32abba9 100644
  vendor/lib64/libril-qc-hal-qmi.so
  vendor/lib64/libril-qc-logger.so
 diff --git a/rootdir/fstab.qcom b/rootdir/fstab.qcom
-index 269265a..60a714c 100644
+index 269265a..5c1c30f 100644
 --- a/rootdir/fstab.qcom
 +++ b/rootdir/fstab.qcom
 @@ -6,9 +6,11 @@
@@ -153,7 +153,7 @@ index 269265a..60a714c 100644
  # and fails if it does not find it.
  /dev/block/bootdevice/by-name/misc                      /misc                    emmc    defaults                                             defaults
 -/dev/block/zram0                                        none                     swap    defaults                                             zramsize=1073741824
-+/dev/block/zram0                                        none                     swap    defaults                                             zramsize=2147483648
++/dev/block/zram0                                        none                     swap    defaults                                             zramsize=4294967296
  
 diff --git a/rootdir/fstab_dynamic.qcom b/rootdir/fstab_dynamic.qcom
 index fbe42bb..a58df71 100644
