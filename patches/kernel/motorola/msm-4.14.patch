@@ -353,3 +353,41 @@ diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/ven
  CONFIG_MSM_BOOT_STATS=y
  # CONFIG_MSM_BOOT_TIME_MARKER is not set
  # CONFIG_MSM_CORE_HANG_DETECT is not set
+diff --git a/drivers/rpmsg/qcom_glink_native.c b/drivers/rpmsg/qcom_glink_native.c
+index fcb46a843e47..06d90b89f876 100644
+--- a/drivers/rpmsg/qcom_glink_native.c
++++ b/drivers/rpmsg/qcom_glink_native.c
+@@ -2047,12 +2047,7 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
+ 	if (vm_support)
+ 		irqflags = IRQF_TRIGGER_RISING;
+ 	else
+-		/*
+-		 * enable_irq_wake() below arms this IRQ as a wake source.
+-		 * IRQF_NO_SUSPEND as well makes the IRQ core log
+-		 * "misconfigured IRQ" and breaks wakeup accounting.
+-		 */
+-		irqflags = IRQF_SHARED;
++		irqflags = IRQF_NO_SUSPEND | IRQF_SHARED;
+ 
+ 	ret = devm_request_irq(dev, irq,
+ 			       qcom_glink_native_intr,
+diff --git a/drivers/soc/qcom/smp2p.c b/drivers/soc/qcom/smp2p.c
+index a5e0cf3b85c3..afb64a86aae4 100644
+--- a/drivers/soc/qcom/smp2p.c
++++ b/drivers/soc/qcom/smp2p.c
+@@ -677,14 +677,9 @@ static int qcom_smp2p_probe(struct platform_device *pdev)
+ 		goto unwind_interfaces;
+ 	}
+ 
+-	/*
+-	 * enable_irq_wake() below arms this IRQ as a wake source.
+-	 * IRQF_NO_SUSPEND as well makes the IRQ core log
+-	 * "misconfigured IRQ" and breaks wakeup accounting.
+-	 */
+ 	ret = devm_request_threaded_irq(&pdev->dev, smp2p->irq,
+ 					qcom_smp2p_isr, qcom_smp2p_intr,
+-					IRQF_ONESHOT,
++					IRQF_NO_SUSPEND | IRQF_ONESHOT,
+ 					"smp2p", (void *)smp2p);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "failed to request interrupt\n");

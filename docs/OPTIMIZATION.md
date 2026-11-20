@@ -93,8 +93,9 @@ image; the running build on the VM predates all of it.
 | storage | `nr_requests` 256 -> 128, dead read-ahead writes removed | same patch (init.amogus.rc) |
 | storage | read-ahead single owner, `@READAHEAD_KB@` (default 128) | `patches/device/qcom/common.patch` |
 | UI | app transition scale 0.8, Launcher3 DT2S on by default | `amogus_doha.patch`, `Launcher3.patch` |
+| kernel stability | `IRQF_NO_SUSPEND` restored on `qcom_glink_native` and `smp2p` (reverts `a8b9cfc`/`0c55710`, which deadlocked `dpm_suspend_noirq()` on every deep sleep; see BUGREPORT P2) | `patches/kernel/motorola/msm-4.14.patch` |
 | kernel stability | `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off (a slow modem sysmon handshake during shutdown panicked the device; see BUGREPORT capture C7) | `patches/kernel/motorola/msm-4.14.patch` |
-| kernel stability | P1 modem-notifier panic, glink/smp2p `IRQF_NO_SUSPEND`, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `73b7957` (branch `doha-kernel-fixes-2026-11-19`) |
+| kernel stability | P1 modem-notifier dump/qcacld SSR fix, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `73b7957` (branch `doha-kernel-fixes-2026-11-19`) |
 | policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
 | GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
 | debloat | settings entries for removed apps hidden at runtime | `packages/apps/crDroidSettings.patch` |

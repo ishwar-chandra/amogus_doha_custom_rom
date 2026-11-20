@@ -51,17 +51,28 @@ at `73b7957`.
   `Subsys notifier chain for modem taking too long`.
 - [ ] If it still panics, attach the new stack dump from `710ed46`.
 
-## P2 — Suspend ineffective; glink/smp2p wake IRQs misconfigured
-**Status:** partial (kernel flags fixed), device-unverified. **Severity:** high.
-**Summary:** Nearly every suspend attempt resumed on `misconfigured IRQ 20 glink-native`; pending
-sources also include `NETLINK`, `SensorsHAL_WAKEUP`, `smp2p-sleepstate`, and IPA.
-**Fix:** kernel `a8b9cfcea310` (glink) and `0c55710bfa99` (smp2p) drop `IRQF_NO_SUSPEND` from IRQs
-that use `enable_irq_wake()`. `NETLINK`/sensor wakeups are userspace.
-- [x] Both kernel commits in the pinned branch.
-- [ ] Screen off on battery 10 min; bugreport must have zero
-  `misconfigured IRQ 20 glink-native`.
-- [ ] Compare `PM: suspend entry`/`Some devices failed to suspend` with capture B (202/20).
-- [ ] Incoming call while suspended must wake and ring; if not, revert P2 commits and report.
+## P2 — Suspend deadlock after dropping `IRQF_NO_SUSPEND` on glink/smp2p (reverted)
+**Status:** reverted in kit patch (`patches/kernel/motorola/msm-4.14.patch`), device-unverified. **Severity:** critical (was high).
+**Summary:** Dropping `IRQF_NO_SUSPEND` in fork commits `a8b9cfcea310` (glink) and `0c55710bfa99`
+(smp2p) to silence `misconfigured IRQ 20 glink-native` broke deep suspend completely on both
+`crdroid-20261120` and `crdroid-20261120-2`: 6 of 6 non-reboot boots (`last_kmsg`..`last_kmsg.7` in
+`bugreport-doha-CP2A.260605.016-2026-11-20-07-07-57.zip`) deadlocked permanently on the first deep
+sleep after locking on battery (`Battery History` showed zero `-running` -> `+running` resumes
+after the 05:15:50 OTA reboot, vs 22.3 h / 108 wakes on 2026-11-18). Because Trinket RPM uses
+`qcom_glink_rpm` -> `qcom_glink_native` (IRQ 20), removing `IRQF_NO_SUSPEND` lets
+`suspend_device_irqs()` arm `IRQD_WAKEUP_ARMED`, so `irq_pm_check_wakeup()` masks IRQ 20 instead of
+running the ISR and RPM `msm_rpm_wait_for_ack()` hangs forever inside `dpm_suspend_noirq()` with
+the panel off and `msm_watchdog_suspend()` disabled (looks like a silent power-off until long-press
+`KPDPWR_N` / `hardware_reset`). Confirmed by Qualcomm's own msm-4.14 commit `647d16d0`
+(`deesin@codeaurora.org`).
+**Fix:** `patches/kernel/motorola/msm-4.14.patch` reverts both commits on top of pin `73b7957`,
+restoring `IRQF_NO_SUSPEND | IRQF_SHARED` (`qcom_glink_native.c`) and `IRQF_NO_SUSPEND |
+IRQF_ONESHOT` (`smp2p.c`). Do **not** remove `IRQF_NO_SUSPEND` from glink without also wiring
+`pm_system_wakeup()` + `glink_native_pm_ops` on both RPM and SMEM transports.
+- [x] Revert hunks in `patches/kernel/motorola/msm-4.14.patch`, verified with `git apply --check`
+  against pinned `73b7957`.
+- [ ] Rebuild, flash, unplug USB, lock with Power button for 5 min, wake cleanly; repeat 5×.
+- [ ] Confirm `Battery History` shows `-running` -> `+running` resumes and no `KPDPWR_N` reset.
 
 ## P3 — Launcher3 crash loading a stale themed-icon resource
 **Status:** fixed upstream, device-unverified. **Severity:** high.
@@ -345,3 +356,24 @@ plus Finsky integrity failures (unsigned test-keys); `SoundTriggerMiddlewareImpl
 to add a SoundTriggerModule` (no always-on hotword HAL); `wifirtt` service not published;
 `QC2V4l2Driver: queryControl failed for control id 992077` (90 x, camera v4l2);
 `RequestContextBuilder: Could not get APN` at boot only, before the modem came up.
+
+## Capture D — 2026-11-20 07:07, build `1795135461` (`crdroid-20261120-2`, slot `_a`)
+
+File: `bugreports/bugreport-doha-CP2A.260605.016-2026-11-20-07-07-57.zip`.
+
+- **Root cause of silent off on lock proved (see P2 above):** `Battery History` shows dozens of
+  clean `-running` -> `+running` resumes before the 05:15:50 OTA reboot into kernel `73b7957`
+  (`last_kmsg.9` stayed up 22.3 h / 108 wakes), and **zero** resumes after it. All 6 non-reboot
+  boots on `73b7957` (`last_kmsg`..`last_kmsg.7`) froze silently inside `dpm_suspend_noirq()` on
+  the first deep sleep after locking on battery (`last_kmsg.4` ended at 43.377 s right after
+  `Freezing of tasks aborted` ×2; `last_kmsg.5`/`.6` froze right after USB unplug; current boot
+  dmesg reports `PMIC@SID0: Power-off reason: Triggered from KPDPWR_N (Long Press)`). Fixed by
+  restoring `IRQF_NO_SUSPEND` on `qcom_glink_native` and `smp2p` in
+  `patches/kernel/motorola/msm-4.14.patch`.
+- **P1 shutdown hang stack captured (`last_kmsg.2`):** `710ed46` dumped `vndbinder:1119_` stuck
+  in `icnss_modem_notifier_nb -> hdd_wlan_exit -> umac_stop -> qdf_wait_single_event` while `init`
+  blocked in `f2fs_put_super -> f2fs_issue_discard_timeout`. Both mitigations (`nodiscard` and
+  `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off) are now active.
+- **Verified live on `1795135461`:** `/data` mounted with `nodiscard`, `SwapTotal 4194300 kB`
+  (4 GB zram), `smb5` `prop 4` log spam gone. `doha-dexopt-once` still absent from `init.svc.*`
+  (tracked in `docs/TODO.md`).
