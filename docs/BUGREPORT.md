@@ -256,3 +256,52 @@ crDroid's SafetyNet spoof, not a locked bootloader.
 No device build/flash was possible in this workspace: no synced Android tree
 (`~/android/crdroid-17.0` absent), no `clang`/aarch64 toolchain, and 78 GB free versus ~350 GB
 required. All `[x]` marks mean the code/patch is committed; none mean hardware-verified.
+
+## Capture C — 2026-11-20 05:32, build 2026-11-19 (the OTA-installed one)
+
+| | |
+|---|---|
+| File | `bugreports/bugreport-doha-CP2A.260605.016-2026-11-20-05-32-15.zip` |
+| Uptime at capture | 4 min (boot-time picture, not a load test) |
+| Build | `ro.build.date.utc=1795129374` (Thu Nov 19 23:02 UTC), slot `_b` |
+| SIMs | BSNL + JIO, both `LOADED`, both LTE |
+| Boot reason | `reboot,hardware_reset` (user power cycle) |
+| Crashes | 0 ANR, 0 FATAL, 0 watchdog kills |
+
+**C1. `dexopt_chroot_setup` aborted once (tombstone).** `Check failed:
+!OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`,
+SIGABRT, uid 1082, ppid 1. ART's pre-reboot dexopt copies the partition layout into a
+chroot and bind-mounts `system_ext/lib`; on this device there are no dynamic partitions,
+so `/system_ext` is a symlink into `/system`, and the target is a symlink's child. The
+check refuses that and the process aborts. Effect: **pre-reboot dexopt is skipped after
+an update** (one tombstone per update, no crash loop). Not fixable in this kit — it is
+ART's own check — but it is the reason the first-boot `speed-profile` compile matters;
+see the dexopt hook below.
+
+**C2. First-boot dexopt hook did not run on this build.** `init.svc.doha-dexopt-once`
+empty, `persist.doha.dexopt_status` unset at 4 min uptime. Cause: the service was
+`disabled` and started from `on property:sys.boot_completed=1 start ...`. Fixed in
+`patches/device/motorola/amogus.patch` (plain `late_start` oneshot, no trigger).
+
+**C3. `/data` still mounted with `discard`.** `mountinfo` pid 1: `...background_gc=on,
+discard,no_heap...`. Cause: this kernel's f2fs sets `DISCARD` in `default_options()`;
+dropping the fstab option did nothing. Fixed by mount option `nodiscard`.
+
+**C4. Boot-time log spam, harmless.** 358 x `SystemServiceRegistry: Manager wrapper not
+available: jobscheduler` and 240 x `AppOpService: Blocked setUidMode call for runtime
+permission app op`, all inside the first three seconds from system_server (pid 1809)
+during `Permission_syncPackages`. Standard Android boot race, no functional effect.
+
+**C5. Memory at 4 min uptime.** MemAvailable 1006 MB, zram 607 MB in use of 2047 MB,
+2 LMK kills (`org.protonaosp.deviceconfig`, oom_score_adj 945). Top PSS: system_server
+323 MB, SystemUI 168, GMS 147, Truecaller 116 (42 in swap), Chrome 113, YouTube 107,
+WhatsApp 101, Gmail 92, Launcher3 78. Truecaller is the largest non-system consumer —
+still the open app-disable decision.
+
+**C6. Benign noise, explained.** `No package ID 6b found for resource ID 0x6b0b0013` in
+naviapp/truecaller/pinterest/photos right before "App measurement initialization"
+(Firebase probing a shared resource); `KeyMasterHalDevice: Attest key send cmd failed`
+plus Finsky integrity failures (unsigned test-keys); `SoundTriggerMiddlewareImpl: Failed
+to add a SoundTriggerModule` (no always-on hotword HAL); `wifirtt` service not published;
+`QC2V4l2Driver: queryControl failed for control id 992077` (90 x, camera v4l2);
+`RequestContextBuilder: Could not get APN` at boot only, before the modem came up.
