@@ -223,11 +223,15 @@ and re-flashing a new ROM zip without a data wipe.
 `tools/gcp-build.sh auto-finish` hands the whole tail of the cycle to the VM: it
 copies the script's own remote half (`~/doha-remote.sh`) and a small chain
 (`~/doha-chain.sh`) there, stages the GitHub token as `~/.gh_token_master`, and
-starts it in tmux session `publish`. The chain waits for `~/build.exit`, verifies
-checksums, publishes the release and the OTA channel for the variant that built,
-then builds the other variant and does the same for it. Nothing after the call
-belongs to the workstation, so a dropped connection cannot leave a finished build
-unpublished. The VM is never deleted by it.
+starts it in tmux session `publish`. The chain waits for the first build to exit,
+verifies its checksums, **builds the second variant**, verifies that too, and only
+then publishes: one release carrying both variants, followed by both OTA channels.
+Publishing per variant is deliberately avoided — the first release would offer only
+one variant for the hour the second build takes, and people on the other channel
+would download the wrong zip. Each variant's `build.prop` is saved as
+`~/build.prop.<channel>` right after its build, because `out/` only holds the last
+variant's. Nothing after the call belongs to the workstation, so a dropped
+connection cannot leave a finished build unpublished. The VM is never deleted.
 
 ```sh
 TAG=crdroid-20261120 tools/gcp-build.sh auto-finish      # publish what is built
