@@ -234,13 +234,39 @@ variant's. Nothing after the call belongs to the workstation, so a dropped
 connection cannot leave a finished build unpublished. The VM is never deleted.
 
 ```sh
-TAG=crdroid-20261120 tools/gcp-build.sh auto-finish      # publish what is built
-FIRST_VARIANT=1 TAG=... tools/gcp-build.sh auto-finish   # if the running build is debloat
+TAG=crdroid-20261120 tools/gcp-build.sh auto-finish              # build both + publish
+NO_RELEASE=1 TAG=crdroid-20261120 tools/gcp-build.sh auto-finish # build + verify only, no release
+FIRST_VARIANT=1 TAG=... tools/gcp-build.sh auto-finish           # if the running build is debloat
 gcloud compute ssh <vm> --command 'tail -f ~/doha-chain.log'
 ```
 
 The token is shredded at the end of the chain (`shred -u ~/.gh_token_master`), and
 the VM keeps its 48 h `--max-run-duration` deletion timer.
+
+## 4.5 Backing up and restoring the full build tree (Google Drive)
+
+To delete the VM between sessions without paying for another 9-hour cold build,
+stream three compressed archives (`ccache.tar.zst`, `src-tree.tar.zst`, `out.tar.zst`)
+to your personal Google Drive via `rclone` (GCP ↔ Google Drive data transfer is free,
+and streaming 3 archives avoids Drive's per-file API limit while preserving POSIX
+permissions, symlinks, and mtimes):
+
+```sh
+# After a build finishes (or with BACKUP_WAIT=1 to wait for an active build/chain):
+tools/gcp-build.sh backup
+BACKUP_WAIT=1 tools/gcp-build.sh backup
+gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/backup.log'
+
+# On a fresh VM later:
+tools/gcp-build.sh create
+tools/gcp-build.sh setup
+tools/gcp-build.sh restore
+gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/restore.log'
+```
+
+Defaults: `RCLONE_CONF=~/.config/rclone/rclone.conf`,
+`BACKUP_REMOTE=gdrive:doha-backup/crdroid-17.0`. Pass `SKIP_OUT=1` to skip
+`out.tar.zst` (useful if you need a clean `out/` rebuild).
 
 ## 5. Google apps (optional)
 
