@@ -16,12 +16,14 @@
 #   governor        schedutil        post_boot.legacy.sh trinket block (soc_id 394/467/468)
 #   read_ahead_kb   $READAHEAD_KB     patches/device/qcom/common.patch (single owner)
 #   nr_requests     128              init.amogus.rc, kernel default
-#   SwapTotal       ~2048 MB         patches/device/motorola/amogus.patch (fstab zramsize)
+#   SwapTotal       ~4096 MB         patches/device/motorola/amogus.patch (fstab zramsize)
+#                                    override with ZRAM_MB=<n> when the kit value changes
 #   swappiness      100              post_boot.legacy.sh configure_memory_parameters
 #   page-cluster    0                init.aospa.perf.common.rc on post-fs-data
 set -uo pipefail
 
 READAHEAD_KB=${READAHEAD_KB:-128}
+ZRAM_MB=${ZRAM_MB:-4096}
 SKIN_THROTTLE_C=${SKIN_THROTTLE_C:-40}
 # Internal: run against a fake sysfs tree instead of a phone (used to test this
 # script without hardware). Paths are read as $PERF_AUDIT_ROOT/<path>.
@@ -150,12 +152,13 @@ ST=$(val /proc/meminfo | awk '/^SwapTotal:/{print $2}')
 [ -n "$MT" ] && info "MemTotal $((MT/1024)) MB" || warn "cannot read MemTotal"
 if [ -n "$ST" ]; then
   ST_MB=$((ST/1024))
-  if [ "$ST_MB" -ge 1900 ] && [ "$ST_MB" -le 2600 ]; then
-    pass "SwapTotal ${ST_MB} MB (2 GB zram from fstab)"
-  elif [ "$ST_MB" -ge 900 ] && [ "$ST_MB" -lt 1900 ]; then
+  # ZRAM_MB is what the fstab asks for; allow 15% slack for kernel rounding.
+  if [ "$ST_MB" -ge $((ZRAM_MB * 85 / 100)) ] && [ "$ST_MB" -le $((ZRAM_MB * 115 / 100)) ]; then
+    pass "SwapTotal ${ST_MB} MB (${ZRAM_MB} MB zram from fstab)"
+  elif [ "$ST_MB" -lt $((ZRAM_MB * 85 / 100)) ]; then
     fail "SwapTotal ${ST_MB} MB — fstab zramsize did not grow (stale fstab?)"
   else
-    warn "SwapTotal ${ST_MB} MB outside the expected 2 GB window"
+    warn "SwapTotal ${ST_MB} MB above the expected ${ZRAM_MB} MB window"
   fi
   SF=$(val /proc/meminfo | awk '/^SwapFree:/{print $2}')
   [ -n "$SF" ] && info "SwapFree $((SF/1024)) MB of ${ST_MB} MB"

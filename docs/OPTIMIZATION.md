@@ -88,11 +88,12 @@ image; the running build on the VM predates all of it.
 
 | Area | Change | Where |
 |---|---|---|
-| swap | zram 1 GB -> 2 GB | `patches/device/motorola/amogus.patch` (fstab qcom/dynamic) |
+| swap | zram 1 GB -> 4 GB (was 2 GB until the 2026-11-20 sweep) | `patches/device/motorola/amogus.patch` (fstab qcom/dynamic) |
 | storage | discard off on f2fs `/data` (`nodiscard`; the kernel's f2fs default is on) | same patch |
 | storage | `nr_requests` 256 -> 128, dead read-ahead writes removed | same patch (init.amogus.rc) |
 | storage | read-ahead single owner, `@READAHEAD_KB@` (default 128) | `patches/device/qcom/common.patch` |
 | UI | app transition scale 0.8, Launcher3 DT2S on by default | `amogus_doha.patch`, `Launcher3.patch` |
+| kernel stability | `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off (a slow modem sysmon handshake during shutdown panicked the device; see BUGREPORT capture C7) | `patches/kernel/motorola/msm-4.14.patch` |
 | kernel stability | P1 modem-notifier panic, glink/smp2p `IRQF_NO_SUSPEND`, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `73b7957` (branch `doha-kernel-fixes-2026-11-19`) |
 | policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
 | GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
@@ -217,7 +218,8 @@ Each step is measured alone with `perf-multitask.sh` + `perf-audit.sh`.
 
 Already committed (`4826962`) but not flashed:
 
-- [ ] **zram 1 GB → 2 GB** (`fstab.qcom` `zramsize=2147483648`). The only change
+- [x] **zram 1 GB → 4 GB** (`fstab.qcom` `zramsize=4294967296`; 2 GB shipped on
+      2026-11-19 and filled to 607 MB in one boot). The only change
       with a real mechanism behind it: doubles the spill area before LMK evicts.
 - [ ] **`nr_requests` 256 → 128**, dead read-ahead writes removed from
       `init.amogus.rc`.
