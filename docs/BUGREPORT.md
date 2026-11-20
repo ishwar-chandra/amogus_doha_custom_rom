@@ -319,6 +319,18 @@ current boot then reports `hardware_reset`, i.e. a power-key reset by the owner,
 the panic itself. Live confirmation on the device: `zcat /proc/config.gz` still lists
 `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y`.
 
+Which kernel produced it: `710ed46` (in the fork branch, so in the 2026-11-19 build)
+always prints `ssr-timeout: comm=... src=... dest=...` before the panic, and the crash log
+contains **zero** such lines. Decompressing the kernel out of the shipped
+`...-20261119-...-debloat-boot.img` shows the other side: the strings `ssr-timeout`,
+`Subsys notifier chain` and `blocked (D) tasks` are all present. So the crash came from the
+**2026-11-18 build** (`christiaan/...` @ `03f0501e`), i.e. before the update — the build
+that "worked out of the box" carries the same `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y` and the
+same panic path, just without the diagnostic dump. The seven commits between the two pins
+(qcacld SSR cleanup, the ssr dump, glink/smp2p `IRQF_NO_SUSPEND`, smb5, eeprom, nci) do not
+add the panic; the trigger is the vendor config plus a slow modem sysmon handshake with the
+hotspot up.
+
 Fix (this branch): the same defconfig line is flipped to
 `# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set` in
 `patches/kernel/motorola/msm-4.14.patch`. The timeout then keeps its diagnostic value
