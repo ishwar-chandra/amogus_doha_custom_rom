@@ -171,10 +171,12 @@ the kernel project's revision in `snippets/doha.xml`.
   `crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`.
 - A `repo sync` (without `SKIP_SYNC=1`) overwrites local changes in every
   project, patched or not.
-- The released build is `userdebug`, unsigned (AOSP test keys), no GApps,
-  and no longer carries the docker-lineage-cicd SafetyNet patch:
-  crDroid's `system/core` spoofs SafetyNet itself
-  (`SPOOF_SAFETYNET=1` in `init/Android.bp`).
+- The released build is `userdebug`, unsigned (AOSP test keys), no GApps, and
+  no longer carries the docker-lineage-cicd SafetyNet patch: crDroid's
+  `system/core` spoofs SafetyNet itself (`SPOOF_SAFETYNET=1` in
+  `init/Android.bp`). That spoof does not make Play Integrity pass on doha;
+  the vendor keymaster refuses attestation (`-10003`). See the README section
+  "Play Integrity" and `tools/integrity-setup.sh`.
 
 ## Commit convention
 

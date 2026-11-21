@@ -394,6 +394,7 @@ adb bugreport ./br.zip                  # from the phone, while the problem is h
 ./tools/perf-multitask.sh               # 8-app cycle: resident count + reload times
 ./tools/dexopt-all.sh                   # compile all apps now (speed-profile)
 ./tools/gms-trim.sh --list              # GMS background work, grouped; --restore undoes it
+./tools/integrity-setup.sh status       # Play Integrity: GApps, PIF, keybox, boot props
 ```
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
@@ -453,12 +454,13 @@ first section.
   `vendor/lineage/config/crdroid.mk` adds the `ColumbusService` package
   unless `TARGET_SUPPORTS_QUICK_TAP := false`; doha has no quick-tap
   hardware, so the flag is set in `BoardConfig.mk`.
-- **SafetyNet spoofing comes from crDroid.** The LineageOS build carried
-  the `0001-Pass-SafetyNet.patch` from the docker-lineage-cicd image as
-  `patches/system/core.patch`. crDroid's `system/core` already does this
-  (`SPOOF_SAFETYNET=1` in `init/Android.bp`, `SetSafetyNetProps` in
-  `property_service.cpp`), so that patch is gone. The docker image is
-  still used as a toolchain container, but `build.sh` overrides its
+- **SafetyNet spoofing comes from crDroid.** crDroid's `system/core` does it
+  itself (`SPOOF_SAFETYNET=1` in `init/Android.bp`, `SetSafetyNetProps` in
+  `property_service.cpp`), so there is no `patches/system/core.patch` on this
+  branch. It does not make Play Integrity pass on doha: the vendor keymaster
+  refuses attested key generation (`-10003`). The measured behaviour and the
+  proven workaround are in the Play Integrity section below. The docker image
+  is still used, but only as a toolchain container: `build.sh` overrides its
   entrypoint, so its patches never run.
 - **Build output handling** (`build.sh`). crDroid's `bacon.mk` renames
   the OTA zip to `crDroidAndroid-<version>.zip` and deletes the
@@ -735,18 +737,74 @@ app restarted every 15 seconds waiting for it. The patch stops installing
 the HAL, its libraries and the app, and removes its VINTF entry. GPS and
 XTRA downloads work without it.
 
-### SafetyNet
+### Play Integrity
 
-The LineageOS 24.0 build carried `patches/system/core.patch`, the
-`0001-Pass-SafetyNet.patch` from
-[lineageos4microg/patches](https://github.com/lineageos4microg/patches)
-that the docker-lineage-cicd image applies by default. It makes init
-report a locked, verified boot state so that basic Play Integrity passes,
-and makes fastbootd read the real lock state from the kernel command line.
-crDroid's own `system/core` does the same thing
-(`SPOOF_SAFETYNET=1`), so there is no `patches/system/core.patch` on this
-branch. Our docker command still uses that image, but only as a toolchain
-container, because `build.sh` replaces its entrypoint.
+Measured on the 2026-11-20 build (bugreport `2026-11-20-07-07-57`, phone
+`ZF6522633X`): Play Store reports **"Device is not certified"**, and the
+Play Integrity API returns `UNEVALUATED` for every field — `deviceIntegrity`
+carries no `deviceRecognitionVerdict` at all. The failure is upstream of any
+spoof: every key-attestation request dies in the vendor HAL,
+
+```
+E KeyMasterHalDevice: Attest key send cmd failed
+E KeyMasterHalDevice: resp->status: -10003
+E keystore2: Error::Km(-10003) for AppUid(10227)      # com.google.android.gms
+```
+
+on `android.hardware.keymaster@4.1-service-qti`, so there is no
+Google-rooted attestation chain. That chain is exactly what the basic
+label needs: Google's docs say `MEETS_BASIC_INTEGRITY` on Android 13+
+"requires only that the attestation root of trust is provided by Google".
+No fingerprint spoof or Play Store registration changes that — the verdict
+is computed from the signed chain, not from `ro.*` properties.
+
+PIF is not the gate. Measured on the same phone, changing the PIF config and
+re-running the check gave an identical `UNEVALUATED` result every time: PIF
+off, PIF on with the hook flags off, and PIF on with the vending spoof off.
+vvb2060's KeyAttestation reports the reason directly: "Unable to attest …
+KeyStoreException: -10003".
+
+The fix that does work is crDroid's own built-in TrickyStore, which notices
+the broken TEE and generates a chain from a keybox instead of asking
+keymaster. Proven on this phone with a throwaway self-signed keybox: importing
+it (through the same Settings.Secure keys the GUI writes) makes KeyAttestation
+show a complete chain — `CN=Android Keystore Key` under the keybox's root,
+"Bootloader is locked", Keymaster 4.1, TrustedEnvironment — where it showed
+`-10003` before. Play Integrity still fails with that test key because the
+root is not Google's; with a Google-rooted keybox, that same chain is what the
+API evaluates.
+
+The kit cannot ship that file. A keybox is a set of Google attestation
+private keys, revoked in waves, and redistributing one is not something this
+repo does. What it can do is make the import one step for a user who has one:
+
+```sh
+tools/integrity-setup.sh status            # GApps, PIF config, keybox, boot props
+tools/integrity-setup.sh import keybox.xml # same keys the Settings UI writes
+tools/integrity-setup.sh check             # opens KeyAttestation to read the chain
+```
+
+On the phone that path now starts by itself. After an update, the Settings
+app's boot receiver (`KeyboxMonitorReceiver`) calls `KeyboxMonitor.sync`,
+which probes attested key generation once per build and — when it fails and no
+keybox is installed — posts a single notification saying so. Tapping it opens
+Settings > Misc > TrickyStore, where the user picks their keybox file; the
+screen validates it, stores it, restarts the GMS family and re-checks the
+chain. Nothing is imported without that pick, and the prompt appears once per
+build, not on every boot.
+
+What a user can do, in order of effect:
+
+- Import a keybox at crDroid Settings > Misc > TrickyStore (or with
+  `tools/integrity-setup.sh import`). That is the only route to
+  `MEETS_DEVICE_INTEGRITY`/`MEETS_STRONG_INTEGRITY` on this phone, and the
+  only route to any verdict at all without a working TEE attestation key.
+- `crDroid Settings > Misc > Play Integrity Fix` fetches a Pixel fingerprint
+  and refreshes it; it helps apps that read the legacy signals, but it cannot
+  manufacture an attestation chain.
+- "Device is not certified" in the Play Store is a Google-side flag keyed to
+  the GSF ID. Registering it licenses the Play apps; it does not create
+  `MEETS_DEVICE_INTEGRITY` and it did not change any verdict here.
 
 ### 2026-11-18 bugreport follow-ups
 

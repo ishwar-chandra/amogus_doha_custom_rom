@@ -178,11 +178,11 @@ Caveats worth remembering:
   next bugreport.
 - [ ] D4 GMS `Unexpected safety source: AdvancedProtection`: platform/GApps mismatch, not ours.
   Re-check after the next NikGapps bump before spending time on a `frameworks/base` enum patch.
-- [ ] Play Integrity / D6: blocked on hardware attestation (`Km(-10003)`, 68 hits from Google Pay in
-  one report). Analysis in `BUGREPORT.md` §7 (D6); the decisive test needs `KeyAttestation` (vvb2060)
-  installed on the phone — `-10003` there means the TEE has no attestation key and nothing ROM-side can
-  fix it, a valid chain with `deviceLocked=false` would mean only `MEETS_DEVICE_INTEGRITY` is lost and
-  `MEETS_BASIC_INTEGRITY` is reachable.
+- [ ] Play Integrity / D6: root-caused. The vendor keymaster refuses attestation (`Km(-10003)`),
+  so the API returns `UNEVALUATED` no matter what PIF does; crDroid's built-in TrickyStore pulls a
+  chain from a keybox and was proven on hardware with a test key (`BUGREPORT.md` §7, D6).
+  Remaining: a real keybox test when the user has one. `tools/integrity-setup.sh` imports it;
+  the kit never ships one.
 
 ## Performance tuning (2026-11-20, tree + bugreport audit)
 

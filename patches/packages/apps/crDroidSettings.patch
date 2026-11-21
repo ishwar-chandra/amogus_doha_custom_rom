@@ -148,3 +148,148 @@ index 0000000..0345de2
 +        }
 +    }
 +}
+diff --git a/res/values/cr_strings.xml b/res/values/cr_strings.xml
+index aed3996..e1c4747 100644
+--- a/res/values/cr_strings.xml
++++ b/res/values/cr_strings.xml
+@@ -1696,6 +1696,8 @@ A small donation helps keep this project alive and improving. You can dismiss th
+     <string name="play_integrity_fix_summary">Manage PIF configuration and device fingerprints for basic integrity</string>
+     <string name="tricky_store_title">TrickyStore</string>
+     <string name="tricky_store_summary">Manage keybox and target apps for attestation for strong integrity</string>
++    <string name="ts_needed_title">Play Integrity needs a keybox</string>
++    <string name="ts_needed_text">This phone cannot generate a hardware attestation key, so apps that check Play Integrity report the device as unevaluated. Open TrickyStore and import a keybox to fix it; the ROM does not ship one.</string>
+     <string name="game_spoofing_title">Game spoofing</string>
+     <string name="game_spoofing_summary">Spoof device properties for specific games</string>
+ 
+diff --git a/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt b/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
+index d0ae1e6..e76ccd4 100644
+--- a/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
++++ b/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
+@@ -19,8 +19,12 @@ import android.content.ComponentName
+ import android.content.Context
+ import android.content.Intent
+ import android.content.SharedPreferences
++import android.os.Build
+ import android.os.UserManager
+ import android.provider.Settings
++import android.security.keystore.KeyGenParameterSpec
++import android.security.keystore.KeyProperties
++import android.util.Log
+ import com.android.internal.logging.nano.MetricsProto
+ import com.android.settings.R
+ import com.android.settings.core.SubSettingLauncher
+@@ -29,6 +33,9 @@ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.SupervisorJob
+ import kotlinx.coroutines.cancel
+ import kotlinx.coroutines.launch
++import java.security.KeyPairGenerator
++import java.security.KeyStore
++import java.security.spec.ECGenParameterSpec
+ import java.util.concurrent.TimeUnit
+ 
+ /**
+@@ -60,6 +67,7 @@ internal object KeyboxMonitor {
+     private const val CHANNEL_ID = "trickystore_keybox_alerts"
+     private const val NOTIFY_EXPIRY = 0x7b0c
+     private const val NOTIFY_REVOKED = 0x7b0d
++    private const val NOTIFY_NEEDED = 0x7b0e
+ 
+     private const val PREFS = "trickystore_keybox_alerts"
+     private const val PREF_KEYBOX_HASH = "keybox_hash"
+@@ -67,6 +75,13 @@ internal object KeyboxMonitor {
+     private const val PREF_EXPIRY_MUTED = "expiry_muted"
+     private const val PREF_REVOKED_NOTIFIED = "revoked_notified"
+ 
++    // Kept in Settings.Secure, not the prefs file: reconcile() clears PREFS whenever no keybox
++    // is installed, which is exactly when the "you need a keybox" prompt has to remember it ran.
++    private const val NEEDED_PROMPT_KEY = "spoof_trickystore_needed_prompt"
++    private const val ATTEST_KEY = "spoof_trickystore_attest_state"
++
++    private const val TAG = "KeyboxMonitor"
++
+     private val DAY_MS = TimeUnit.DAYS.toMillis(1)
+     /** An alarm that lands slightly early still counts as due. */
+     private val EARLY_TOLERANCE_MS = TimeUnit.MINUTES.toMillis(5)
+@@ -138,7 +153,13 @@ internal object KeyboxMonitor {
+     /** Brings jobs, alarm and notifications in line with the current keybox and switch. */
+     fun sync(context: Context) {
+         val ctx = context.applicationContext
+-        val keybox = reconcile(ctx) ?: return
++        val keybox = reconcile(ctx)
++        if (keybox == null) {
++            // No keybox installed: on a phone whose keymaster refuses attestation, that is
++            // the whole reason Play Integrity answers UNEVALUATED. Ask once per build.
++            maybeAskForKeybox(ctx)
++            return
++        }
+         val expiry = keybox.expiry ?: return
+         if (!isUnlocked(ctx)) return
+         val prefs = prefs(ctx)
+@@ -149,6 +170,59 @@ internal object KeyboxMonitor {
+         }
+     }
+ 
++    /**
++     * One prompt per build when the phone cannot attest for itself and no keybox is set.
++     * The notification only opens Settings > Misc > TrickyStore; nothing is imported without
++     * the user picking a file there, and no keybox is shipped with the ROM.
++     */
++    private fun maybeAskForKeybox(ctx: Context) {
++        if (!isEnabled(ctx) || !isUnlocked(ctx)) return
++        if (currentKeybox(ctx) != null) return
++        val build = Build.VERSION.INCREMENTAL
++        if (Settings.Secure.getString(ctx.contentResolver, NEEDED_PROMPT_KEY) == build) return
++        if (!attestationBroken(ctx, build)) return
++        Settings.Secure.putString(ctx.contentResolver, NEEDED_PROMPT_KEY, build)
++        post(
++            ctx, NOTIFY_NEEDED,
++            title = ctx.getString(R.string.ts_needed_title),
++            text = ctx.getString(R.string.ts_needed_text),
++        )
++    }
++
++    /** Whether an attested key can be generated at all. Cached per build; the probe costs a keygen. */
++    private fun attestationBroken(ctx: Context, build: String): Boolean {
++        val cached = Settings.Secure.getString(ctx.contentResolver, ATTEST_KEY)
++        if (cached != null && cached.startsWith("$build:")) return cached.endsWith(":1")
++        val broken = !probeAttestedKey()
++        Settings.Secure.putString(
++            ctx.contentResolver, ATTEST_KEY, "$build:" + if (broken) "1" else "0",
++        )
++        return broken
++    }
++
++    private fun probeAttestedKey(): Boolean {
++        val alias = "keybox_attestation_probe"
++        return try {
++            val kpg = KeyPairGenerator.getInstance("EC", "AndroidKeyStore")
++            kpg.initialize(
++                KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
++                    .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
++                    .setDigests(KeyProperties.DIGEST_SHA256)
++                    .setAttestationChallenge(ByteArray(16))
++                    .build()
++            )
++            kpg.generateKeyPair()
++            true
++        } catch (t: Throwable) {
++            Log.i(TAG, "attested key generation unavailable", t)
++            false
++        } finally {
++            runCatching {
++                KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias)
++            }
++        }
++    }
++
+     fun markRevokedSeen(context: Context, hash: String) {
+         val ctx = context.applicationContext
+         if (!isUnlocked(ctx)) return
+@@ -221,6 +295,7 @@ internal object KeyboxMonitor {
+             if (isUnlocked(ctx)) prefs(ctx).edit().clear().apply()
+             return null
+         }
++        cancelNotification(ctx, NOTIFY_NEEDED)
+         if (isUnlocked(ctx)) prefsFor(ctx, keybox.hash)
+         if (!isEnabled(ctx)) {
+             cancelAll(ctx)
