@@ -213,6 +213,16 @@ tools/gms-trim.sh -g all         # also Wallet/tap-to-pay, Quick Share, Play Gam
 tools/gms-trim.sh --restore      # re-enable everything the tool disabled
 ```
 
+Play Integrity is a separate story — the vendor keymaster on doha refuses attestation, so the
+built-in TrickyStore needs a keybox that this kit does not ship or download:
+
+```sh
+tools/integrity-setup.sh status            # GApps, PIF config, keybox, boot props
+tools/integrity-setup.sh import keybox.xml # same Settings keys the crDroid UI writes
+tools/integrity-setup.sh check             # open KeyAttestation and read the chain
+tools/integrity-setup.sh clear             # remove the keybox again
+```
+
 `gms-trim.sh` needs a build where the shell may change component state. If the
 phone has Magisk/KernelSU it detects the root shell and runs `su -c pm ...`; on a
 plain unlock it prints `denied` per component, disables nothing and exits non-zero. Disabled components are stored in `/data`, so they survive OTA updates

@@ -236,10 +236,28 @@ badges.
 ## Legacy items
 
 ### D6 — Key attestation fails (`-10003`)
-**Status:** open; unfixable ROM-side. **Severity:** high for Play Integrity.
-**Summary:** Keymaster has no attestation key; attested-key requests fail, so Play Integrity labels
-cannot be met on an unlocked self-signed build.
-- [ ] Treat Play Integrity as unsupported; do not add keybox spoofing.
+**Status:** root-caused; workaround proven on hardware. **Severity:** high for Play Integrity.
+**Summary:** `android.hardware.keymaster@4.1-service-qti` returns vendor error `-10003` for every
+attested key generation (`KeyMasterHalDevice: Attest key send cmd failed` / `resp->status: -10003`),
+including the attestation GMS itself requests (`keystore2: Error::Km(-10003) for AppUid(10227)`).
+Measured 2026-11-21 on `ZF6522633X` (build 2026-11-20): Play Store reports "Device is not certified",
+the Play Integrity API returns `UNEVALUATED` for every field and `deviceIntegrity` carries no
+`deviceRecognitionVerdict`, identically with crDroid's PIF config loaded, with it cleared, with the
+PIF hook flags off and with the vending spoof off. vvb2060's KeyAttestation reports the same
+`-10003` directly, so the missing piece is not a property or a fingerprint.
+**Proven workaround:** crDroid 13.1's built-in TrickyStore (Settings > Misc) detects the broken TEE and
+generates a chain from a keybox. With a throwaway self-signed keybox imported through
+`tools/integrity-setup.sh import`, KeyAttestation showed a complete chain — `CN=Android Keystore Key`
+under the keybox root, "Bootloader is locked", Keymaster 4.1, TrustedEnvironment — where it showed
+`-10003` before. Play Integrity still fails with that test key because its root is not Google's; a
+Google-rooted keybox is what the API evaluates, and it is the only route to a verdict on this phone.
+- [x] Confirm keymaster is the gate (KeyAttestation + `keystore2` logs), not PIF, props or registration.
+- [x] Prove the built-in TrickyStore generates a chain from a keybox on this device.
+- [x] One prompt per build: `KeyboxMonitor.sync` probes attested keygen (cached in Settings.Secure)
+      and, with no keybox installed, posts a notification that opens Settings > Misc > TrickyStore.
+      It never imports anything on its own; the user picks the file there.
+- [ ] Test with a Google-rooted keybox when the user supplies one; the kit never ships or downloads it.
+- [ ] If a user has no keybox, Play Integrity stays `UNEVALUATED`; do not weaken the build for it.
 
 ### D8 — No Wi-Fi RTT service
 **Status:** open; feature missing. **Severity:** low.
