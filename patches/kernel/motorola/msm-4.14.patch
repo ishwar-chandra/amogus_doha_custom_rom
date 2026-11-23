@@ -354,7 +354,7 @@ diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/ven
  # CONFIG_MSM_BOOT_TIME_MARKER is not set
  # CONFIG_MSM_CORE_HANG_DETECT is not set
 diff --git a/drivers/rpmsg/qcom_glink_native.c b/drivers/rpmsg/qcom_glink_native.c
-index fcb46a843e47..06d90b89f876 100644
+index fcb46a843e47..eb7985bbd6c6 100644
 --- a/drivers/rpmsg/qcom_glink_native.c
 +++ b/drivers/rpmsg/qcom_glink_native.c
 @@ -2047,12 +2047,7 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
@@ -371,6 +371,28 @@ index fcb46a843e47..06d90b89f876 100644
  
  	ret = devm_request_irq(dev, irq,
  			       qcom_glink_native_intr,
+@@ -2065,9 +2060,18 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
+ 
+ 	glink->irq = irq;
+ 
+-	ret = enable_irq_wake(irq);
+-	if (ret < 0)
+-		dev_err(dev, "enable_irq_wake() failed on %d\n", irq);
++	/*
++	 * IRQF_NO_SUSPEND keeps the glink IRQ enabled through noirq suspend so
++	 * RPM waits cannot deadlock.  Do not also arm it as a wakeup source on
++	 * this SoC: CAF reverted that for Trinket (SM6125) because it breaks
++	 * low-power mode, and the IRQ core logs "misconfigured IRQ" and aborts
++	 * suspend.  GVM keeps the original wakeup behavior.
++	 */
++	if (vm_support) {
++		ret = enable_irq_wake(irq);
++		if (ret < 0)
++			dev_err(dev, "enable_irq_wake() failed on %d\n", irq);
++	}
+ 
+ 	size = of_property_count_u32_elems(dev->of_node, "cpu-affinity");
+ 	if (size > 0) {
 diff --git a/drivers/soc/qcom/smp2p.c b/drivers/soc/qcom/smp2p.c
 index a5e0cf3b85c3..afb64a86aae4 100644
 --- a/drivers/soc/qcom/smp2p.c
