@@ -162,7 +162,7 @@ index aed3996..e1c4747 100644
      <string name="game_spoofing_summary">Spoof device properties for specific games</string>
  
 diff --git a/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt b/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
-index d0ae1e6..e76ccd4 100644
+index d0ae1e6..c7f2432 100644
 --- a/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
 +++ b/src/com/crdroid/settings/fragments/misc/KeyboxMonitor.kt
 @@ -19,8 +19,12 @@ import android.content.ComponentName
@@ -237,7 +237,7 @@ index d0ae1e6..e76ccd4 100644
 +    private fun maybeAskForKeybox(ctx: Context) {
 +        if (!isEnabled(ctx) || !isUnlocked(ctx)) return
 +        if (currentKeybox(ctx) != null) return
-+        val build = Build.VERSION.INCREMENTAL
++        val build = Long.toString(Build.TIME)
 +        if (Settings.Secure.getString(ctx.contentResolver, NEEDED_PROMPT_KEY) == build) return
 +        if (!attestationBroken(ctx, build)) return
 +        Settings.Secure.putString(ctx.contentResolver, NEEDED_PROMPT_KEY, build)
@@ -285,7 +285,11 @@ index d0ae1e6..e76ccd4 100644
      fun markRevokedSeen(context: Context, hash: String) {
          val ctx = context.applicationContext
          if (!isUnlocked(ctx)) return
-@@ -221,6 +295,7 @@ internal object KeyboxMonitor {
+@@ -218,9 +292,11 @@ internal object KeyboxMonitor {
+         val keybox = currentKeybox(ctx)
+         if (keybox == null) {
+             cancelAll(ctx)
++            if (!isEnabled(ctx)) cancelNotification(ctx, NOTIFY_NEEDED)
              if (isUnlocked(ctx)) prefs(ctx).edit().clear().apply()
              return null
          }
