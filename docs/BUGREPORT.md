@@ -43,8 +43,8 @@ Legend: `[x]` done in code, `[ ]` needs verification or work.
 kernel (`Subsys notifier chain for modem taking too long`); pstore also records
 `androidboot.bootreason=kernel_panic`.
 **Fix:** kernel `d93bfa2` (qcacld: move SSR cleanup off `FW_DOWN`, do it on `FW_CRASHED`) plus
-`710ed46` (dump stuck task before panic). Both are in the pinned branch `doha-kernel-fixes-2026-11-19`
-at `73b7957`.
+`710ed46` (dump stuck task before panic). Both are ancestors of the pinned kernel `fix`
+at `9a3cf72`.
 - [x] Kernel commits present in the build pin.
 - [ ] Rebuild with a syncing `./build.sh`; no `SKIP_SYNC=1`.
 - [ ] Reboot 5× and reproduce hotspot/WLAN-SSR; `dmesg` must not contain
@@ -52,7 +52,7 @@ at `73b7957`.
 - [ ] If it still panics, attach the new stack dump from `710ed46`.
 
 ## P2 — Suspend deadlock after dropping `IRQF_NO_SUSPEND` on glink/smp2p (reverted)
-**Status:** reverted in kit patch (`patches/kernel/motorola/msm-4.14.patch`), device-unverified. **Severity:** critical (was high).
+**Status:** reverted in kernel branch `fix` at `9a3cf72`, device-unverified. **Severity:** critical (was high).
 **Summary:** Dropping `IRQF_NO_SUSPEND` in fork commits `a8b9cfcea310` (glink) and `0c55710bfa99`
 (smp2p) to silence `misconfigured IRQ 20 glink-native` broke deep suspend completely on both
 `crdroid-20261120` and `crdroid-20261120-2`: 6 of 6 non-reboot boots (`last_kmsg`..`last_kmsg.7` in
@@ -65,18 +65,19 @@ running the ISR and RPM `msm_rpm_wait_for_ack()` hangs forever inside `dpm_suspe
 the panel off and `msm_watchdog_suspend()` disabled (looks like a silent power-off until long-press
 `KPDPWR_N` / `hardware_reset`). Confirmed by Qualcomm's own msm-4.14 commit `647d16d0`
 (`deesin@codeaurora.org`).
-**Fix:** `patches/kernel/motorola/msm-4.14.patch` reverts both commits on top of pin `73b7957`,
-restoring `IRQF_NO_SUSPEND | IRQF_SHARED` (`qcom_glink_native.c`) and `IRQF_NO_SUSPEND |
-IRQF_ONESHOT` (`smp2p.c`). Do **not** remove `IRQF_NO_SUSPEND` from glink without also wiring
-`pm_system_wakeup()` + `glink_native_pm_ops` on both RPM and SMEM transports.
+**Fix:** kernel branch `fix` at `9a3cf72` restores `IRQF_NO_SUSPEND | IRQF_SHARED`
+(`qcom_glink_native.c`) and `IRQF_NO_SUSPEND | IRQF_ONESHOT` (`smp2p.c`). Do **not** remove
+`IRQF_NO_SUSPEND` from glink without also wiring `pm_system_wakeup()` + `glink_native_pm_ops` on
+both RPM and SMEM transports.
 
-The same kit patch now also skips `enable_irq_wake()` on the non-GVM glink path. That is the
+The same kernel branch also skips `enable_irq_wake()` on the non-GVM glink path. That is the
 separate `misconfigured IRQ 20` fix: glink stays enabled through noirq suspend (`IRQF_NO_SUSPEND`
 is retained), but is no longer armed as a wake source. This must not be confused with the failed
 `a8b9cfc`/`0c55710` commits, which removed `IRQF_NO_SUSPEND`; smp2p still keeps both flags because
 its sleep-state handshake requires wake arming.
-- [x] Revert hunks in `patches/kernel/motorola/msm-4.14.patch`, verified with `git apply --check`
-  against pinned `73b7957`.
+- [x] Kernel `fix` branch pushed; kit pins `9a3cf72` and removes the redundant glink/smp2p patch
+  hunks.
+- [x] Kernel patch applies against `9a3cf72` with `git apply --check`.
 - [ ] Rebuild, flash, unplug USB, lock with Power button for 5 min, wake cleanly; repeat 5×.
 - [ ] Confirm `Battery History` shows `-running` -> `+running` resumes and no `KPDPWR_N` reset.
 

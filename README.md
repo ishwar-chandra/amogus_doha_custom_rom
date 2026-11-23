@@ -27,7 +27,7 @@ patches that get that port building and booting on Android 17.
 
 The kernel is our fork of Christiaan's `android_kernel_motorola_msm-4.14`:
 [`ishwar-chandra/android_kernel_motorola_msm-4.14`](https://github.com/ishwar-chandra/android_kernel_motorola_msm-4.14),
-currently pinned to `73b7957` on branch `doha-kernel-fixes-2026-11-19`; `lts` carries the
+currently pinned to `9a3cf72` on branch `fix`; `lts` carries the
 4.14.357 baseline. Aldair402's kernel is Motorola's 4.14.190. Ours merges the
 4.14 LTS updates up to 4.14.357 (OpenELA) on top of it, so it carries
 several years of upstream security and stability fixes. `uname -r` shows

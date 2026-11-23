@@ -6,7 +6,7 @@ what changes, how it is measured, and how it is undone.
 
 Status: planning. Device serial `ZF6522633X`, build `crDroidAndroid-17.0-20261118`
 (the 2 GB zram commit `4826962` is **not** on it yet), kernel `4.14` pinned at
-`73b7957`.
+`9a3cf72` on branch `fix`.
 
 ## 1. Baseline (measured 2026-11-20, `tools/perf-audit.sh` + `tools/perf-multitask.sh`)
 
@@ -97,7 +97,7 @@ image; the running build on the VM predates all of it.
 | suspend | non-GVM glink keeps `IRQF_NO_SUSPEND` but no longer arms itself as a wake source; the 2026-11-23 capture had 675 failed suspends and `misconfigured IRQ 20` | `patches/kernel/motorola/msm-4.14.patch` |
 | idle | Doze motion sensing off (`config_autoPowerModeUseMotionSensor=false`); removes the 4m45s `AnyMotionDetector` idle wakelock | `patches/device/motorola/amogus_doha.patch` |
 | kernel stability | `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off (a slow modem sysmon handshake during shutdown panicked the device; see BUGREPORT capture C7) | `patches/kernel/motorola/msm-4.14.patch` |
-| kernel stability | P1 modem-notifier dump/qcacld SSR fix, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `73b7957` (branch `doha-kernel-fixes-2026-11-19`) |
+| kernel stability | P1 modem-notifier dump/qcacld SSR fix, nq-nci `-ENOTCONN` retry, eeprom retry, smb5 ONLINE, touch/SPI suspend | kernel pin `9a3cf72` (branch `fix`) |
 | policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
 | GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
 | debloat | settings entries for removed apps hidden at runtime | `packages/apps/crDroidSettings.patch` |
