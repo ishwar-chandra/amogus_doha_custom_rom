@@ -925,6 +925,16 @@ branch does now:
   `KPDPWR_N` / `hardware_reset`). Restoring the stock Motorola/Qualcomm flags
   (`IRQF_NO_SUSPEND | IRQF_SHARED` for glink, `IRQF_NO_SUSPEND | IRQF_ONESHOT`
   for smp2p) matches the 2026-11-18 kernel that survived 22 h / 108 wakes.
+  The kit now keeps that IRQ enabled **without** calling `enable_irq_wake()`
+  on the non-GVM glink path. Doing both was the configuration CAF explicitly
+  reverted for Trinket in `d8d7d2423328`. Fork commits `4ab637fa`/`bfe8abcb`
+  restored `IRQF_NO_SUSPEND` on glink and smp2p after pin `73b7957` proved
+  fatal: 6 of 6 non-reboot boots froze after the susceptible build. The kit
+  patch reconstructs that required flag at build time and must never remove
+  it. The 2026-11-23 capture still exits suspend with `Resume caused by
+  misconfigured IRQ 20 glink-native`, recording 2,564 suspend attempts and
+  675 failures over 22h26m. GVM keeps wake arming; smp2p keeps
+  `IRQF_NO_SUSPEND` plus wake because its sleep-state handshake needs it.
 - **`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off** in the kernel defconfig (carried by
   `patches/kernel/motorola/msm-4.14.patch`). The 2026-11-20 bugreport shows a clean
   shutdown reaching `sysrq: Terminate All Tasks` and then panicking with
@@ -935,6 +945,15 @@ branch does now:
 
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
+
+- **Doze motion detection disabled** by the framework overlay in
+  `patches/device/motorola/amogus_doha.patch`
+  (`config_autoPowerModeUseMotionSensor=false`). `AnyMotionDetector` held a
+  partial wake lock for 4m45s across 33 screen-off transitions in the
+  2026-11-23 capture, and motion sensing delayed entry into deep idle. The
+  tradeoff is deliberate: moving the phone or its significant-motion sensor
+  no longer resets the idle transition; screen-on and alarm-driven wakeups
+  are unchanged. This is device-untested.
 
 - **No automatic first-boot dexopt.** The former
   `rootdir/vendor/bin/doha-dexopt-once.sh` service never ran in the shipped build:

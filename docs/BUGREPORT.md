@@ -69,6 +69,12 @@ the panel off and `msm_watchdog_suspend()` disabled (looks like a silent power-o
 restoring `IRQF_NO_SUSPEND | IRQF_SHARED` (`qcom_glink_native.c`) and `IRQF_NO_SUSPEND |
 IRQF_ONESHOT` (`smp2p.c`). Do **not** remove `IRQF_NO_SUSPEND` from glink without also wiring
 `pm_system_wakeup()` + `glink_native_pm_ops` on both RPM and SMEM transports.
+
+The same kit patch now also skips `enable_irq_wake()` on the non-GVM glink path. That is the
+separate `misconfigured IRQ 20` fix: glink stays enabled through noirq suspend (`IRQF_NO_SUSPEND`
+is retained), but is no longer armed as a wake source. This must not be confused with the failed
+`a8b9cfc`/`0c55710` commits, which removed `IRQF_NO_SUSPEND`; smp2p still keeps both flags because
+its sleep-state handshake requires wake arming.
 - [x] Revert hunks in `patches/kernel/motorola/msm-4.14.patch`, verified with `git apply --check`
   against pinned `73b7957`.
 - [ ] Rebuild, flash, unplug USB, lock with Power button for 5 min, wake cleanly; repeat 5×.

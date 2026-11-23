@@ -13,6 +13,16 @@ kernel `4.14.357-openela+ #16`).
   `tools/device-check.sh --verbose` must find `/vendor/lib64/liboemcrypto.so`,
   `logcat -b all` must not repeat `Could not load liboemcrypto.so. Falling back
   to L3`, and a DRM-info app must report L1 before this is called fixed.
+- [ ] **Glink suspend wake fix is device-untested.** After the next flash,
+  `logcat -b all` must not repeat `Resume caused by misconfigured IRQ 20
+  glink-native`; compare `SuspendControl.TotalSuspendDelay` and
+  `FailedSuspendDelay` plus screen-off mAh/h against the 2026-11-23 baseline
+  (2,564 attempts, 675 failures, 46.2 mAh/h).
+- [ ] **Doze motion disable is device-untested.** Confirm
+  `dumpsys deviceidle` reports `mUseMotionSensor=false`, `AnyMotionDetector`
+  stops holding wakelocks after screen-off, and normal wake methods still
+  work. The overlay intentionally stops movement from resetting the idle
+  transition.
 - [ ] **TrickyStore target migration is device-untested.** After import,
   `settings get secure spoof_trickystore_target` must contain
   `com.google.android.gms` with no literal `null`, and disabling keybox alerts
