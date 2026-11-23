@@ -174,70 +174,23 @@ index fbe42bb..a58df71 100644
  /dev/block/bootdevice/by-name/misc                      /misc                    emmc    defaults                                             defaults
 -/dev/block/zram0                                        none                     swap    defaults                                             zramsize=70%
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=50%
-diff --git a/rootdir/vendor/bin/doha-dexopt-once.sh b/rootdir/vendor/bin/doha-dexopt-once.sh
-new file mode 100644
-index 0000000..7990e84
---- /dev/null
-+++ b/rootdir/vendor/bin/doha-dexopt-once.sh
-@@ -0,0 +1,39 @@
-+#!/system/bin/sh
-+# Compile every installed package with speed-profile, once per build (re-runs after an OTA).
-+#
-+# Same action as the "Boost Performance" entry in the Infamick Magisk script, but
-+# automatic: a freshly flashed build otherwise leaves apps in verify/JIT mode until
-+# the platform's idle bg-dexopt-job gets around to them, which on this phone can be
-+# days because the job wants charging + idle + no reboot.
-+#
-+# Started by init as a oneshot late_start service (init.amogus.rc). It waits for
-+# sys.boot_completed and two more minutes, then compiles at nice 19 so the UI keeps
-+# priority. The outcome is recorded in persist.doha.dexopt_status
-+# ("<build date>:running|done|failed") - check with `getprop persist.doha.dexopt_status`.
-+#
-+# Skip it with: adb shell setprop persist.doha.dexopt_once 0
-+# Re-run it with: adb shell setprop persist.doha.dexopt_status "" && reboot
-+# It re-runs by itself after an OTA because the flag records ro.build.date.utc.
-+
-+# The flag carries the build it ran for, so an OTA re-runs the compile instead of
-+# leaving the new system apps in verify/JIT mode: "<ro.build.date.utc>:<state>".
-+build=$(getprop ro.build.date.utc)
-+status=$(getprop persist.doha.dexopt_status)
-+[ "$(getprop persist.doha.dexopt_once)" = "0" ] && exit 0
-+[ "$status" = "$build:done" ] && exit 0
-+
-+# late_start can fire before the boot has finished; wait for it, then a couple of
-+# minutes so the post-boot package scan and GMS setup are not competing.
-+i=0
-+while [ "$(getprop sys.boot_completed)" != "1" ] && [ $i -lt 180 ]; do
-+    sleep 2
-+    i=$((i + 1))
-+done
-+sleep 120
-+
-+setprop persist.doha.dexopt_status "$build:running"
-+if nice -n 19 cmd package compile -m speed-profile -a >/dev/null 2>&1; then
-+    setprop persist.doha.dexopt_status "$build:done"
-+else
-+    setprop persist.doha.dexopt_status "$build:failed"
-+fi
 diff --git a/rootdir/vendor/etc/init/init.amogus.rc b/rootdir/vendor/etc/init/init.amogus.rc
-index 879062c..074a824 100644
+index 879062c..114ed74 100644
 --- a/rootdir/vendor/etc/init/init.amogus.rc
 +++ b/rootdir/vendor/etc/init/init.amogus.rc
-@@ -16,10 +16,10 @@ on init
+@@ -16,10 +16,8 @@ on init
      start vendor.amogus
      # Boot time fs tune
      write /sys/block/mmcblk0/queue/iostats 0
 -    write /sys/block/mmcblk0/queue/read_ahead_kb 256
-+    write /sys/block/mmcblk0/queue/read_ahead_kb 512
++    write /sys/block/mmcblk0/queue/read_ahead_kb @READAHEAD_KB@
      write /sys/block/mmcblk0/queue/nr_requests 256
 -    write /sys/block/dm-0/queue/read_ahead_kb 256
 -    write /sys/block/dm-1/queue/read_ahead_kb 256
-+    write /sys/block/dm-0/queue/read_ahead_kb 512
-+    write /sys/block/dm-1/queue/read_ahead_kb 512
  
  on boot
      # update foreground cpuset now that processors are up
-@@ -34,12 +34,29 @@ on boot
+@@ -34,12 +32,13 @@ on boot
      write /proc/irq/default_smp_affinity f
  
  on property:sys.boot_completed=1
@@ -252,22 +205,6 @@ index 879062c..074a824 100644
      write /sys/block/mmcblk0/queue/iostats 1
 -    write /sys/block/dm-0/queue/read_ahead_kb 2048
 -    write /sys/block/dm-1/queue/read_ahead_kb 2048
-+
-+# One-time full AOT compile of every installed package (speed-profile). This is the
-+# Infamick "Boost Performance" action made automatic, so a fresh flash is not stuck
-+# in verify/JIT mode waiting for idle bg-dexopt-job. Records
-+# persist.doha.dexopt_status; set persist.doha.dexopt_once=0 to skip.
-+# /system/bin/sh reads the script, so it does not depend on the copy keeping its
-+# executable bit (rootdir files are installed by copy-files-recursive).
-+# No `disabled` and no property trigger: the 2026-11-19 build shipped this as
-+# disabled + `on property:sys.boot_completed=1 start ...` and init never started
-+# it (init.svc.doha-dexopt-once stayed empty). A plain late_start service starts
-+# by itself; the script exits unless persist.doha.dexopt_status is unset.
-+service doha-dexopt-once /system/bin/sh /vendor/bin/doha-dexopt-once.sh
-+    class late_start
-+    user root
-+    group root system
-+    oneshot
  
  service vendor.amogus /vendor/bin/init.amogus.sh
      class core

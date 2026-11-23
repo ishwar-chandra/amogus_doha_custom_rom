@@ -152,6 +152,13 @@ if adb shell test -x /system/bin/screenrecord; then
 else
   warn "no /system/bin/screenrecord"
 fi
+# File presence is not a Widevine security-level assertion; L1 still has to be
+# proven in a DRM-info app (see the plan's Verification steps).
+if adb shell test -e /vendor/lib64/liboemcrypto.so; then
+  pass "OEMCrypto library present (/vendor/lib64/liboemcrypto.so)"
+else
+  fail "OEMCrypto library missing (/vendor/lib64/liboemcrypto.so)"
+fi
 NAUD=$(sh_ dumpsys audio | grep -ciE "Active communication device|type:earpiece|type:speaker")
 [ "${NAUD:-0}" -ge 1 ] 2>/dev/null && pass "audio outputs enumerated" || warn "audio outputs not reported"
 RES=$(sh_ wm size | sed -n 's/Physical size: //p')
