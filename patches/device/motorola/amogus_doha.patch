@@ -176,13 +176,16 @@ index 0000000..4947f89
 +    </string-array>
 +</resources>
 diff --git a/rro_overlays/FrameworkOverlays/doha_overlay/res/values/config.xml b/rro_overlays/FrameworkOverlays/doha_overlay/res/values/config.xml
-index b6c6f68..591cd73 100644
+index b6c6f68..06165d4 100644
 --- a/rro_overlays/FrameworkOverlays/doha_overlay/res/values/config.xml
 +++ b/rro_overlays/FrameworkOverlays/doha_overlay/res/values/config.xml
-@@ -11,4 +11,6 @@
+@@ -11,4 +11,9 @@
      <dimen name="status_bar_height_portrait">80.0px</dimen>
      <!-- Whether device supports double tap to wake -->
      <bool name="config_supportDoubleTapWake">true</bool>
++    <!-- AnyMotionDetector holds a partial wake lock after screen-off and
++         delayed idle by several minutes in the 2026-11-23 capture. -->
++    <bool name="config_autoPowerModeUseMotionSensor">false</bool>
 +    <!-- Slightly quicker app transitions; user can still change the scale. -->
 +    <item name="config_appTransitionAnimationDurationScaleDefault" format="float" type="dimen">0.8</item>
  </resources>
