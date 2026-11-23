@@ -91,7 +91,7 @@ image; the running build on the VM predates all of it.
 | swap | zram 1 GB -> 4 GB (was 2 GB until the 2026-11-20 sweep) | `patches/device/motorola/amogus.patch` (fstab qcom/dynamic) |
 | storage | discard off on f2fs `/data` (`nodiscard`; the kernel's f2fs default is on) | same patch |
 | storage | `nr_requests` 256 -> 128, dead read-ahead writes removed | same patch (init.amogus.rc) |
-| storage | read-ahead single owner, `@READAHEAD_KB@` (default 128) | `patches/device/qcom/common.patch` |
+| storage | read-ahead single value source, `@READAHEAD_KB@` (default 128), dead `dm-*`/`sd*` writes removed | `patches/device/qcom/common.patch`, `patches/device/motorola/amogus.patch` |
 | UI | app transition scale 0.8, Launcher3 DT2S on by default | `amogus_doha.patch`, `Launcher3.patch` |
 | kernel stability | `IRQF_NO_SUSPEND` restored on `qcom_glink_native` and `smp2p` (reverts `a8b9cfc`/`0c55710`, which deadlocked `dpm_suspend_noirq()` on every deep sleep; see BUGREPORT P2) | `patches/kernel/motorola/msm-4.14.patch` |
 | kernel stability | `CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off (a slow modem sysmon handshake during shutdown panicked the device; see BUGREPORT capture C7) | `patches/kernel/motorola/msm-4.14.patch` |
@@ -99,7 +99,7 @@ image; the running build on the VM predates all of it.
 | policy | `system_suspend` battery read + neverallow exception, `hal_power` cgroup | `system/sepolicy.patch`, `device/lineage/sepolicy.patch` |
 | GMS | `OP_ACCESS_LOCAL_NETWORK` registered with the flag off (Nearby) | `frameworks/base.patch` |
 | debloat | settings entries for removed apps hidden at runtime | `packages/apps/crDroidSettings.patch` |
-| dexopt | one-shot `speed-profile` compile of all packages at first boot (`persist.doha.dexopt_status`, off switch `persist.doha.dexopt_once=0`) | `patches/device/motorola/amogus.patch`, `rootdir/vendor/bin/doha-dexopt-once.sh` |
+| dexopt | automatic first-boot service removed (never started; no usable sepolicy domain); compile explicitly with `tools/dexopt-all.sh -m speed-profile --wait` | `patches/device/motorola/amogus.patch` |
 
 Not in this build, on purpose: lmkd PSI limits (needs measured A/B), zram dedup
 (kernel has `CONFIG_ZRAM_DEDUP=y` but the write lands after `swapon`, and the
@@ -111,7 +111,7 @@ feature is untested here), thermal thresholds, CPU/GPU frequencies.
 |---|---|
 | zram 2 GB | **PASS** — `SwapTotal 2097148 kB`, `SwapFree` 1.4 GB, zram full-at-boot is gone |
 | `/data` nodiscard | **FAILED as shipped** — `/proc/mounts` still showed `discard`, because the fstab edit removed an option the kernel sets anyway (`set_opt(sbi, DISCARD)` in `fs/f2fs/super.c` `default_options()`). Fix in this branch: mount option `nodiscard` |
-| first-boot dexopt | **did not run** — `init.svc.doha-dexopt-once` stayed empty and `persist.doha.dexopt_status` unset: a `disabled` service plus `on property:sys.boot_completed=1 start ...` never starts. Fix: plain `late_start` service, no trigger |
+| first-boot dexopt | **FAILED as shipped and removed** — `init.svc.doha-dexopt-once` stayed empty and `persist.doha.dexopt_status` unset. The service also had no usable sepolicy domain. It was removed; use the explicit `tools/dexopt-all.sh` path instead |
 | crash buffer | clean, 0 FATAL |
 | perf-audit | exit 0, PASS 4 / FAIL 0 / SKIP 9 (root-only nodes) |
 | thermal | skin `xo_therm` 36 C, `lmh-dcvs-00` 75 C (bus limiter, not skin) |

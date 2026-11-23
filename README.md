@@ -389,9 +389,10 @@ Known issues:
 ./tools/device-check.sh                 # PASS/WARN/FAIL health check over adb, exit code = failures
 adb bugreport ./br.zip                  # from the phone, while the problem is happening
 ./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
+./tools/bugreport-scan.py ./br.zip --area drm  # DRM, Widevine, and keymaster evidence
 ./tools/app-trace.sh com.anthropic.claude # one app: its logs, screenshot, activity state
 ./tools/perf-audit.sh                   # are the kit's perf knobs actually in effect?
-./tools/perf-multitask.sh               # 8-app cycle: resident count + reload times
+./tools/perf-multitask.sh --repeat 3    # 8-app cycle: resident count + reload times
 ./tools/dexopt-all.sh                   # compile all apps now (speed-profile)
 ./tools/gms-trim.sh --list              # GMS background work, grouped; --restore undoes it
 ./tools/integrity-setup.sh status       # Play Integrity: GApps, PIF, keybox, boot props
@@ -399,7 +400,8 @@ adb bugreport ./br.zip                  # from the phone, while the problem is h
 
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
-noise that only appears inside the dump). `docs/BUGREPORT.md` is the record of what that sweep found.
+noise that only appears inside the dump). Use `--area drm`, `--area performance`, or `--area power`
+for the focused evidence groups. `docs/BUGREPORT.md` is the record of what that sweep found.
 
 ## Differences from an official crDroid device
 
@@ -737,6 +739,17 @@ app restarted every 15 seconds waiting for it. The patch stops installing
 the HAL, its libraries and the app, and removes its VINTF entry. GPS and
 XTRA downloads work without it.
 
+**Widevine L1 library** (`vendor/motorola/common`). The vendor tree ships the
+1.4 DRM service, `libwvhidl.so`, and the signed OEMCrypto library, but the
+inherited `hardware/qcom/qcom-vendor.mk` installs only the first two.
+`WVCdm` then reports `Could not load liboemcrypto.so. Falling back to L3`, so
+L1-capable apps see an L3 device. The patch copies the existing
+`hardware/qcom/proprietary/vendor/lib64/liboemcrypto.so` blob to
+`/vendor/lib64/liboemcrypto.so`; it adds no key material and no property spoof.
+`tools/device-check.sh` fails if the installed file is missing, but installation
+alone is not proof of L1: the DRM info app and an L1 stream still have to be
+tested on hardware. The current kit change is device-untested.
+
 ### Play Integrity
 
 Measured on the 2026-11-20 build (bugreport `2026-11-20-07-07-57`, phone
@@ -790,8 +803,15 @@ which probes attested key generation once per build and — when it fails and no
 keybox is installed — posts a single notification saying so. Tapping it opens
 Settings > Misc > TrickyStore, where the user picks their keybox file; the
 screen validates it, stores it, restarts the GMS family and re-checks the
-chain. Nothing is imported without that pick, and the prompt appears once per
-build, not on every boot.
+chain. Nothing is imported without that pick. The prompt is keyed to
+`Build.TIME`, not the often-identical `Build.VERSION.INCREMENTAL`, and turning
+keybox alerts off also removes a pending prompt.
+
+`tools/integrity-setup.sh import` uses the same Settings.Secure contract as the
+UI. It preserves custom target entries and mode suffixes; when it finds the old
+tool-written three-entry list, it lets crDroid's `AxSpoofManagerService` seed its
+full default set and then verifies that `com.google.android.gms` is present.
+It refuses to write a shortened list if seeding fails.
 
 What a user can do, in order of effect:
 
@@ -863,19 +883,21 @@ value actually survives. On this device (4.14, `init.qcom.post_boot.sh` is the
    read-ahead, then sets `vendor.post_boot.parsed=1` on its last line.
 3. `init.aospa.perf.common.rc` (`device/qcom/common`) —
    `on property:vendor.post_boot.parsed=1` rewrites `read_ahead_kb` for
-   `mmcblk0`, `sda`…`sdf` and `dm-0`…`dm-49`.
+   `mmcblk0`. The earlier `sda`...`sdf` and `dm-0`...`dm-49` writes were
+   removed: those block devices do not exist on doha, and their failed writes
+   only obscured which value actually reached the eMMC queue.
 
 Because (3) runs after (2), it is the **last** writer of read-ahead. The 2048 →
 4096 KB raise this branch originally carried in `init.amogus.rc` was therefore
 overwritten a few seconds after boot and never reached the kernel. What the
 branch does now:
 
-- **read-ahead has one owner.** The value lives in
-  `patches/device/qcom/common.patch` (`init.aospa.perf.common.rc`, the file that
-  wins), rendered from the build setting `READAHEAD_KB` (default `128`, AOSPA's
-  own value and what the phone already ran). The dead copies in
-  `init.amogus.rc` are gone, so the intended and effective values cannot drift
-  apart again. A/B test with `READAHEAD_KB=512 ./build.sh …`.
+- **read-ahead has one value source.** Both the early `init.amogus.rc` write and
+  the late `init.aospa.perf.common.rc` write use the `READAHEAD_KB` build setting
+  (default `128`, AOSPA's own value and what the phone already ran), and both
+  target only the real `mmcblk0` queue. The nonexistent `dm-*`/`sd*` targets are
+  gone, including the copies in `init.amogus.rc`, so the intended and effective
+  values cannot drift apart again. A/B test with `READAHEAD_KB=512 ./build.sh ...`.
 - **`nr_requests` back to 128** (the kernel default). It was 256; nothing
   measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
 - **zram 1 GB → 4 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
@@ -914,18 +936,15 @@ branch does now:
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
 
-- **One full `speed-profile` compile of every installed package at first boot**
-  (`rootdir/vendor/bin/doha-dexopt-once.sh`, started from `init.amogus.rc` on
-  `sys.boot_completed=1`). A fresh flash otherwise leaves apps in verify/JIT mode
-  until the platform's idle `bg-dexopt-job` runs, which wants charging, idle and no
-  reboot — on this phone that can be days. init starts it from the `late_start`
-  class (not `disabled` plus a `sys.boot_completed` trigger: that pair never
-  started on the 2026-11-19 build), the script waits for `sys.boot_completed` and
-  two more minutes, then compiles at `nice -n 19`, once per build: it records
-  `persist.doha.dexopt_status` as `<ro.build.date.utc>:<running|done|failed>`, so an
-  OTA re-runs the compile instead of leaving the new system apps unoptimised, and
-  `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
-  equivalent.
+- **No automatic first-boot dexopt.** The former
+  `rootdir/vendor/bin/doha-dexopt-once.sh` service never ran in the shipped build:
+  init reported no `doha-dexopt-once` service instance, `persist.doha.dexopt_status`
+  stayed unset, and the service had no usable sepolicy domain for its persistent
+  properties. It has been removed rather than adding a second dexopt framework.
+  A fresh flash otherwise leaves apps in verify/JIT mode until the platform's idle
+  `bg-dexopt-job` runs, which wants charging, idle and no reboot — on this phone
+  that can be days. After installing apps, run
+  `tools/dexopt-all.sh -m speed-profile --wait` once while charging.
 - **`discard` turned off on the f2fs `/data` mount** (`rootdir/fstab.qcom`,
   `fstab_dynamic.qcom`, option `nodiscard`). With discard f2fs trims on every
   delete, which on this eMMC shows up as I/O stalls while apps are being evicted —

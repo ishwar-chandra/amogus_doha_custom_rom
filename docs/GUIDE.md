@@ -200,9 +200,9 @@ The ROM already carries the memory, queue and read-ahead changes. Two further
 levers stay outside the build because they are reversible user-space state, not
 artifacts; both are safe to skip and both can be undone.
 
-The build already compiles every package once by itself
-(`persist.doha.dexopt_status` shows `done` when it has); these are for re-running it
-on demand and for trimming GMS background work.
+The ROM does not compile apps automatically at first boot. Run the compile once
+after installing apps, then use these for re-running it on demand and for
+trimming GMS background work.
 
 ```sh
 tools/dexopt-all.sh              # compile all apps now, instead of waiting for the

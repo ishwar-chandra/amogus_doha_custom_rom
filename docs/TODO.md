@@ -9,6 +9,15 @@ kernel `4.14.357-openela+ #16`).
 ## Open, being investigated
 
 
+- [ ] **Widevine L1 packaging is device-untested.** After the next flash,
+  `tools/device-check.sh --verbose` must find `/vendor/lib64/liboemcrypto.so`,
+  `logcat -b all` must not repeat `Could not load liboemcrypto.so. Falling back
+  to L3`, and a DRM-info app must report L1 before this is called fixed.
+- [ ] **TrickyStore target migration is device-untested.** After import,
+  `settings get secure spoof_trickystore_target` must contain
+  `com.google.android.gms` with no literal `null`, and disabling keybox alerts
+  must remove a pending prompt. A real Play verdict still requires a
+  Google-rooted keybox supplied by the user.
 - [ ] **VoLTE / IMS.** Evidence from the device:
   - the IMS PDN connects, then drops and rebuilds every 5–11 minutes
     (17 transitions in one window, e.g. 20:14 → 20:41 on 11-15), and
@@ -247,12 +256,12 @@ the number of knobs the phone is not actually running.
   | grep PANIC_ON_SSR` must show it unset, and a reboot must no longer leave the
   screen dark with `Kernel panic - not syncing: Subsys notifier chain for modem taking
   too long` in the next boot's `last_kmsg`.
-- [ ] `doha-dexopt-once` still did not start on build `1795135461` (`nodiscard` and
-  4 GB zram are verified live in `bugreport-...-07-07-57.zip`): a `/vendor/etc/init`
-  service running `/system/bin/sh` without a `seclabel`/domain transition is rejected
-  by init, and Treble neverallows forbid vendor domains from calling `system_server`'s
-  `package` binder service. Either remove the dead vendor service (rely on
-  `tools/dexopt-all.sh`) or move it to `system_ext`/`product` init.
+- [x] Remove `doha-dexopt-once` instead of moving it to another partition. It never
+  started on build `1795135461` (`nodiscard` and 4 GB zram are verified live in
+  `bugreport-...-07-07-57.zip`): the vendor init service had no usable domain/sepolicy,
+  and Treble neverallows forbid its intended `system_server` `package` calls. The
+  script and service are removed; use `tools/dexopt-all.sh -m speed-profile --wait`
+  after installing apps.
 - [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
   component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
   `denied` per component and exits non-zero if the platform refuses, so a failure
