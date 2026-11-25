@@ -666,6 +666,13 @@ releases reverted that bionic commit. Our kernel fork now backports
 unpatched again and every other caller of the syscall works too. clatd
 (464XLAT on IPv6-only mobile networks) is started the same way.
 
+**`/proc/cmdline` bounds** (`kernel/motorola/msm-4.14`). The
+`CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT` helper appended
+`androidboot.force_normal_boot=1` to a fixed `COMMAND_LINE_SIZE` (4 KiB) buffer
+without checking the remaining space. It now verifies the space first and logs
+instead of overflowing. Doha's bootloader cmdline is far below the limit, so
+this was latent; the source is firmware-controlled and must not be trusted.
+
 ### Hardware fixes
 
 **Mobile network / SIM** (`vendor/motorola/amogus`, `device/motorola/amogus`).
@@ -900,6 +907,15 @@ branch does now:
   values cannot drift apart again. A/B test with `READAHEAD_KB=512 ./build.sh ...`.
 - **`nr_requests` back to 128** (the kernel default). It was 256; nothing
   measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
+- **Boot-time scheduler margins are applied, not dropped**
+  (`patches/kernel/motorola/msm-4.14.patch`). The downstream
+  `sched_updown_migrate_handler` ignored every write in the first 120 s; that
+  silently discarded the trinket block in `init.qcom.post_boot.legacy.sh`
+  (`sched_downmigrate` 67, `sched_upmigrate` 77 at `sys.boot_completed`). The
+  gate is removed, and the values now reach the scheduler; validation
+  (`up <= down`) still runs. Read back with
+  `adb shell cat /proc/sys/kernel/sched_upmigrate` (77; default 70) and
+  `sched_downmigrate` (67; default 65). Device-untested.
 - **zram 1 GB → 4 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
   for consistency; doha builds non-dynamic, so `fstab.qcom` is the live file).
   4 GB is a deliberate over-commit on a 3.6 GB device: zram holds *compressed*

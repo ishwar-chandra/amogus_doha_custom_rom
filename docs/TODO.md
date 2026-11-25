@@ -228,6 +228,12 @@ the number of knobs the phone is not actually running.
   Gate: `perf-audit.sh` read_ahead PASS for `mmcblk0` and every `dm-*`.
 - [x] **`nr_requests` 256 → 128** (kernel default; eMMC + CFQ gains nothing from
   a deeper queue and nothing measured justified 256).
+- [ ] **Verify the boot-time scheduler margins were applied.** The kernel's
+  `sched_updown_migrate_handler` dropped every write in the first 120 s, so the
+  trinket block's `sched_downmigrate` 67 / `sched_upmigrate` 77 never reached the
+  scheduler. The gate is removed in `patches/kernel/motorola/msm-4.14.patch`;
+  after a flash, `adb shell cat /proc/sys/kernel/sched_upmigrate` must read 77
+  (default 70) and `sched_downmigrate` 67 (default 65). Device-untested.
 - [ ] **Governor not verified on device.** `post_boot.legacy.sh` selects
   `schedutil` only for trinket `soc_id` 394/467/468 with
   `hispeed_freq` 1305600/1401600 and `hispeed_load` 85. If the phone boots on

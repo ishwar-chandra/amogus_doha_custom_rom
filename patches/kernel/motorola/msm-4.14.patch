@@ -84,11 +84,14 @@ index 08dce22af..967de6417 100644
 +	  This is a workaround to allow recovery-as-boot A/B devices that
 +	  launched with Android 9 to use two-stage init.
 diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
-index 403cbb12a..18c32e2b4 100644
+index 403cbb1..c3efa14 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
-@@ -3,10 +3,51 @@
+@@ -1,12 +1,60 @@
+ // SPDX-License-Identifier: GPL-2.0
+ #include <linux/fs.h>
  #include <linux/init.h>
++#include <linux/printk.h>
  #include <linux/proc_fs.h>
  #include <linux/seq_file.h>
 +#include <asm/setup.h>
@@ -109,9 +112,9 @@ index 403cbb12a..18c32e2b4 100644
 +
 +static char proc_command_line[COMMAND_LINE_SIZE];
 +
-+static void proc_command_line_init(void) {
++static void proc_command_line_init(void)
++{
 +	char *offset_addr;
-+	char *proc_command_line_tail;
 +
 +	strcpy(proc_command_line, saved_command_line);
 +
@@ -124,11 +127,17 @@ index 403cbb12a..18c32e2b4 100644
 +
 +#ifdef CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
 +	if (strstr(saved_command_line, INITRAMFS_STR_FIND)) {
-+		// point proc_command_line_tail to the null terminator of the cmdline
-+		proc_command_line_tail = proc_command_line + strlen(proc_command_line);
-+		memcpy(proc_command_line_tail, " ", 1);
-+		memcpy(proc_command_line_tail + 1, ANDROID_FORCE_NORMAL_BOOT_STR,
-+                        sizeof(ANDROID_FORCE_NORMAL_BOOT_STR));
++		size_t used = strlen(proc_command_line);
++		/* One byte for the space, then the flag including its NUL. */
++		if (used + 1 + sizeof(ANDROID_FORCE_NORMAL_BOOT_STR) <=
++		    sizeof(proc_command_line)) {
++			proc_command_line[used] = ' ';
++			memcpy(proc_command_line + used + 1,
++			       ANDROID_FORCE_NORMAL_BOOT_STR,
++			       sizeof(ANDROID_FORCE_NORMAL_BOOT_STR));
++		} else {
++			pr_warn("proc: cmdline full, not appending force_normal_boot");
++		}
 +	}
 +#endif
 +}
@@ -140,7 +149,7 @@ index 403cbb12a..18c32e2b4 100644
  	return 0;
  }
  
-@@ -24,6 +65,8 @@ static const struct file_operations cmdline_proc_fops = {
+@@ -24,6 +73,8 @@ static const struct file_operations cmdline_proc_fops = {
  
  static int __init proc_cmdline_init(void)
  {
@@ -175,23 +184,22 @@ index 33fdbdc19..431ea8fa6 100644
  }
  __setup("skip_initramfs", skip_initramfs_param);
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 51ce59fec..270161f59 100644
+index 51ce59f..b71686c 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -7153,8 +7153,15 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
+@@ -7152,9 +7152,12 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
+ 		goto unlock_mutex;
  	}
  
- 	// Restrict boot process writes on boot time (120s)
+-	// Restrict boot process writes on boot time (120s)
 -	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC)
-+	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC) {
-+		/*
-+		 * Report success so the write is silently ignored. Leaving
-+		 * ret unset returned a stale register value as the byte count,
-+		 * and init.qcom.post_boot.sh aborted on its first write here.
-+		 */
-+		ret = 0;
- 		goto unlock_mutex;
-+	}
+-		goto unlock_mutex;
++	/*
++	 * Writes are applied from the first userspace write on. The vendor
++	 * gate used to drop every write in the first 120 s, which silently
++	 * discarded the trinket capacity margins that
++	 * init.qcom.post_boot.legacy.sh writes at sys.boot_completed.
++	 */
  
  	/*
  	 * Cache the old values so that they can be restored
