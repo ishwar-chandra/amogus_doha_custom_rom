@@ -12,8 +12,10 @@ This repository is **not** an Android source tree: no `src/`, no app code, no te
   `crDroidAndroid-17.0-<YYYYMMDD>-amogus_doha-v13.1[-debloat][-adbkey]`.
 - Branches on `origin`: `crdroid-android-17` (integration), `performance-tuning` (daily work),
   `lineage-24.0`, `ext4-system-53`. **There is no `main`** and no `master` — docs that mention
-  `main` are stale. Work lands on `performance-tuning` and is merged into `crdroid-android-17`
-  before release; never merge crDroid work back into the LineageOS lines.
+  `main` are stale. Builds use the branch checked out here (`tools/gcp-build.sh` derives
+  `BRANCH` from HEAD); untested work stays on `performance-tuning` and is merged into
+  `crdroid-android-17` only after device testing. Never merge crDroid work back into the
+  LineageOS lines.
 - The patch set is the deliverable. `README.md` is the design record and per-fix rationale: an
   undocumented patch is a maintenance hazard, and a new patch must get a section there.
 

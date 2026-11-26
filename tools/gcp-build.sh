@@ -55,7 +55,8 @@
 #   JOBS          compile jobs         (default: MACHINE's vCPUs)
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
-#   REPO, BRANCH, OUT, GH_REPO, OTA_REPO, TAG
+#   REPO, OUT, GH_REPO, OTA_REPO, TAG
+#   BRANCH        branch to build (default: the branch checked out in this repo)
 #   NO_RELEASE=1 / NO_OTA=1 / NO_DELETE=1   for `finish`
 #   AUTO_FINISH=1                       `build` waits for success, releases,
 #                                       updates OTA and deletes in one command
@@ -105,10 +106,20 @@ SWAP_GB=${SWAP_GB:-32}
 SYNC_JOBS=${SYNC_JOBS:-nproc}
 REPO_DEPTH=${REPO_DEPTH-1}
 REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
-BRANCH=${BRANCH:-crdroid-android-17}
 # Repo root, not $PWD: the script may be started from anywhere (tools/, or an
 # absolute path), and the defaults must still point at this checkout.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Build the branch that is checked out here. performance-tuning carries untested
+# work and crdroid-android-17 is the release line, so silently building the
+# other one is wrong in both directions. BRANCH is only for a detached checkout
+# or a deliberate override.
+if [ -z "${BRANCH:-}" ]; then
+  BRANCH=$(git -C "$ROOT" symbolic-ref -q --short HEAD || true)
+fi
+[ -n "$BRANCH" ] || {
+  echo "BRANCH is unset and $ROOT has a detached HEAD; set BRANCH=<branch>" >&2
+  exit 1
+}
 OUT=${OUT:-$ROOT/gcp-out}
 SESSION=doha
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
@@ -394,7 +405,7 @@ build)
         # commit is being built; the caller checks for uncommitted work.
         if [ -d "$MANIFEST/.git" ]; then
           if git -C "$MANIFEST" fetch -q origin "$BRANCH" 2>/dev/null &&
-             git -C "$MANIFEST" reset -q --hard "origin/$BRANCH" 2>/dev/null; then
+             git -C "$MANIFEST" checkout -q -B "$BRANCH" FETCH_HEAD 2>/dev/null; then
             echo "manifest: $(git -C "$MANIFEST" log -1 --format='%h %s')"
           else
             echo "manifest: fetch/reset failed, building the clone as it is" >&2
@@ -820,7 +831,7 @@ run verify "$FIRST" || { echo "first variant verify FAILED"; exit 1; }
 
 rm -f "$HOME/build.exit"
 git -C /mnt/build/manifest fetch -q origin "$BRANCH" &&
-  git -C /mnt/build/manifest reset -q --hard "origin/$BRANCH"
+  git -C /mnt/build/manifest checkout -q -B "$BRANCH" FETCH_HEAD
 echo "manifest for second build: $(git -C /mnt/build/manifest log -1 --format='%h %s')"
 run build "$SECOND" 0 || { echo "second build failed to start"; exit 1; }
 wait_build && save_prop "$(chan "$SECOND")" || { echo "second build failed, nothing published"; exit 1; }

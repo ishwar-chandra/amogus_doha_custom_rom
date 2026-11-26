@@ -95,6 +95,10 @@ docker run --rm -it \
 
 Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 
+Both `build.sh` and `tools/gcp-build.sh` build the branch checked out in the
+clone: from `performance-tuning` they build that branch, and from
+`crdroid-android-17` they build the release line. There is no silent default.
+
 `build.sh` does the following:
 
 1. Runs `repo init` against `default.xml` on the branch checked out in this

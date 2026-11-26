@@ -108,8 +108,8 @@ Typical session: `create; setup; build; finish`.
 
 Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
 `SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
-default 48), `TAG=...`, `OTA_CHANNEL=standard|debloat|test`, `NO_RELEASE=1`, `NO_OTA=1`,
-`NO_DELETE=1`.
+default 48), `TAG=...`, `BRANCH` (default: the branch checked out in this repo),
+`OTA_CHANNEL=standard|debloat|test`, `NO_RELEASE=1`, `NO_OTA=1`, `NO_DELETE=1`.
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
 log reading; `finish` exits before deleting anything.
@@ -416,8 +416,10 @@ tools/gcp-build.sh promote crdroid-20261126             # writes standard/doha.j
 - `@SKIN_THROTTLE_MC@` is the only placeholder (rendered from
   `SKIN_THROTTLE_C`); the stamp `<src>/.repo/doha-patches` decides whether a
   project is re-patched.
-- Branch policy: device fixes flow `main` → `lineage-24.0` →
-  `crdroid-android-17`; never merge crDroid work back.
+- Branch policy: `tools/gcp-build.sh` builds the branch checked out in this
+  clone. Keep untested work on `performance-tuning` and merge it into
+  `crdroid-android-17` only after device testing; never merge crDroid work back
+  into the LineageOS lines.
 
 Commit messages: plain-language subject, optional area prefix
 (`build.sh:`, `README:`), issue suffix `(doha_android#N)`.
