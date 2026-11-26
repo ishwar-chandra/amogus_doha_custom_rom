@@ -238,7 +238,7 @@ index d0ae1e6..c7f2432 100644
 +    private fun maybeAskForKeybox(ctx: Context) {
 +        if (!isEnabled(ctx) || !isUnlocked(ctx)) return
 +        if (currentKeybox(ctx) != null) return
-+        val build = Long.toString(Build.TIME)
++        val build = Build.TIME.toString()
 +        if (Settings.Secure.getString(ctx.contentResolver, NEEDED_PROMPT_KEY) == build) return
 +        if (!attestationBroken(ctx, build)) return
 +        Settings.Secure.putString(ctx.contentResolver, NEEDED_PROMPT_KEY, build)
