@@ -99,6 +99,8 @@ tools/gcp-build.sh fetch      # copy zips/ to ./gcp-out locally
 tools/gcp-build.sh finish     # wait, verify, release, update OTA, delete
 TAG=crdroid-20261118 tools/gcp-build.sh release   # release only (one tag: all variants)
 OTA_CHANNEL=debloat TAG=crdroid-20261118 tools/gcp-build.sh ota   # write <channel>/doha.json
+OTA_CHANNEL=test TAG=crdroid-20261126 AUTO_FINISH=1 tools/gcp-build.sh build  # tester feed
+tools/gcp-build.sh promote crdroid-20261126   # tested test build -> standard (--dry-run first)
 tools/gcp-build.sh delete     # delete the VM now
 ```
 
@@ -106,7 +108,7 @@ Typical session: `create; setup; build; finish`.
 
 Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
 `SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
-default 48), `TAG=...`, `OTA_CHANNEL=standard|debloat`, `NO_RELEASE=1`, `NO_OTA=1`,
+default 48), `TAG=...`, `OTA_CHANNEL=standard|debloat|test`, `NO_RELEASE=1`, `NO_OTA=1`,
 `NO_DELETE=1`.
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
@@ -363,8 +365,29 @@ tools/gcp-build.sh finish       # ... publishes tag crdroid-<today>
 ```
 
 The token needs **Contents: read and write** on the repo (fine-grained) or
-the `repo` scope (classic). `NO_RELEASE=1` skips publishing,
-`NO_DELETE=1` keeps the VM.
+the `repo` scope (classic), and the same write access to the feed repo
+`$OTA_REPO` (`ishwar-chandra/doha-ota`) — `ota`/`promote` commit the JSON there.
+`NO_RELEASE=1` skips publishing, `NO_DELETE=1` keeps the VM.
+
+### 8.1 Test channel, then promote
+
+A test build is the artifact you will ship; it just points at `test/doha.json`.
+
+```sh
+OTA_CHANNEL=test TAG=crdroid-20261126 AUTO_FINISH=1 tools/gcp-build.sh build
+# install that zip once: System Update -> Install local update (keeps GApps)
+tools/gcp-build.sh promote crdroid-20261126 --dry-run   # inspect the JSON
+tools/gcp-build.sh promote crdroid-20261126             # writes standard/doha.json
+```
+
+- Install the first `test` build once with **System Update -> Install local
+  update**; after that the device follows `test/doha.json` like any other build.
+  Stable builds never read that path, so nobody else is offered a test build.
+- The local-update path runs `UpdateEngine`/addon.d-v2, so GApps survive; a
+  recovery sideload does not, hence the one-time install is not a sideload.
+- `promote` refuses a different tag, a `-debloat`/`-adbkey` artifact, or a build
+  not newer than the one `standard` already advertises. It runs on this machine,
+  needs only the token, and rebuilds nothing.
 
 ## 9. Troubleshooting
 

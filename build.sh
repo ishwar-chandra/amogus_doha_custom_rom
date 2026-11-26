@@ -20,6 +20,10 @@
 #   CCACHE_SIZE   ccache size limit (default: 50G)
 #   SKIN_THROTTLE_C  skin temperature (°C) at which the thermal HAL reports
 #                 throttling (default: 40)
+#   OTA_CHANNEL   Updater feed baked into the build: standard (default),
+#                 debloat or test. The test feed is the maintainer-only one
+#                 used before an artifact is promoted to standard; a build
+#                 must be installed once before it can follow that feed.
 #   ZIP_DIR       where finished builds are copied (default: zips/ next to
 #                 SOURCE_DIR)
 #   SKIP_SYNC=1   don't run repo init or repo sync
@@ -53,6 +57,20 @@ VARIANT=${VARIANT:-userdebug}
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
 UPDATER_CHANNEL=$([ "$DEBLOAT" = 1 ] && echo debloat || echo standard)
+# OTA_CHANNEL selects the feed URL rendered into the Updater. standard and
+# debloat are the public feeds; test is the maintainer feed a device has to be
+# flashed onto once. A build whose channel disagrees with its zip name would
+# reject its own feed entry (the Updater guard keys on the -debloat suffix), so
+# the two must match; test currently carries standard (DEBLOAT=0) builds only.
+case ${OTA_CHANNEL:-} in
+  '')      ;;
+  debloat) UPDATER_CHANNEL=debloat
+           [ "$DEBLOAT" = 1 ] || { echo "OTA_CHANNEL=debloat needs DEBLOAT=1" >&2; exit 1; } ;;
+  standard|test)
+           UPDATER_CHANNEL=$OTA_CHANNEL
+           [ "$DEBLOAT" = 0 ] || { echo "OTA_CHANNEL=$OTA_CHANNEL needs DEBLOAT=0" >&2; exit 1; } ;;
+  *)       echo "OTA_CHANNEL must be standard, debloat or test" >&2; exit 1 ;;
+esac
 # Runtime read_ahead_kb applied to mmcblk0 and dm-*. device/qcom/common's
 # init.aospa.perf.common.rc is the only writer that survives boot (it re-applies
 # on vendor.post_boot.parsed=1, after qcom-post-boot); the value is rendered into

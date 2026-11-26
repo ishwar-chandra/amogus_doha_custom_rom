@@ -140,6 +140,17 @@ is generated automatically by `tools/gcp-build.sh finish`; it requires the
 public `ishwar-chandra/doha-ota` repo and a token with write access to it. Until
 that one-time setup exists, the Updater has nothing to download.
 
+A third feed, `test/`, is the maintainer channel. `OTA_CHANNEL=test` bakes it
+into a standard build (`DEBLOAT=0`) and `finish` writes `test/doha.json`; only a
+device that installed that build once follows it. Install the first one from
+System Update -> **Install local update** (same `UpdateEngine` path as an OTA,
+so GApps survive), not by recovery sideload (they do not). After testing,
+`tools/gcp-build.sh promote <tag>` copies the tested entry into
+`standard/doha.json` without rebuilding, so stable devices receive exactly the
+artifact that was tested; their Updater ignores it once it is already installed.
+The `-debloat` suffix guard is unchanged, which is why the test channel carries
+standard builds only.
+
 The debloat variant also hides the settings entries that pointed at the removed
 apps. `packages/apps/crDroidSettings.patch` walks the preference tree once it is
 inflated and hides any preference whose embedded intent names a package that is
@@ -413,11 +424,12 @@ requirements](https://github.com/LineageOS/charter/blob/main/device-support-requ
 (which crDroid builds on), it differs in these ways:
 
 - **OTA is self-hosted.** The build does not use crDroid's OTA repo; it reads
-  `ishwar-chandra/doha-ota` at `<channel>/doha.json`. `tools/gcp-build.sh
-  finish` publishes the release and updates that feed, so a standard build
-  only offers standard zips and a debloat build only debloat zips. The feed
-  repo and its write token are a one-time setup; without them, update with
-  `adb sideload` as described under Installing.
+  `ishwar-chandra/doha-ota` at `<channel>/doha.json` (`standard`, `debloat`, or
+  the maintainer-only `test`). `tools/gcp-build.sh finish` publishes the release
+  and updates that feed, so a standard build only offers standard zips and a
+  debloat build only debloat zips; `promote <tag>` moves a tested test build into
+  standard without a rebuild. The feed repo and its write token are a one-time
+  setup; without them, update with `adb sideload` as described under Installing.
 - **Firmware is not managed for you.** The zip doesn't contain Motorola
   firmware, and the install steps don't copy it to the second slot. Both
   slots should run the latest stock firmware for doha (Android 10)

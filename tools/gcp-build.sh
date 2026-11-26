@@ -17,6 +17,9 @@
 #                            tag or adding to it if it already exists
 #   ota <tag> <owner/repo>   write <channel>/doha.json to the OTA feed repo
 #                            (--dry-run prints the JSON, publishes nothing)
+#   promote <tag>            copy the tested test/doha.json entry into
+#                            standard/doha.json -- same artifact, no rebuild
+#                            (--dry-run prints it, publishes nothing)
 #
 # Typical session:  create; setup; build; finish
 #
@@ -41,6 +44,10 @@
 #   VARIANT       userdebug|user|eng   (default: userdebug)
 #   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
 #                 -debloat suffix and needs its own TAG/channel (default: 0)
+#   OTA_CHANNEL   standard|debloat|test: the feed baked into the build and
+#                 written by finish/ota (default: debloat when DEBLOAT=1, else
+#                 standard). test is the maintainer feed; promote moves a
+#                 tested test build into standard without rebuilding.
 #   ADB_KEY       path to an adb public key on this machine; `build` copies
 #                 it to the VM and bakes it in (build.sh's ADB_KEY), so adb
 #                 works from the phone's first boot. Test builds only: the
@@ -64,6 +71,16 @@ VARIANT=${VARIANT:-userdebug}
 # own OTA channel picked with OTA_CHANNEL.
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
+# The channel is compiled into the Updater, so a build and its feed must agree;
+# test currently carries standard (DEBLOAT=0) artifacts only.
+case ${OTA_CHANNEL:-} in
+  '') ;;
+  standard|test)
+    [ "$DEBLOAT" = 0 ] || { echo "OTA_CHANNEL=$OTA_CHANNEL needs DEBLOAT=0" >&2; exit 1; } ;;
+  debloat)
+    [ "$DEBLOAT" = 1 ] || { echo "OTA_CHANNEL=debloat needs DEBLOAT=1" >&2; exit 1; } ;;
+  *) echo "OTA_CHANNEL must be standard, debloat or test" >&2; exit 1 ;;
+esac
 # 12 vCPU is the project's CPUS_ALL_REGIONS cap. 48 GB RAM + 32 GB swap
 # covers Soong's ~100 GB analysis peak; RAM is the expensive resource
 # ($0.005/GB/h), so the swap file covers the top of the peak. The single
@@ -143,6 +160,18 @@ ota_channel() {
   else
     echo standard
   fi
+}
+
+# The channel the running VM was actually built with. OTA_CHANNEL wins; else
+# the marker build wrote, so a manual `finish`/`ota` after a test build cannot
+# publish it to standard by omission.
+channel_for_vm() {
+  if [ -n "${OTA_CHANNEL:-}" ]; then printf '%s\n' "$OTA_CHANNEL"; return; fi
+  local ch
+  ch=$(gcloud_ compute ssh "$NAME" --command 'cat $HOME/build.channel 2>/dev/null || true' 2>/dev/null |
+         grep -E '^(standard|debloat|test)$' | tail -1)
+  if [ -n "$ch" ]; then printf '%s\n' "$ch"; return; fi
+  ota_channel
 }
 
 # The VM gets the token, uses it, and deletes it again -- one place, so
@@ -349,6 +378,17 @@ setup)  install_deps
 
 build)
         ADB_KEY_BUILD=${1:-0}
+        # Feed baked into this build (build.sh's OTA_CHANNEL): handed in by a
+        # normal `build`, derived from the variant when auto-finish starts it.
+        CHANNEL=${2:-}
+        [ -n "$CHANNEL" ] || {
+          if [ "$DEBLOAT_BUILD" = 1 ]; then CHANNEL=debloat; else CHANNEL=standard; fi
+        }
+        case $CHANNEL in standard|debloat|test) ;;
+          *) echo "bad OTA channel: $CHANNEL" >&2; exit 1 ;; esac
+        # `finish`/`ota` default to this, so a manual run cannot publish a test
+        # build into standard just because it did not repeat OTA_CHANNEL.
+        printf '%s\n' "$CHANNEL" > "$HOME/build.channel"
         # The VM builds from its own clone of this recipe, so a change that was
         # not pushed never reaches it. Pull the branch first and say which
         # commit is being built; the caller checks for uncommitted work.
@@ -398,7 +438,7 @@ EOS
         adb_env=
         [ "$ADB_KEY_BUILD" = 1 ] && adb_env="ADB_KEY='$HOME/adbkey.pub' "
         tmux new-session -d -s "$SESSION" \
-          "$adb_env VARIANT='$VARIANT' DEBLOAT='$DEBLOAT_BUILD' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+          "$adb_env VARIANT='$VARIANT' DEBLOAT='$DEBLOAT_BUILD' OTA_CHANNEL='$CHANNEL' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
         sleep 3; tmux ls
         echo "started in tmux '$SESSION'; log: $LOG" ;;
 
@@ -462,7 +502,7 @@ ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       [ -n "$channel" ] || {
         if [ "${DEBLOAT_BUILD:-0}" = 1 ]; then channel=debloat; else channel=standard; fi
       }
-      case $channel in standard|debloat) ;; *) echo "bad OTA channel: $channel" >&2; exit 1 ;; esac
+      case $channel in standard|debloat|test) ;; *) echo "bad OTA channel: $channel" >&2; exit 1 ;; esac
       # A run that publishes both variants at once builds them one after the other,
       # so $SRC/out only holds the last variant's props. auto-finish saves each
       # variant's build.prop as ~/build.prop.<channel> right after its build.
@@ -608,7 +648,73 @@ ota)
   # Writes the feed entry, so the ROM's Updater finds this release. Runs after
   # the release exists: the JSON points at its download URL.
   printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(ota_channel)" ;;
+  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(channel_for_vm)" ;;
+promote)
+  # Promote the artifact already tested on the test channel: the exact zip the
+  # test feed points at becomes the standard one, with no rebuild. Refuses a
+  # debloat/adbkey artifact, a tag mismatch, or a build that is not newer than
+  # what standard already advertises.
+  PTAG=${2:-${TAG:-}}
+  case $PTAG in -*|'') echo "usage: promote <tag> [--dry-run]" >&2; exit 1 ;; esac
+  PDRY=${3:-}
+  case $PDRY in ''|--dry-run) ;; *) echo "usage: promote <tag> [--dry-run]" >&2; exit 1 ;; esac
+  tok=$(resolve_token) || exit 1
+  api="https://api.github.com/repos/$OTA_REPO/contents"
+  hdr=(-H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json")
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  code=$(curl -sS -o "$tmp/test.json" -w '%{http_code}' "${hdr[@]}" "$api/test/doha.json")
+  [ "$code" = 200 ] || { echo "promote: no test/doha.json in $OTA_REPO (HTTP $code)" >&2; exit 1; }
+  scode=$(curl -sS -o "$tmp/std.json" -w '%{http_code}' "${hdr[@]}" "$api/standard/doha.json")
+  case $scode in
+    200) ;;
+    404) rm -f "$tmp/std.json" ;;
+    *) echo "promote: GET standard/doha.json -> $scode" >&2; exit 1 ;;
+  esac
+  python3 - "$tmp/test.json" "$tmp/std.json" "$PTAG" "$tmp/body.b64" "$tmp/meta" "$tmp/stdsha" <<'PY'
+import base64, json, sys
+testp, stdp, tag, body_out, meta_out, sha_out = sys.argv[1:7]
+d = json.load(open(testp))
+body = json.loads(base64.b64decode(d["content"]))
+u = body["response"][0]
+name, ts, url = u["filename"], int(u["timestamp"]), u["download"]
+if f"/download/{tag}/" not in url:
+    sys.exit(f"promote: test feed points at {url}, not tag {tag}")
+if "-debloat" in name or "-adbkey" in name:
+    sys.exit(f"promote: refusing {name}: not a standard artifact")
+stdsha = ""
+try:
+    s = json.load(open(stdp))
+except FileNotFoundError:
+    pass
+else:
+    old = json.loads(base64.b64decode(s["content"]))["response"][0]
+    ots = int(old["timestamp"])
+    if ots > ts:
+        sys.exit(f"promote: standard already offers a newer build ({old['filename']})")
+    if ots == ts:
+        if old["filename"] == name:
+            sys.exit(f"promote: {name} is already the standard build")
+        sys.exit(f"promote: standard already has a build with timestamp {ts}")
+    stdsha = s["sha"]
+open(body_out, "w").write(base64.b64encode(json.dumps(body).encode()).decode())
+open(meta_out, "w").write(f"{name} {ts}")
+open(sha_out, "w").write(stdsha)
+print(f"promote: {name} (timestamp {ts})")
+PY
+  if [ "$PDRY" = --dry-run ]; then
+    python3 -c 'import base64,sys; print(base64.b64decode(open(sys.argv[1]).read()).decode())' "$tmp/body.b64"
+    exit 0
+  fi
+  python3 - "$tmp/body.b64" "$PTAG" "$(cat "$tmp/stdsha")" > "$tmp/put.json" <<'PY'
+import json, sys
+b64, tag, sha = sys.argv[1], sys.argv[2], sys.argv[3]
+d = {"message": f"ota: promote {tag} to standard", "content": open(b64).read().strip()}
+if sha:
+    d["sha"] = sha
+print(json.dumps(d))
+PY
+  curl -fsS -X PUT "${hdr[@]}" -d @"$tmp/put.json" "$api/standard/doha.json" >/dev/null
+  echo "promoted $(cat "$tmp/meta") to standard/doha.json" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
   while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
@@ -622,7 +728,7 @@ finish)
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
     printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-    if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(ota_channel)"; then
+    if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(channel_for_vm)"; then
       echo "OTA feed not updated: check $OTA_REPO and token write access." >&2
       echo "VM kept: fix the feed/token and rerun 'tools/gcp-build.sh finish'." >&2
       exit 1
@@ -650,7 +756,7 @@ build)
     adb_arg=1
     echo "ADB_KEY: copied $(basename "$ADB_KEY") to $NAME, build gets -adbkey suffix"
   fi
-  remote_exec build "$adb_arg"
+  remote_exec build "$adb_arg" "$(ota_channel)"
   if [ "${AUTO_FINISH:-0}" = 1 ]; then
     echo "AUTO_FINISH=1: waiting for the build and releasing it"
     "$0" finish

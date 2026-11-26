@@ -7,7 +7,7 @@ index e4f7355..dd47c93 100644
              return false
          }
 +
-+        // build.sh renders @UPDATER_CHANNEL@ here. Both channels are signed
++        // build.sh renders its channel here. Every channel is signed
 +        // with the same testkey, so this is the only thing that stops a
 +        // standard build from installing a debloat zip (and vice versa).
 +        val channelIsDebloat = "@UPDATER_CHANNEL@" == "debloat"
