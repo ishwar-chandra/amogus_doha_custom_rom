@@ -175,7 +175,7 @@ index fbe42bb..a58df71 100644
 -/dev/block/zram0                                        none                     swap    defaults                                             zramsize=70%
 +/dev/block/zram0                                        none                     swap    defaults                                             zramsize=50%
 diff --git a/rootdir/vendor/etc/init/init.amogus.rc b/rootdir/vendor/etc/init/init.amogus.rc
-index 879062c..114ed74 100644
+index 879062c..68119e6 100644
 --- a/rootdir/vendor/etc/init/init.amogus.rc
 +++ b/rootdir/vendor/etc/init/init.amogus.rc
 @@ -16,10 +16,8 @@ on init
@@ -208,6 +208,15 @@ index 879062c..114ed74 100644
  
  service vendor.amogus /vendor/bin/init.amogus.sh
      class core
+@@ -50,3 +49,8 @@
+ # DualSIM
+ on property:ro.boot.dualsim=true
+     setprop persist.radio.multisim.config dsds
++
++# Keep a page reserve so order-0 allocations on the binder copy-to-user path
++# do not fail when the device is under memory pressure (2026-11-26 bugreport).
++on init
++    write /proc/sys/vm/min_free_kbytes 16384
 diff --git a/sepolicy/file.te b/sepolicy/file.te
 index 4e0bc64..20473d5 100644
 --- a/sepolicy/file.te

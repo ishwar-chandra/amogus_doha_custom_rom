@@ -9,6 +9,15 @@ kernel `4.14.357-openela+ #16`).
 ## Open, being investigated
 
 
+- [ ] **Binder allocation failure fix is device-untested.** After the next flash,
+  replay the 2026-11-26 16:52 load (camera + Chrome + Maps) and take a bugreport:
+  `KERNEL LOG` must contain zero `binder: ... page allocation failure` and zero
+  `ioctl c0306201 ... returned -14`; `am_kill`/`lowmemorykiller` counts and
+  screen-off drain must not regress against the 2026-11-23 baseline.
+- [ ] **SMS SCTS fallback is device-untested.** Receive SMS from the sender that
+  produced month 0 on 2026-11-26; `logcat -b radio` must show one warning, not a
+  `DateTimeException` stack, and the message must carry its receive date instead
+  of 1970.
 - [ ] **Widevine L1 packaging is device-untested.** After the next flash,
   `tools/device-check.sh --verbose` must find `/vendor/lib64/liboemcrypto.so`,
   `logcat -b all` must not repeat `Could not load liboemcrypto.so. Falling back

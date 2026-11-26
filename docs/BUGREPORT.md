@@ -19,16 +19,21 @@ possible in this workspace.
 Build: `ro.build.date=Wed Nov 18 02:13:54 UTC 2026`, `ro.build.version.sdk=37`,
 `ro.build.type=user`, `ro.crdroid.version=17.0`.
 
+Capture E: `bugreports/bugreport-doha-CP2A.260605.016-2026-11-26-18-14-59.zip`,
+2026-11-26 18:14, serial `ZF6522633X`, uptime 1 d 17 h 54 m, BSNL + JIO both LTE,
+build 2026-11-20 (`ro.build.date=Fri Nov 20 02:13:41 UTC 2026`, kernel `#7` Nov 20),
+boot reason `reboot`, no panic. It produced P18/P19 and refreshed P11 and C1.
+
 ## Status at a glance
 
 | Status | Entries | Individual issues |
 |---|---|---|
-| Fixed in code, device-unverified | 3 (P1, P3, D5) | 5 |
+| Fixed in code, device-unverified | 5 (P1, P3, P18, P19, D5) | 7 |
 | Partially fixed | 3 (P2, P10, P14) | 3 entries, several sub-items open |
 | Mitigation only | 3 (P6, P8, P9) | 3 |
 | Likely fixed upstream, unverified | 1 (P4) | 1 |
 | Open | 11 (P5/P7/P11/P12/P13/P15/P16/P17, D6, D8, D9) | 35 |
-| **Tracked total** | **21** | **44** |
+| **Tracked total** | **23** | **46** |
 
 `P5` is the old `D4`; `D2` is closed (the green verified-boot property is crDroid's SafetyNet spoof).
 `D5` is one row of P10.
@@ -238,6 +243,36 @@ badges.
 - [ ] Reproduce each with the latest app version.
 - [ ] Only revisit if the same failure is seen with AOSP apps.
 
+## P18 — Binder transactions fail under memory pressure
+**Status:** fixed in code (device init), device-unverified. **Severity:** high.
+**Summary:** 11× `binder: <pid>_N: page allocation failure: order:0` at 16:21:42 and
+16:52:35 (capture E), each followed by `binder: <pid>:<tid> ioctl c0306201 ... returned -14`
+(EFAULT, `BINDER_WRITE_READ`): reclaim could not fault in the user page for the binder
+copy-to-user (`Normal free: 1516kB` against `min:2012kB`). The same window has
+`binder_alloc_buf, no vma`, `DeadObjectException`, a crashed Chrome sandboxed process and,
+later, 8 `lmkd` kills. No `page allocation`/`binder_alloc` wording exists in captures A-D.
+**Fix:** `patches/device/motorola/amogus.patch` writes `vm.min_free_kbytes=16384` from
+`init.amogus.rc` (`on init`). It only raises the kernel watermark; read-ahead,
+`nr_requests`, zram and LMK thresholds are untouched, and it is not
+`config_extraFreeKbytesAdjust`.
+- [x] Knob in the kit patch.
+- [ ] Flash and replay the 16:52 load (camera open + Chrome + Maps).
+- [ ] KERNEL LOG must have zero `page allocation failure` and zero `returned -14`.
+- [ ] LMK kills and screen-off drain must not regress against the 2026-11-23 baseline.
+
+## P19 — Malformed SMS timestamp (month 0)
+**Status:** fixed in code (`frameworks/base`), device-unverified. **Severity:** low.
+**Summary:** 96 lines at 17:17:12 (capture E): `SmsMessage: Invalid timestamp` →
+`java.time.DateTimeException: Invalid value for MonthOfYear (valid values 1 - 12): 0`.
+The PDU's SCTS is invalid, so `getSCTimestampMillis()` returned 0 (message dated 1970) and
+every parse dumped a stack trace into the radio buffer.
+**Fix:** `patches/frameworks/base.patch` makes the parser fall back to
+`System.currentTimeMillis()` and log one warning instead of a stack trace. The PDU stays
+malformed; only its effect on the message date changes.
+- [x] Parser change in the kit patch.
+- [ ] Receive SMS from the same sender; `logcat -b radio` must show no stack trace.
+- [ ] Message list must show the receive date, not 1970.
+
 ---
 
 ## Legacy items
@@ -304,14 +339,15 @@ required. All `[x]` marks mean the code/patch is committed; none mean hardware-v
 | Boot reason | `reboot,hardware_reset` (user power cycle) |
 | Crashes | 0 ANR, 0 FATAL, 0 watchdog kills |
 
-**C1. `dexopt_chroot_setup` aborted once (tombstone).** `Check failed:
+**C1. `dexopt_chroot_setup` aborts on every shutdown/reboot (tombstone).** `Check failed:
 !OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`,
 SIGABRT, uid 1082, ppid 1. ART's pre-reboot dexopt copies the partition layout into a
 chroot and bind-mounts `system_ext/lib`; on this device there are no dynamic partitions,
 so `/system_ext` is a symlink into `/system`, and the target is a symlink's child. The
 check refuses that and the process aborts. Effect: **pre-reboot dexopt is skipped after
-an update** (one tombstone per update, no crash loop). Deliberately **not** patched: the
-fix lives in ART's chroot plumbing (`dexopt_chroot_setup.cc`, `BindMount`), where a
+an update and at every reboot**; capture E has three tombstones (05:15, 06:50, 08:51 on
+2026-11-20) matching its three shutdown checkpoints, not a one-off and no crash loop.
+Deliberately **not** patched: the fix lives in ART's chroot plumbing (`dexopt_chroot_setup.cc`, `BindMount`), where a
 symlinked parent has to be resolved before mounting; a blind C++ change to a core
 runtime that cannot be compile-tested outside the build is a worse trade than one
 skipped dexopt pass. The first-boot `speed-profile` hook below is the compensation and

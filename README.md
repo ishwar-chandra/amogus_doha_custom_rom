@@ -876,6 +876,24 @@ source (platform/GApps enum mismatch), Find My Device's Google-signature check,
 Motorola launcher badge provider (app-side query), and the Wi-Fi/Bluetooth/USB
 HAL/framework errors from the same captures.
 
+### 2026-11-26 bugreport follow-ups
+
+**Malformed SMS SCTS** (`patches/frameworks/base.patch`). Both SIMs' SMSCs sent PDUs whose
+service-centre timestamp has month 0; `SmsMessage.getSCTimestampMillis()` threw
+`DateTimeException`, logged a stack trace per PDU (96 lines in one 17:17:12 burst) and
+returned 0, which dates the message to 1970. The parser now falls back to the receive time
+and logs one warning; the PDU stays malformed, the message keeps a sane date.
+Device-untested.
+
+**Not patched, by design.** The cgroup2 line
+`cgroup: cgroup2: unknown option "memory_recursiveprot"` is diagnostic only:
+`system/core`'s `MountV2CgroupController()` (`libprocessgroup/setup/cgroup_map_write.cpp`)
+already retries without the option, so cgroups mount; 4.14 simply predates the 5.7
+`memory_recursiveprot` feature, and a backport is not justified for a log line. `wifirtt`
+is D8 (the vendor Wi-Fi HAL has no RTT service). `icnss_pm_suspend_noirq ... returns -11`
+(one event) and `sensors-hal: mot_disprot_event ... status=3` are vendor driver/HAL
+behaviour with no kit-side lever.
+
 ### Performance profile (`performance-tuning` branch)
 
 The tuning is small because most of the obvious knobs are already written by the
@@ -989,6 +1007,17 @@ branch does now:
   fstab did nothing, because this Motorola 4.14 kernel's f2fs calls
   `set_opt(sbi, DISCARD)` in `default_options()` (`fs/f2fs/super.c`), so discard is
   on unless a mount option clears it.
+- **`vm.min_free_kbytes` raised to 16 MB** (`patches/device/motorola/amogus.patch`,
+  `init.amogus.rc`, `on init`). The 2026-11-26 capture has 11
+  `binder: <pid>_N: page allocation failure: order:0` splats (16:21:42 and 16:52:35)
+  each followed by `BINDER_WRITE_READ ... returned -14` (EFAULT): under GApps
+  pressure the fault path could not get one page for the binder copy-to-user, with
+  `Normal free: 1516kB` against `min:2012kB`. In the same window appear
+  `binder_alloc_buf, no vma`, `DeadObjectException` and a crashed Chrome sandboxed
+  process. The write changes no other knob (read-ahead, `nr_requests`, zram or LMK
+  props); the only side effect is a slightly larger kernel reserve, so the LMK
+  comparison below is part of the verification. It is **not**
+  `config_extraFreeKbytesAdjust` (that overlay is dead, see below). Device-untested.
 
 Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
 selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds
