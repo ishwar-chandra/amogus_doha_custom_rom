@@ -1,99 +1,98 @@
 # Repository Guidelines
 
-## Project Overview
-
-Build recipe for an unofficial **crDroid 13.1 (Android 17)** ROM for the Motorola Moto G8 Plus
+Build recipe for an unofficial **crDroid 13.1 (Android 17)** ROM on the Motorola Moto G8 Plus
 (`doha`, in-tree device `amogus_doha`; Snapdragon 665/trinket, 4.14 kernel, LineageOS 24.0 base).
-This repository is **not an Android source tree**: there is no `src/`, no app code, and no test
-suite to edit. It pins third-party trees through a `repo` manifest, adapts them with **28
-per-project patches**, and builds, releases, flashes, and verifies them with `build.sh` and
+This repository is **not** an Android source tree: no `src/`, no app code, no tests. Its product is
+**28 patch files** pinned against third-party trees by a `repo` manifest, driven by `build.sh` and
 `tools/`.
 
-The patch set is the product. Everything else is plumbing around it.
+## Project Overview
 
-- Manifest branch `17.0` means crDroid **13.1**, not Android 13. Artifacts still read
-  `crDroidAndroid-17.0-<date>-amogus_doha-v13.1...zip`.
-- Work normally lands on `performance-tuning` and is merged into `crdroid-android-17` before
-  building. `main` (LineageOS 23.2 / Android 16) and `lineage-24.0` (LineageOS 24.0 / Android 17)
-  are separate lines: never merge crDroid work back into them.
-- `README.md` is the authoritative design record and the per-fix rationale; an undocumented patch
-  is a maintenance hazard.
+- Manifest branch `17.0` is crDroid **13.1**, not Android 13. Artifacts read
+  `crDroidAndroid-17.0-<YYYYMMDD>-amogus_doha-v13.1[-debloat][-adbkey]`.
+- Branches on `origin`: `crdroid-android-17` (integration), `performance-tuning` (daily work),
+  `lineage-24.0`, `ext4-system-53`. **There is no `main`** and no `master` — docs that mention
+  `main` are stale. Work lands on `performance-tuning` and is merged into `crdroid-android-17`
+  before release; never merge crDroid work back into the LineageOS lines.
+- The patch set is the deliverable. `README.md` is the design record and per-fix rationale: an
+  undocumented patch is a maintenance hazard, and a new patch must get a section there.
 
 ## Architecture & Data Flow
 
 ```mermaid
 flowchart LR
-  M["default.xml + snippets/*.xml"] --> R["repo init/sync<br/>pinned third-party trees"]
-  P["patches/&lt;project-path&gt;.patch"] --> A["reset --hard + clean -fd<br/>render 4 placeholders<br/>git apply"]
+  M["default.xml + snippets/*.xml<br/>last-wins includes"] --> R["repo init/sync<br/>SHA-pinned third-party trees"]
+  P["patches/&lt;project-path&gt;.patch<br/>28 files"] --> A["per project: reset --hard + clean -fd<br/>render 4 tokens, git apply"]
   R --> A
-  A --> B["breakfast amogus_doha VARIANT<br/>mka bacon"]
+  A --> B["breakfast amogus_doha $VARIANT<br/>mka bacon"]
   B --> G["Launcher3 aapt2 gate<br/>ADB_KEY leakage check"]
-  G --> Z["ZIP_DIR: zip + boot/dtbo/vbmeta<br/>+ sha256sum"]
+  G --> Z["ZIP_DIR: name.zip, -boot/-dtbo/-vbmeta<br/>+ .sha256sum"]
 ```
 
-`default.xml` is crDroid's manifest plus our remotes and three includes, last-wins:
-`snippets/crdroid.xml` (64 crDroid-fork projects), `snippets/lineage.xml` (176 LineageOS
-projects), `snippets/doha.xml` (ours: **27** `local::doha` projects, all SHA-pinned). `doha.xml`
-starts with two `<remove-project>` entries: AOSP `platform/external/fastrpc` (AOSPA copy wins) and
-LineageOS's IPACM at `vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um` (moto-common's
-`data-ipa-cfg-mgr-legacy` wins; removed by name **and** path so other devices' same-named trees
-survive). Only `doha.xml` is locally owned; `crdroid.xml`/`lineage.xml` are verbatim rebase
-baselines — re-copy them, do not edit.
+Manifest composition, all included by `default.xml` (1031 own projects, 7 remotes, default revision
+`refs/heads/lineage-24.0`), **last include wins**:
 
-Patch application (`build.sh`):
+|Include|Live projects|Role|
+|---|---|---|
+|`snippets/crdroid.xml`|64 crDroid forks (`refs/heads/17.0`)|never edit|
+|`snippets/lineage.xml`|158 LineageOS projects|never edit|
+|`snippets/doha.xml`|27 SHA-pinned `local::doha` projects + **2 `<remove-project>`**|owned here|
 
-1. The project list is derived from filenames: `find patches -name '*.patch'` → `<project path>`.
-   A patch's diff paths are relative to that manifest project's root.
-2. For each project: render placeholders, compare the rendered patch blob and the worktree tree
-   against `$SRC/.repo/doha-patches` (format `<project> <patch blob> <tree>`). Unchanged → skip and
-   preserve mtimes. Changed → `git reset --hard && git clean -fd`, then
-   `git apply --whitespace=nowarn`.
-3. Patches deleted or renamed since the last run are reverted. Ordering is irrelevant because there
-   is exactly one patch per project and each is applied with `-C "$proj"`.
-4. An empty **file** `device/motorola/amogus_doha/kernel-headers` is created to block AOSP's
-   header-directory autodetect; real headers come from `PRODUCT_VENDOR_KERNEL_HEADERS`
+`doha.xml` removes AOSP `platform/external/fastrpc` (AOSPA copy wins) and LineageOS IPACM at
+`vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um` (removed by name **and** path so moto-common's
+`data-ipa-cfg-mgr-legacy` wins without dropping other devices' same-named tree). Repo rejects
+duplicate paths, so `remove-project` + re-add is the only override mechanism used.
+
+Patch application in `build.sh:132-186`:
+
+1. Project list = `find patches -name '*.patch'`, filename minus `.patch`.
+2. Render the four placeholders, then compare rendered blob **and** worktree tree against
+   `$SRC/.repo/doha-patches` (one line per project: `<project> <patch-blob> <tree>`; the tree id
+   includes untracked files). Both match → skip, preserving mtimes.
+3. Otherwise `git reset --hard && git clean -fd` in that project, then
+   `git apply --whitespace=nowarn`. One patch per project, so order is irrelevant.
+4. Patches deleted since the last run are reverted (their project is reset).
+5. An empty **file** `device/motorola/amogus_doha/kernel-headers` is created after patching, before
+   the stamp is written; real headers come from `PRODUCT_VENDOR_KERNEL_HEADERS`
    (`patches/device/motorola/targets.patch`).
 
-Build-affecting settings render into patches through exactly four tokens; the stamp hashes the
-rendered text, so changing a setting re-applies the affected patches and rebuilds those projects:
+Rendered knobs (changing one re-applies exactly the affected patches):
 
-|Token|Value|Patch(es)|
+|Token|Value|Patch location|
 |---|---|---|
-|`@SKIN_THROTTLE_MC@`|`SKIN_THROTTLE_C * 1000`|`vendor/qcom/opensource/thermal.patch`|
-|`@DEBLOAT@`|`0` or `1`|`device/motorola/targets.patch` (consumed as `DEBLOAT_BUILD` by `vendor/lineage.patch`)|
-|`@READAHEAD_KB@`|`READAHEAD_KB`|`device/qcom/common.patch`, `device/motorola/amogus.patch`|
-|`@UPDATER_CHANNEL@`|`standard` or `debloat`|`packages/apps/Updater.patch`|
+|`@SKIN_THROTTLE_MC@`|`SKIN_THROTTLE_C * 1000`|`patches/vendor/qcom/opensource/thermal.patch:26`|
+|`@DEBLOAT@`|`0`/`1`|`patches/device/motorola/targets.patch:60` (consumed as `DEBLOAT_BUILD` by `patches/vendor/lineage.patch`)|
+|`@READAHEAD_KB@`|`READAHEAD_KB`|`patches/device/motorola/amogus.patch:186`, `patches/device/qcom/common.patch:256,324`|
+|`@UPDATER_CHANNEL@`|`standard`/`debloat`|`patches/packages/apps/Updater.patch:10,13,30`|
 
-Subsystems:
+Patch groups (28 total):
 
-|Area|Patches|Responsibility|
+|Area|Patches|Representative change|
 |---|---|---|
-|Device, storage, policy|`device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy` (8)|boot cmdline, ext4 system + metadata, fstab/zram/discard, module load list, sepolicy dedupe, runtime knobs, kernel headers|
-|Android 17 on 4.14|`kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base` (5)|initramfs boot, BPF gates/ring buffers, capability bounds, AppOp registration|
-|Vendor, HIDL, blobs|`vendor/motorola/*`, `vendor/qcom/*`, `frameworks/hardware/interfaces`, `system/tools/hidl`, `hardware/{motorola,nxp/nfc}` (11)|RIL libqsap, camera blob, OEMCrypto, QCC removal, FM/Wi-Fi services, camcorder profile, thermal HAL, display service, NFC retry|
-|Product, OTA, debloat|`vendor/lineage`, `packages/apps/{Updater,crDroidSettings}` (3)|package gating, per-channel OTA feed, keybox prompt, dead-preference pruning|
-|Launcher|`packages/apps/Launcher3` (1)|loading-flag drag fix, missing-drawable guard, double-tap-to-sleep default|
+|Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe|
+|Android 17 on 4.14|5: `kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base`|`CONFIG_INITRAMFS_IGNORE_SKIP_FLAG`, `/proc/cmdline` bounds, BPF gates→warn, capability-bound `EINVAL` no longer panics, AppOp registration|
+|Vendor, HIDL, blobs|11: `vendor/motorola/*`, `vendor/qcom/common`, `vendor/qcom/opensource/{audio/sm8150,interfaces,media/sm8150,thermal}`, `frameworks/hardware/interfaces`, `system/tools/hidl`, `hardware/{motorola,nxp/nfc}`|OEMCrypto, camera blob delta, restored `displayservice@1.0`/`fmt@1.0`, QCC/wificfr removal, thermal HAL rename|
+|Product, OTA, debloat|3: `vendor/lineage`, `packages/apps/Updater`, `packages/apps/crDroidSettings`|`DEBLOAT_BUILD` gating, per-channel OTA JSON, dead-preference pruning|
+|Launcher|1: `packages/apps/Launcher3`|`workspaceLoading` reset in `finally`, missing-drawable guard, DT2S default on|
 
 ## Key Directories
 
 |Path|Purpose|
 |---|---|
-|`default.xml`|crDroid manifest + our remotes/includes; local edits are deliberate (upstream copy is crDroid's)|
-|`snippets/doha.xml`|The 27 locally owned, SHA-pinned doha projects and two removals|
-|`snippets/{crdroid,lineage}.xml`|Upstream snapshots for rebasing; never edit locally|
-|`patches/`|The deliverable: one plain diff per manifest project, named `<project path>.patch`|
-|`tools/`|Self-contained bash/python ops tools; `build.sh` does not invoke them|
-|`docs/`|`GUIDE.md` (step-by-step), `TODO.md` (live hardware worklist), `BUGREPORT.md` (evidence), `OPTIMIZATION.md` (measured tuning)|
-|`gcp-out/`|Gitignored fetched zips/images/logs; `tools/flash.sh` default artifact dir|
-|`bugreports/`|Gitignored diagnostic archives; `app-trace.sh` writes its own `./app-trace/` (not ignored)|
-|`.repo/doha-patches`|Per-run stamp inside the synced tree, not this repo|
+|`build.sh`|Only build entry point: validate, sync, render/apply patches, build, gates, copy artifacts|
+|`default.xml`, `snippets/*.xml`|Remotes, includes, removals, exact revisions|
+|`patches/**`|The 28 fixes; one plain diff per manifest project|
+|`tools/`|12 self-contained ops scripts (11 bash + 1 stdlib Python) + `gms-trim.components`|
+|`docs/`|`GUIDE.md` procedures, `TODO.md` worklist, `BUGREPORT.md` evidence, `OPTIMIZATION.md` measured tuning, `README.md` index|
+|`gcp-out/`|Gitignored artifact dir; default for `tools/flash.sh`|
+|`bugreports/`|Gitignored bugreport archives|
+|`.repo/doha-patches`|Per-run stamp inside the synced tree; never in this repo|
 
 ## Development Commands
 
 ```sh
-# Host with repo + AOSP build deps; keep sources outside this checkout.
-./build.sh ~/android/crdroid-17.0
-SKIP_SYNC=1 ./build.sh ~/android/crdroid-17.0   # skip repo init/sync; patch checks still run
+./build.sh ~/android/crdroid-17.0               # sync + patch + build
+SKIP_SYNC=1 ./build.sh ~/android/crdroid-17.0   # skip init/sync; patch checks still run
 
 # Docker supplies only the toolchain; the entrypoint override skips the image's own patches.
 docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp \
@@ -104,144 +103,143 @@ docker run --rm -it --user "$(id -u):$(id -g)" -e HOME=/tmp \
   lineageos4microg/docker-lineage-cicd:latest /src
 ```
 
-`build.sh` takes one positional arg (SOURCE_DIR, default `./crdroid`) and has **no `--help`/option
-parser**; unknown paths are created. Bare `./build.sh` writes `./crdroid` and `./zips`, neither of
-which is gitignored.
+`build.sh` takes one positional arg (SOURCE_DIR, default `./crdroid`) and has **no option parser**;
+unknown paths are created by `mkdir -p`. Only `DEBLOAT`, `OTA_CHANNEL`, `SKIN_THROTTLE_C`,
+`READAHEAD_KB` are validated; `VARIANT` is not.
 
 |Variable|Default|Effect|
 |---|---|---|
 |`JOBS`|`nproc`|`mka -j`|
 |`SYNC_JOBS`|`4`|`repo sync -j`; higher values hit Google HTTP 429|
-|`REPO_DEPTH`|unset|`repo init --depth`; requires servers to serve every pinned commit|
-|`SKIP_SYNC`|off|Skip init/sync and the dirty-manifest gate|
-|`ZIP_DIR`|`<source parent>/zips`|Artifact destination; shared by variants|
-|`VARIANT`|`userdebug`|`breakfast` variant (`userdebug`, `user`, `eng`); not validated|
-|`DEBLOAT`|`0`|`1` omits optional extras, adds `-debloat`, selects the debloat OTA channel|
-|`SKIN_THROTTLE_C`|`40`|Whole °C, rendered as millidegrees|
-|`READAHEAD_KB`|`128`|Whole KB rendered into two patches|
-|`CCACHE_SIZE`|`50G`|ccache limit (image cache is 5 GB by default)|
-|`ADB_KEY`|unset|Test-only `adbkey.pub`; adds `-adbkey`; never distribute|
-|`MANIFEST_URL` / `MANIFEST_BRANCH`|this checkout / current branch|Manifest source for `repo init`|
+|`REPO_DEPTH`|unset|`repo init --depth`; needs servers to serve every pin|
+|`SKIP_SYNC`|off|Only the literal `1` skips sync and the dirty-manifest gate|
+|`MANIFEST_URL`/`MANIFEST_BRANCH`|this checkout / current branch|`repo init` source|
+|`VARIANT`|`userdebug`|`breakfast` variant; behaviorally equal to `user` (see below)|
+|`ZIP_DIR`|`<source parent>/zips`|Shared by both variants|
+|`DEBLOAT`|`0`|`1` drops extras, adds `-debloat`, selects the debloat OTA channel|
+|`OTA_CHANNEL`|from `DEBLOAT`|`standard`/`debloat`/`test` feed baked into the Updater; `test` requires `DEBLOAT=0`|
+|`SKIN_THROTTLE_C`|`40`|Whole °C, rendered ×1000|
+|`READAHEAD_KB`|`128`|Whole KB, rendered into two patches|
+|`CCACHE_SIZE`|`50G`|ccache limit|
+|`ADB_KEY`|unset|Test-only `adbkey.pub` (must start `QAAAA`); adds `-adbkey`; never distribute|
 
-Artifacts: `<zipname>.zip`, `<zipname>-boot.img`, `<zipname>-dtbo.img`, `<zipname>-vbmeta.img`,
-`<zipname>.sha256sum`, where `<zipname>` is
-`crDroidAndroid-17.0-<YYYYMMDD>-amogus_doha-v13.1[-debloat][-adbkey]`. Images are **never** plain
-`boot.img`; naming them after the zip keeps standard and debloat sets from overwriting each other.
+Artifacts copied to `ZIP_DIR`: `<name>.zip`, `<name>-boot.img`, `<name>-dtbo.img`,
+`<name>-vbmeta.img`, `<name>.sha256sum` (bare basenames, so `sha256sum -c` works in that dir).
+Images are **never** plain `boot.img`: standard and debloat builds share `ZIP_DIR`.
 
-Regenerating a patch after editing the synced tree (never hand-edit `patches/` separately from the
-worktree):
+Regenerate a patch from the synced tree (never hand-edit `patches/` apart from the worktree):
 
 ```sh
 # Modified file
 git -C ~/android/crdroid-17.0/kernel/motorola/msm-4.14 diff > patches/kernel/motorola/msm-4.14.patch
-# New file: stage intent first, or git clean -fd deletes it and the diff omits it
+# New file: stage intent first, or clean -fd deletes it and the diff omits it
 git -C ~/android/crdroid-17.0/device/motorola/amogus_doha add -N path/to/new_file
-# Binary blob (vendor/motorola/amogus only): plain diff prints "Binary files differ" and won't apply
+# Binary blob (vendor/motorola/amogus only)
 git -C ~/android/crdroid-17.0/vendor/motorola/amogus diff --binary > patches/vendor/motorola/amogus.patch
 ```
 
-Release and device operations:
-
-```sh
-tools/gcp-build.sh create|setup|gh-check|build|state|verify|release|ota|finish|auto-finish|fetch|delete
-tools/gcp-build-both.sh        # both variants, one VM, one TAG, separate OTA channels
-tools/drive-backup.sh backup|restore|status   # manual, outside the release chain
-tools/flash.sh gcp-out --list   # detect sets; --dry-run prints commands
-tools/flash.sh gcp-out          # DESTRUCTIVE: fastboot both slots + sideload
-```
+Release/device operations: `tools/gcp-build.sh create|setup|gh-check|build|state|verify|release|ota|finish|auto-finish|fetch|delete`,
+`tools/gcp-build-both.sh` (both variants, one VM/TAG, separate OTA channels),
+`tools/drive-backup.sh backup|restore|status`, `tools/flash.sh gcp-out --list` then without
+`--list` to flash.
 
 ## Code Conventions & Common Patterns
 
-- **Shell**: `#!/usr/bin/env bash`, normally `set -euo pipefail`, `${VAR:-default}`, `die()` helpers,
-  `case` dispatch, re-runnable and argument-validated before side effects. `build.sh` deliberately
-  drops `-eu` around `envsetup.sh`/`breakfast`/`mka` and checks statuses; `device-check.sh` and
-  `perf-multitask.sh` omit `-e` so one failed adb probe does not end the sweep.
-- **Patch format**: filename is the manifest project path; contents are `git diff` with `a/`/`b/`
-  paths, applied via `git apply --whitespace=nowarn` after a hard reset. No path rewriting. Add new
-  files to the diff (`git add -N`); `git clean -fd` removes untracked files. Only
-  `vendor/motorola/amogus.patch` is binary (`--binary` required). `system/zygote.patch` carries a
-  format-patch-style message preamble — regenerating with plain `git diff` drops that rationale.
-  `device/qcom/common.patch` intentionally empties files rather than deleting them.
-- **Rebase target**: patches for `device/lineage/sepolicy`, `frameworks/base`,
-  `hardware/interfaces`, `packages/apps/{crDroidSettings,Launcher3,Updater}`,
-  `packages/modules/Connectivity`, `system/sepolicy`, and `vendor/lineage` target crDroid forks
-  (`refs/heads/17.0`) — rebase on crDroid's file version, not LineageOS's. LineageOS upstream:
+- **Shell**: `#!/usr/bin/env bash`, `set -euo pipefail`, `${VAR:-default}`, `die()`, `case` dispatch,
+  `usage()`, argument validation before side effects, re-runnable. `device-check.sh`,
+  `perf-audit.sh`, `perf-multitask.sh` deliberately use `set -uo pipefail` (no `-e`) so one failed
+  `adb` probe does not kill the sweep. `build.sh` drops `-eu` around `envsetup.sh`/`breakfast`/`mka`
+  and checks statuses instead.
+- **Patch format**: plain `git diff` with `a/`/`b/` paths, applied by `git apply --whitespace=nowarn`
+  after a hard reset; no path rewriting. One `GIT binary patch`
+  (`patches/vendor/motorola/amogus.patch`). `patches/system/zygote.patch` carries a prose preamble
+  before the diff — regenerating with plain `git diff` drops that rationale.
+  `patches/device/qcom/common.patch` empties 11 files to the empty blob
+  (`..e69de29b`) instead of deleting them; new files appear as `new file mode` (18 of them, so
+  `git add -N` matters).
+- **Rebase target**: crDroid forks (`refs/heads/17.0`) for `device/lineage/sepolicy`,
+  `frameworks/base`, `hardware/interfaces`, `packages/apps/{crDroidSettings,Launcher3,Updater}`,
+  `packages/modules/Connectivity`, `system/sepolicy`, `vendor/lineage`; LineageOS upstream for
   `device/qcom/sepolicy_vndr/legacy-um`, `frameworks/hardware/interfaces`, `hardware/nxp/nfc`,
-  `vendor/qcom/opensource/interfaces`. AOSP: `system/tools/hidl`, `system/zygote`.
-- **Kernel**: either extend `patches/kernel/motorola/msm-4.14.patch`, or land the change in
-  `ishwar-chandra/android_kernel_motorola_msm-4.14` (branch `fix`) and bump the pin in
-  `snippets/doha.xml`. Never leave a fix only in `patches/` and also only in the fork.
-- **Comments**: state the device-specific trigger and why the workaround exists; cite the issue and
-  sibling patch where useful. Match Android module/generator style; keep license headers.
-- **Commits**: plain subject with optional area prefix (`build.sh:`, `kernel:`, `tools:`, `docs:`)
-  and tracking suffix `(doha_android#N)`; merges as
-  `Merge <branch> into <branch>: <summary> (doha_android#N)`. Commit manifest changes before
-  syncing/building: `repo init` sees only committed `default.xml`, and `build.sh` rejects a dirty
-  one (uncommitted `snippets/doha.xml` is equally invisible).
-- **No app framework**: no DI, async, or state-management convention. Shared contracts are
-  environment variables, `.repo/doha-patches`, the project-path↔patch-path mapping, tool state
-  files (e.g. `tools/.gms-trim.state`), and artifact-name suffixes.
-- **README rule**: every fix gets a README section naming its patch(es) and symptom. Mark
-  device-untested fixes explicitly.
+  `vendor/qcom/opensource/interfaces`; AOSP for `system/tools/hidl`, `system/zygote`.
+- **Kernel**: either extend `patches/kernel/motorola/msm-4.14.patch`, or land it in
+  `ishwar-chandra/android_kernel_motorola_msm-4.14` (branch `fix`) and bump the SHA pin in
+  `snippets/doha.xml` (`9a3cf72…`). Never leave a fix in both places.
+- **Comments**: state the device-specific trigger and why the workaround exists; cite the
+  `doha_android#N` issue and sibling patch. Keep license headers, match module style.
+- **Commits**: lowercase area prefix + imperative subject, no period (`build.sh:`, `kernel:`,
+  `device:`, `tools:`, `docs:`, `sepolicy:`, `snippets:`). Integration merges read
+  `Merge performance-tuning into crdroid-android-17: <summary>`. The documented
+  `(doha_android#N)` suffix appears in ~1% of subjects, so do not assume it.
+- **README rule**: every fix gets a README section naming its patch and symptom; mark
+  device-untested fixes explicitly. Currently missing sections: `packages/apps/Updater`,
+  `system/zygote`, `vendor/qcom/opensource/media/sm8150`; `vendor/lineage` and
+  `hardware/interfaces` are described but never named as files.
+- **Manifest changes must be committed before building**: `repo init` reads only committed
+  `default.xml`/snippets, and `build.sh:92` refuses a dirty `default.xml` (snippets are *not*
+  gated — an uncommitted `doha.xml` silently does nothing).
 
 Invariants:
 
-- Run **`mka bacon` only**. Adding `target-files-package` races bacon's cleanup of the staging
-  directory. crDroid leaves no `IMAGES/` or `lineage_amogus_doha-ota.zip`; read images from
-  `PRODUCT_OUT`.
-- `vendor/extra/` exists only for `ADB_KEY` builds, is deleted every run, and must never be
-  committed or shipped. Without `ADB_KEY`, stale copied key files in `out/` fail the build by design.
+- Run **`mka bacon` only**. Adding `target-files-package` races bacon's cleanup of the staging dir.
+  crDroid leaves no `IMAGES/` and no `lineage_amogus_doha-ota.zip`; read images from `PRODUCT_OUT`.
+- `vendor/extra/` exists only for `ADB_KEY` builds, is `rm -rf`'d every run, and must never be
+  committed. Without `ADB_KEY`, stale key files in `out/` fail the build by design.
 - `kernel-headers` is an empty **file**, not a directory; a directory shadows bionic headers.
-- A syncing run destroys hand edits in every project. Durable changes belong in `patches/` or an
-  upstream fork.
+- A syncing run destroys hand edits in every project. Durable changes belong in `patches/` or a
+  fork.
+
+Known doc hazards (trust the code, not the prose):
+
+|Claim|Reality|
+|---|---|
+|`README.md:114-120`, `docs/GUIDE.md:148-154`: plain `boot.img`/`dtbo.img`/`vbmeta.img`|`build.sh:289-299` prefixes every image with the zip name|
+|`docs/GUIDE.md:393`: "`@SKIN_THROTTLE_MC@` is the only placeholder"|`build.sh:154-160` renders four tokens|
+|`docs/GUIDE.md:117`, `docs/TODO.md:143`: no Drive backup|`tools/drive-backup.sh` exists and is documented in GUIDE §4.5|
+|`build.sh:26-30`, `docs/TODO.md:148`: userdebug keeps `ro.debuggable=1`|`build.sh:191-192` and `tools/flash.sh:31`: crDroid sets `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`; both variants report `ro.build.type=user`, `ro.debuggable=0`|
+|`README.md:37`, `CLAUDE.md:14`, `docs/GUIDE.md:396`: `main` branch|No `main` ref exists; integration is `performance-tuning` → `crdroid-android-17`|
+|`docs/OPTIMIZATION.md:4,7`: "planning, nothing executed"|Its own execution log at `:50+` records shipped phases and a flash verification|
+|`build.sh:56-60`: read-ahead rendered only into `patches/device/qcom/common.patch`|Also rendered into `patches/device/motorola/amogus.patch:186`|
 
 ## Important Files
 
 |File|Purpose|
 |---|---|
-|`build.sh`|Only build entry point: validate, sync, render/apply patches, build, gate, copy artifacts|
-|`default.xml`, `snippets/doha.xml`|Source remotes, includes, removals, and exact third-party revisions|
-|`patches/**`|The 28 fixes; README documents most and must document any new one (`packages/apps/Updater`, `system/zygote`, and `vendor/qcom/opensource/media/sm8150` currently lack sections)|
-|`README.md`|Requirements, install/flash/GApps/Magisk, Status checklist, per-fix rationale|
-|`docs/GUIDE.md`|Step-by-step local/GCP build, flash, root, release, troubleshooting|
-|`docs/TODO.md`, `docs/BUGREPORT.md`|Live hardware issues and bugreport evidence; `code-fixed` ≠ device-verified|
-|`docs/OPTIMIZATION.md`|Measured tuning baseline, experiments, outcomes, rollback criteria|
-|`tools/gcp-build.sh`, `tools/gcp-build-both.sh`|Remote build, verification, GitHub release, OTA feed, two-variant orchestration; `finish` polls `~/build.exit`, verifies, releases, updates OTA, then deletes the VM (kept on failure)|
-|`tools/drive-backup.sh`|The only persistent VM-tree backup; manual, separate from release automation|
-|`tools/flash.sh`, `tools/device-check.sh`, `tools/perf-audit.sh`|Artifact flashing and release-gating hardware checks|
-|`tools/bugreport-scan.py`, `tools/app-trace.sh`|Offline bugreport scan and one-app diagnostic capture|
-|`tools/integrity-setup.sh`|TrickyStore keybox import/status/clear/check; the repo never ships a keybox|
-
-Docs map: `README.md` = design record/status; `GUIDE.md` = procedures; `TODO.md` = live worklist;
-`BUGREPORT.md` = evidence; `OPTIMIZATION.md` = measured tuning. Several sections are stale (plain
-image names, "only placeholder", "no Drive backup", `ro.debuggable=1`); trust `build.sh` and the
-patches when prose disagrees.
+|`build.sh`|Sync, render/apply, build, Launcher3 `aapt2` gate, ADB-key leakage check, artifact copy|
+|`default.xml`|crDroid manifest + our remotes/includes; local edits deliberate|
+|`snippets/doha.xml`|27 pinned doha projects and the 2 removals|
+|`patches/vendor/motorola/amogus.patch`|The only binary patch (`--binary` required on regeneration)|
+|`patches/device/motorola/amogus.patch`|fstab/boot cmdline/ext4/zram/read-ahead — most device behavior|
+|`patches/device/qcom/common.patch`|Single surviving read-ahead writer; 11 emptied sepolicy files|
+|`patches/kernel/motorola/msm-4.14.patch`|Android-17 initramfs/`/proc/cmdline`, WPA3, touch, defconfig|
+|`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; `finish` polls `~/build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
+|`tools/device-check.sh`, `tools/perf-audit.sh`, `tools/perf-multitask.sh`|Release-gating hardware checks|
+|`tools/flash.sh`|Set discovery via `.sha256sum`, checksum verify, both-slot flash + sideload|
+|`tools/integrity-setup.sh`|TrickyStore keybox import; the repo never ships a keybox|
 
 ## Runtime/Tooling Preferences
 
-- **Host**: x86-64 Linux, bash, `git`, `repo`, Git LFS, AOSP build deps, `adb`/`fastboot`;
-  `gcloud`, `curl`, `python3` and a GitHub token for GCP/release work. No Node/Bun, no JS package
-  manager, no dependency manifest. Python tooling is stdlib-only.
-- **Container**: `lineageos4microg/docker-lineage-cicd:latest` is only a toolchain. `build.sh`
-  replaces its entrypoint, so the image's LineageOS/SafetyNet patches must not run.
+- **Host**: x86-64 Linux, `bash`, `git`, `repo`, Git LFS, AOSP build deps, `adb`/`fastboot`;
+  `gcloud`, `curl`, `python3`, GitHub token for GCP/release work. No Node/Bun, no JS package
+  manager, no dependency manifest. Python is stdlib-only.
+- **Container**: `lineageos4microg/docker-lineage-cicd:latest` is a toolchain only; `build.sh`
+  replaces the entrypoint so the image's LineageOS/SafetyNet patches never run.
 - **Resources**: ~350 GB disk (~200 GB sources, ~120 GB `out/`, ≤50 GB ccache) and ~100 GB
-  RAM+swap for Soong analysis. Full history is large; `REPO_DEPTH` only works when servers can
-  serve every pinned commit.
-- **Release properties**: default `userdebug`, unsigned AOSP test keys, no GApps.
-  crDroid sets `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so both `user` and `userdebug` report
-  `ro.build.type=user`, `ro.debuggable=0`: no `adb root`, no shell `dmesg`, and some `/sys` reads
-  are denied (pstore needs recovery). Variant is not recoverable from artifacts — use separate
-  output dirs.
-- **Play Integrity**: doha's vendor keymaster refuses attestation (`-10003`); prop/fingerprint
-  spoofing does not fix it. The supported route is crDroid's built-in TrickyStore plus a
-  user-supplied keybox via `tools/integrity-setup.sh`. Never commit, download, or distribute a
-  keybox.
+  RAM+swap for Soong analysis.
+- **GCP path**: `gcloud` local, `gh` installed on the VM, token only crossing over; builds run on
+  `n2-custom-12-49152` with 2×375 GB local NVMe.
+- **Release properties**: unsigned AOSP test keys, no GApps. Both `user` and `userdebug` report
+  `ro.build.type=user`/`ro.debuggable=0`: no `adb root`, no shell `dmesg`, pstore needs recovery.
+  Variant is not recoverable from artifacts — use separate output dirs.
+- **Play Integrity**: doha's vendor keymaster refuses attestation (`-10003`); fingerprint/prop
+  spoofing does not fix it. Supported route is TrickyStore plus a user-supplied keybox. Never
+  commit, download, or distribute a keybox.
 
 ## Testing & QA
 
 **There is no test suite, fixture set, linter, CI workflow, or coverage target. Do not invent test
-commands.** The feedback loop is static checks → patch application → a full Android build →
-artifact verification → real hardware.
+commands.** The feedback loop is static checks → patch application → full Android build → artifact
+verification → real hardware.
 
 Cheap checks:
 
@@ -253,12 +251,11 @@ python3 -c 'import xml.dom.minidom as m; m.parse("snippets/doha.xml")'
 git -C <project> apply --check --whitespace=nowarn patches/<project-path>.patch
 ```
 
-A successful `git apply --check` is not compilation. `build.sh` also gates the Launcher3 APK with
-`aapt2`: missing `widget_internal_focus_bg` means a stale `resources.arsc` and the build exits 1 —
-delete `out/` (or the Launcher3 intermediates) and rebuild; a module-level clean is insufficient.
-If `aapt2` is absent the script only warns, so that gate is unverified.
+`git apply --check` is not compilation. `build.sh` gates the Launcher3 APK with `aapt2`
+(`widget_internal_focus_bg`); missing means a stale `resources.arsc` — delete `out/` and rebuild,
+a module-level clean is insufficient. With no `aapt2`, it only warns.
 
-Artifact and flash validation:
+Artifact validation:
 
 ```sh
 (cd gcp-out && sha256sum -c crDroidAndroid-*.sha256sum)
@@ -266,29 +263,29 @@ tools/flash.sh gcp-out --list      # detection only
 tools/flash.sh gcp-out --dry-run   # no flash
 ```
 
-`flash.sh` discovers sets through the `.sha256sum`, disables sets with missing files, and verifies
-checksums before touching the phone (a set without a checksum file is only warned about and can be
-flashed unverified). It flashes both slots by default because sideload installs into the inactive
-one; `--current-slot`, `--sideload-only`, `--set N`, `--yes` narrow or skip steps.
-
 On-device verification — each tool proves only its own claim:
 
 |Tool|Exit / semantics|
 |---|---|
-|`tools/device-check.sh [--verbose]`|PASS/WARN/FAIL/SKIP per line; exit = FAIL count (capped 99); read-only except a 4-byte `/sdcard` probe|
-|`tools/perf-audit.sh`|Same FAIL-count exit; read-only; many I/O knobs need root and report SKIP; override `READAHEAD_KB`/`ZRAM_MB`/`SKIN_THROTTLE_C` for older builds|
-|`tools/perf-multitask.sh [--repeat N]`|Cold/warm app probe; force-stops its app set; exit 2 on bad args, 3 if the device is lost|
-|`tools/bugreport-scan.py <br.zip> [--area ...]`|Always exits 0 even with findings (arg errors 2) — never use as a gate|
-|`tools/app-trace.sh <pkg> [secs] [--no-launch]`|Clears logcat, may launch the app, writes `./app-trace/<pkg>-<ts>/`|
-|`tools/dexopt-all.sh [-m speed-profile\|verify] [--wait]`|Compiles all packages; `-m speed` is a measured regression|
-|`tools/gms-trim.sh [--dry-run\|--restore\|--list]`|Disables grouped GMS components; state in gitignored `tools/.gms-trim.state`|
-|`tools/integrity-setup.sh status\|import <keybox>\|clear\|check`|Device-only Settings.Secure changes; no root|
+|`tools/device-check.sh [--verbose]`|PASS/WARN/FAIL/SKIP per line; exit = FAIL count (cap 99); read-only except a 4-byte `/sdcard` probe|
+|`tools/perf-audit.sh`|Same FAIL-count exit; read-only; root-only I/O knobs report SKIP; override `READAHEAD_KB`/`ZRAM_MB`/`SKIN_THROTTLE_C` for older builds; `PERF_AUDIT_ROOT` runs against fixtures|
+|`tools/perf-multitask.sh [--repeat N]`|Cold/warm app probe; force-stops its app set; exit 2 bad args, 3 device lost|
+|`tools/bugreport-scan.py <br.zip> [--area A] [--max N]`|Always exits 0 even with findings — never use as a gate|
+|`tools/app-trace.sh <pkg> [secs] [--no-launch]`|Writes `./app-trace/<pkg>-<ts>/`|
+|`tools/dexopt-all.sh [-m MODE] [--wait]`|`MODE`: `speed-profile` (default), `verify`, `speed`; `speed` is a measured regression|
+|`tools/gms-trim.sh` (`--list`, `--dry-run`, `--restore`)|State in gitignored `tools/.gms-trim.state`|
+|`tools/integrity-setup.sh` (`status`, `import <keybox>`, `clear`, `check`)|Device-only `Settings.Secure` changes; no root|
 
-- SKIP/WARN are not passes. SKIP means a human or root is still needed.
+- SKIP and WARN are not passes; SKIP means a human or root is still needed.
 - Runtime knobs have multiple init writers, so never infer effective tuning from one source file;
   use `perf-audit.sh` and treat unavailable queue/`dm-*` reads as SKIP.
-- Manual checklist lives in README **Status**: calls/SMS/data/Wi-Fi, cameras, fingerprint,
-  audio, GNSS, NFC, Magisk, GApps sign-in. Still incompletely verified: Himax/Novatek panels,
-  Egistec fingerprint, dual-SIM XT2019-2, double-tap-to-wake.
+- Manual checklist lives in README **Status**: calls/SMS/data/Wi-Fi, cameras, fingerprint, audio,
+  GNSS, NFC, Magisk, GApps sign-in. Incompletely verified: Himax/Novatek panels, Egistec
+  fingerprint, dual-SIM XT2019-2, double-tap-to-wake.
+- Patch projects whose docs call them device-untested: `device/motorola/common` (Egistec labels),
+  `vendor/motorola/common` (OEMCrypto/Widevine), kernel sched-downmigrate gate,
+  `device/motorola/amogus_doha` (Doze motion off), `frameworks/base` (local-network AppOp),
+  `system/sepolicy` + `device/lineage/sepolicy` (suspend rules), `crDroidSettings`
+  (TrickyStore migration).
 - Never promote `code-fixed`, a green build, or a passing static check to device-verified without
   a new flash and the relevant hardware check.
