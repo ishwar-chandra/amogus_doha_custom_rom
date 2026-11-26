@@ -214,7 +214,7 @@ Known doc hazards (trust the code, not the prose):
 |`patches/device/motorola/amogus.patch`|fstab/boot cmdline/ext4/zram/read-ahead — most device behavior|
 |`patches/device/qcom/common.patch`|Single surviving read-ahead writer; 11 emptied sepolicy files|
 |`patches/kernel/motorola/msm-4.14.patch`|Android-17 initramfs/`/proc/cmdline`, WPA3, touch, defconfig|
-|`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; `finish` polls `~/build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
+|`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; every ssh/scp addresses the VM as the account that ran `setup` (recorded in instance metadata, `VUSER` overrides) because `build.log`, `build.exit`, `build.channel` and the tmux socket live in that account's `$HOME`; `finish` polls the VM's `build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
 |`tools/device-check.sh`, `tools/perf-audit.sh`, `tools/perf-multitask.sh`|Release-gating hardware checks|
 |`tools/flash.sh`|Set discovery via `.sha256sum`, checksum verify, both-slot flash + sideload|
 |`tools/integrity-setup.sh`|TrickyStore keybox import; the repo never ships a keybox|

@@ -35,6 +35,10 @@
 #
 # Environment (all optional):
 #   PROJECT, ZONE, NAME
+#   VUSER         VM account that owns the build state -- build.log,
+#                 build.exit, build.channel, the tmux socket and the gh
+#                 token all live in its $HOME (default: the account `setup`
+#                 recorded in instance metadata, else $USER)
 #   MACHINE       compile machine      (default: n2-custom-12-49152)
 #   SYNC_MACHINE  separate sync box    (default: MACHINE)
 #   DISK, DISK_TYPE                    boot disk (default: 50GB pd-standard)
@@ -134,6 +138,25 @@ JOBS=${JOBS:-12}
 # --project/--zone must follow the subcommand. Commands taking a
 # `-- <cmd>` tail (ssh, scp) cannot use this and spell the flags out.
 gcloud_() { gcloud "$@" --project "$PROJECT" --zone "$ZONE"; }
+
+# gcloud compute ssh logs in as the *local* username, but the whole build state
+# -- build.log, build.exit, build.channel, the tmux socket, ~/.gh_token -- lives
+# in that account's $HOME. When the local username differs from the one that ran
+# `setup` (new login, renamed account, a different terminal uid), `logs` tails a
+# build.log that is not there and `finish` polls a build.exit that will never
+# appear: an idle build and a dead one look the same. `setup` records the account
+# in the instance metadata, so resolve it once and address the VM as $VM.
+VUSER=${VUSER:-}
+VM=$NAME
+resolve_vuser() {
+  [ -n "$VUSER" ] ||
+    VUSER=$(gcloud compute instances describe "$NAME" --project "$PROJECT" --zone "$ZONE" \
+              --format='flattened(metadata.items)' 2>/dev/null |
+            awk -F': *' '$1 ~ /\.key$/ {k=$2; next}
+                         $1 ~ /\.value$/ && k=="doha-build-user" {print $2; exit}' || true)
+  case ${VUSER:-} in ''|*[!A-Za-z0-9._-]*) VUSER=$(id -un) ;; esac
+  VM=$VUSER@$NAME
+}
 instance_status() {
   gcloud compute instances describe "$NAME" --project "$PROJECT" --zone "$ZONE" \
     --format='value(status)' 2>/dev/null || echo MISSING
@@ -179,7 +202,7 @@ ota_channel() {
 channel_for_vm() {
   if [ -n "${OTA_CHANNEL:-}" ]; then printf '%s\n' "$OTA_CHANNEL"; return; fi
   local ch
-  ch=$(gcloud_ compute ssh "$NAME" --command 'cat $HOME/build.channel 2>/dev/null || true' 2>/dev/null |
+  ch=$(gcloud_ compute ssh "$VM" --command 'cat $HOME/build.channel 2>/dev/null || true' 2>/dev/null |
          grep -E '^(standard|debloat|test)$' | tail -1)
   if [ -n "$ch" ]; then printf '%s\n' "$ch"; return; fi
   ota_channel
@@ -188,7 +211,7 @@ channel_for_vm() {
 # The VM gets the token, uses it, and deletes it again -- one place, so
 # `finish` and `release` cannot drift apart.
 publish_release() {
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
   remote_exec release "$TAG" "$GH_REPO"
 }
 
@@ -201,7 +224,7 @@ remote_exec() {
   local mode=$1 extra="" a
   shift
   for a in "$@"; do extra+=" '$a'"; done
-  gcloud_ compute ssh "$NAME" --command \
+  gcloud_ compute ssh "$VM" --command \
     "bash -s -- '$mode' '$REPO' '$BRANCH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '$DEBLOAT'$extra" \
     <<'REMOTE'
 set -euo pipefail
@@ -565,6 +588,12 @@ esac
 REMOTE
 }
 
+# create/delete never log in (and create is the first call on a fresh VM, so
+# there is no metadata to read yet); everything that talks to the VM does.
+case "${1:-}" in
+  setup|build|state|verify|release|ota|att|logs|ssh|fetch|finish|auto-finish) resolve_vuser ;;
+esac
+
 case "${1:-}" in
 create)
   extra=()
@@ -658,7 +687,7 @@ release)  publish_release ;;
 ota)
   # Writes the feed entry, so the ROM's Updater finds this release. Runs after
   # the release exists: the JSON points at its download URL.
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
   remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(channel_for_vm)" ;;
 promote)
   # Promote the artifact already tested on the test channel: the exact zip the
@@ -728,17 +757,17 @@ PY
   echo "promoted $(cat "$tmp/meta") to standard/doha.json" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
-  while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
+  while [ -z "$(gcloud_ compute ssh "$VM" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
     sleep 60
   done
-  code=$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit" | tr -d '[:space:]')
+  code=$(gcloud_ compute ssh "$VM" --command "cat \$HOME/build.exit" | tr -d '[:space:]')
   echo "build.sh exited $code"
-  [ "$code" = 0 ] || { echo "build failed: VM kept, log at $NAME:~/build.log" >&2; exit 1; }
+  [ "$code" = 0 ] || { echo "build failed: VM kept, log at $VM:~/build.log" >&2; exit 1; }
   remote_exec verify
   [ "${NO_RELEASE:-0}" = 1 ] || publish_release
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
-    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
     if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(channel_for_vm)"; then
       echo "OTA feed not updated: check $OTA_REPO and token write access." >&2
       echo "VM kept: fix the feed/token and rerun 'tools/gcp-build.sh finish'." >&2
@@ -763,7 +792,7 @@ build)
     [ -f "$ADB_KEY" ] || { echo "ADB_KEY: no such file: $ADB_KEY" >&2; exit 1; }
     [ "$(head -c 5 "$ADB_KEY")" = QAAAA ] ||
       { echo "ADB_KEY must be an adb public key (adbkey.pub): $ADB_KEY" >&2; exit 1; }
-    gcloud_ compute scp "$ADB_KEY" "$NAME:adbkey.pub" >/dev/null
+    gcloud_ compute scp "$ADB_KEY" "$VM:adbkey.pub" >/dev/null
     adb_arg=1
     echo "ADB_KEY: copied $(basename "$ADB_KEY") to $NAME, build gets -adbkey suffix"
   fi
@@ -847,19 +876,56 @@ shred -u "$HOME/.gh_token_master" 2>/dev/null || rm -f "$HOME/.gh_token_master"
 rm -f "$HOME/.gh_token"
 echo "chain done $(date -u): both variants published together under $TAG, VM kept"
 CHAIN
-  gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$NAME:doha-remote.sh" >/dev/null
-  gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$NAME:doha-chain.sh" >/dev/null
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token_master'
-  gcloud_ compute ssh "$NAME" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
-  echo "auto-finish: chain runs in tmux 'publish' on $NAME; log: $NAME:~/doha-chain.log"
+  gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$VM:doha-remote.sh" >/dev/null
+  gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$VM:doha-chain.sh" >/dev/null
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token_master'
+  gcloud_ compute ssh "$VM" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
+  echo "auto-finish: chain runs in tmux 'publish' on $VM; log: $VM:~/doha-chain.log"
   echo "auto-finish: builds $([ "$first" = 1 ] && echo debloat || echo standard), then $([ "$first" = 1 ] && echo standard || echo debloat), and publishes both in one release; the VM is not deleted" ;;
 
-setup|state|verify) remote_exec "$1" ;;
+setup)
+  remote_exec setup
+  # Remember which account owns the build state: `logs`, `state` and `finish`
+  # then keep working after the local username changes (see resolve_vuser).
+  gcloud_ compute instances add-metadata "$NAME" --metadata=doha-build-user="$VUSER" >/dev/null
+  echo "build state owner: $VUSER (recorded in $NAME metadata; VUSER=... overrides)" ;;
+state|verify) remote_exec "$1" ;;
 
-att)    gcloud compute ssh "$NAME" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
-logs)   gcloud_ compute ssh "$NAME" --command "tail -f \$HOME/build.log" ;;
-ssh)    gcloud_ compute ssh "$NAME" ;;
-fetch)  mkdir -p "$OUT"; gcloud_ compute scp --recurse "$NAME:/mnt/build/zips/*" "$OUT/"; echo "fetched into $OUT" ;;
+att)    gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
+# Two traps here, both of which look like "the build died": a wrong account has
+# an empty home, so the file is simply not there; and ssh only flushes a remote
+# command's output when that command exits, so `tail -f` prints nothing while the
+# build runs. Read by byte offset with short-lived commands instead, and say
+# which account was tried when the log is missing.
+logs)
+  tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
+  size=$(gcloud_ compute ssh "$VM" --command 'wc -c < $HOME/build.log 2>/dev/null || echo x' 2>/dev/null | tr -d '[:space:]')
+  case ${size:-} in ''|*[!0-9]*)
+    echo "no build.log in the home of $VUSER on $NAME: run with VUSER=<account that ran setup>" >&2
+    exit 1 ;;
+  esac
+  # Start ~8 KB back so there is context, without dumping a 12 MB log.
+  off=$(( size > 8192 ? size - 8192 : 0 ))
+  first=1
+  echo "following $VM:~/build.log ($size bytes); Ctrl-C stops following, the build keeps running" >&2
+  while :; do
+    gcloud_ compute ssh "$VM" --command "tail -c +$((off + 1)) \$HOME/build.log" > "$tmp" 2>/dev/null || true
+    n=$(wc -c < "$tmp")
+    if [ "$n" -gt 0 ]; then
+      # Count what was copied, not what is printed: the log grows during the
+      # copy, so the next offset comes from the bytes received.
+      off=$(( off + n ))
+      if [ "$first" = 1 ] && [ "$off" -gt "$n" ]; then
+        sed '1d' "$tmp"    # started mid-line 8 KB back: drop the fragment
+      else
+        cat "$tmp"
+      fi
+      first=0
+    fi
+    sleep 10
+  done ;;
+ssh)    gcloud_ compute ssh "$VM" ;;
+fetch)  mkdir -p "$OUT"; gcloud_ compute scp --recurse "$VM:/mnt/build/zips/*" "$OUT/"; echo "fetched into $OUT" ;;
 delete) delete_instance ;;
 
 *)      sed -n '2,26p' "$0"; exit 1 ;;
