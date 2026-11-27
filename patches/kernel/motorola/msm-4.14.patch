@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/vendor/amogus_defconfig
-index 2ac915b04..866954d2d 100644
+index d4a6e5f610db..d44033d337e6 100644
 --- a/arch/arm64/configs/vendor/amogus_defconfig
 +++ b/arch/arm64/configs/vendor/amogus_defconfig
 @@ -179,6 +179,7 @@ CONFIG_DEFAULT_USE_ENERGY_AWARE=y
@@ -10,7 +10,16 @@ index 2ac915b04..866954d2d 100644
  CONFIG_RD_GZIP=y
  CONFIG_RD_BZIP2=y
  CONFIG_RD_LZMA=y
-@@ -5286,6 +5287,7 @@ CONFIG_SDFAT_UEVENT=y
+@@ -4621,7 +4622,7 @@ CONFIG_MSM_PIL_SSR_GENERIC=y
+ CONFIG_SETUP_SSR_NOTIF_TIMEOUTS=y
+ CONFIG_SSR_SYSMON_NOTIF_TIMEOUT=20000
+ CONFIG_SSR_SUBSYS_NOTIF_TIMEOUT=20000
+-CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y
++# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set
+ CONFIG_MSM_BOOT_STATS=y
+ # CONFIG_MSM_BOOT_TIME_MARKER is not set
+ # CONFIG_MSM_CORE_HANG_DETECT is not set
+@@ -5289,6 +5290,7 @@ CONFIG_SDFAT_UEVENT=y
  # Pseudo filesystems
  #
  CONFIG_PROC_FS=y
@@ -18,8 +27,42 @@ index 2ac915b04..866954d2d 100644
  # CONFIG_PROC_KCORE is not set
  CONFIG_PROC_SYSCTL=y
  CONFIG_PROC_PAGE_MONITOR=y
+diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+index 03e3fdcff304..61627988672c 100755
+--- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
++++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+@@ -963,6 +963,11 @@ static int fts_input_init(struct fts_ts_data *ts_data)
+     __set_bit(EV_KEY, input_dev->evbit);
+     __set_bit(BTN_TOUCH, input_dev->keybit);
+     __set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
++#if FTS_GESTURE_EN
++    /* The double tap is reported as KEY_WAKEUP on this device; input drops a
++     * key that is not in keybit. See fts_gesture_readdata(). */
++    __set_bit(KEY_WAKEUP, input_dev->keybit);
++#endif
+ 
+     if (pdata->have_key) {
+         FTS_INFO("set key capabilities");
+@@ -1849,6 +1854,17 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
+         FTS_ERROR("create fts workqueue fail");
+     }
+ 
++#if FTS_GESTURE_EN
++    /*
++     * Gesture suspend is gated on should_enable_gesture, and the only writer of
++     * that flag is the Moto "dt-gesture" sensor class (fts_sensor_set_enable).
++     * This tree has neither a Moto gesture service nor a Lineage touch HAL, so
++     * the panel was powered down at every suspend and a double tap could never
++     * be seen (doha #76). Default the gesture on; a userspace consumer can
++     * still disable it by writing 0 to that sensor's enable node.
++     */
++    ts_data->should_enable_gesture = true;
++#endif
+     spin_lock_init(&ts_data->irq_lock);
+     mutex_init(&ts_data->report_mutex);
+     mutex_init(&ts_data->bus_lock);
 diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
-index b70156a71..1dddc40ff 100755
+index b70156a71f98..1dddc40ff13f 100755
 --- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 +++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 @@ -265,8 +265,15 @@ int fts_fw_resume(bool need_reset)
@@ -51,8 +94,40 @@ index b70156a71..1dddc40ff 100755
          FTS_INFO("download fw from bootimage");
          ret = fts_fw_download(upg->fw, upg->fw_length, need_reset);
      } else {
+diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
+index d153ada52967..b7ad349eab0e 100755
+--- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
++++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
+@@ -649,9 +649,25 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
+ 
+     /* report gesture to OS */
+ #if FOCALTECH_DT2W_ENABLE
+-	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0]))
+-#endif /* FOCALTECH_DT2W_ENABLE */
++	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0])) {
+ 		fts_gesture_report(input_dev, gesture->gesture_id);
++		/*
++		 * Nothing else consumes this event on doha: focaltech,report_gesture_key
++		 * is not in the device tree, so fts_gesture_report() only feeds the Moto
++		 * sensor class, and no Moto service or touch HAL is installed to read it.
++		 * Send KEY_WAKEUP on the touch device itself - the framework handles that
++		 * key before queueing and turns the screen on.
++		 */
++		if (gesture->gesture_id == GESTURE_DOUBLECLICK) {
++			input_report_key(input_dev, KEY_WAKEUP, 1);
++			input_sync(input_dev);
++			input_report_key(input_dev, KEY_WAKEUP, 0);
++			input_sync(input_dev);
++		}
++	}
++#else
++	fts_gesture_report(input_dev, gesture->gesture_id);
++#endif /* FOCALTECH_DT2W_ENABLE */
+ 
+     return 0;
+ }
 diff --git a/drivers/power/supply/qcom/qpnp-smb2.c b/drivers/power/supply/qcom/qpnp-smb2.c
-index c0e59cec2..36867d5cb 100644
+index c0e59cec26a6..36867d5cbc66 100644
 --- a/drivers/power/supply/qcom/qpnp-smb2.c
 +++ b/drivers/power/supply/qcom/qpnp-smb2.c
 @@ -1148,7 +1148,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
@@ -64,8 +139,22 @@ index c0e59cec2..36867d5cb 100644
  		return -EINVAL;
  	}
  
+diff --git a/drivers/power/supply/qcom/qpnp-smb5.c b/drivers/power/supply/qcom/qpnp-smb5.c
+index 082a4bfd17f5..95ee43b1e782 100644
+--- a/drivers/power/supply/qcom/qpnp-smb5.c
++++ b/drivers/power/supply/qcom/qpnp-smb5.c
+@@ -1615,9 +1615,6 @@ static int smb5_batt_get_prop(struct power_supply *psy,
+ 	case POWER_SUPPLY_PROP_PRESENT:
+ 		rc = smblib_get_prop_batt_present(chg, val);
+ 		break;
+-	case POWER_SUPPLY_PROP_ONLINE:
+-		rc = smblib_get_prop_batt_present(chg, val);
+-		break;
+ 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+ 		rc = smblib_get_prop_input_suspend(chg, val);
+ 		break;
 diff --git a/fs/proc/Kconfig b/fs/proc/Kconfig
-index 08dce22af..967de6417 100644
+index 08dce22afec1..967de641703d 100644
 --- a/fs/proc/Kconfig
 +++ b/fs/proc/Kconfig
 @@ -88,3 +88,14 @@ config PROC_UID
@@ -84,7 +173,7 @@ index 08dce22af..967de6417 100644
 +	  This is a workaround to allow recovery-as-boot A/B devices that
 +	  launched with Android 9 to use two-stage init.
 diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
-index 403cbb1..c3efa14 100644
+index 403cbb12a6e9..c3efa14f3522 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
 @@ -1,12 +1,60 @@
@@ -149,7 +238,7 @@ index 403cbb1..c3efa14 100644
  	return 0;
  }
  
-@@ -24,6 +73,8 @@ static const struct file_operations cmdline_proc_fops = {
+@@ -24,6 +72,8 @@ static const struct file_operations cmdline_proc_fops = {
  
  static int __init proc_cmdline_init(void)
  {
@@ -159,7 +248,7 @@ index 403cbb1..c3efa14 100644
  	return 0;
  }
 diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
-index 709a1f6cf..8402cf4b3 100644
+index 709a1f6cf8c9..8402cf4b3554 100644
 --- a/include/uapi/linux/nl80211.h
 +++ b/include/uapi/linux/nl80211.h
 @@ -4273,6 +4273,7 @@ enum nl80211_mfp {
@@ -171,7 +260,7 @@ index 709a1f6cf..8402cf4b3 100644
  
  /**
 diff --git a/init/initramfs.c b/init/initramfs.c
-index 33fdbdc19..431ea8fa6 100644
+index 69ab7b09a03a..88c20bd8c8ad 100644
 --- a/init/initramfs.c
 +++ b/init/initramfs.c
 @@ -614,7 +614,7 @@ static int __init skip_initramfs_param(char *str)
@@ -184,7 +273,7 @@ index 33fdbdc19..431ea8fa6 100644
  }
  __setup("skip_initramfs", skip_initramfs_param);
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 51ce59f..b71686c 100644
+index 51ce59fec545..b71686c4623c 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
 @@ -7152,9 +7152,12 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
@@ -204,7 +293,7 @@ index 51ce59f..b71686c 100644
  	/*
  	 * Cache the old values so that they can be restored
 diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
-index bdddc2ec3..ee6263bf7 100644
+index bdddc2ec3311..ee6263bf79fd 100644
 --- a/net/wireless/nl80211.c
 +++ b/net/wireless/nl80211.c
 @@ -8238,7 +8238,8 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
@@ -218,7 +307,7 @@ index bdddc2ec3..ee6263bf7 100644
  
  static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 diff --git a/scripts/extract-cert.c b/scripts/extract-cert.c
-index dd1a4bd70..1f5bacf6e 100644
+index dd1a4bd706a2..1f5bacf6ee7b 100644
 --- a/scripts/extract-cert.c
 +++ b/scripts/extract-cert.c
 @@ -119,6 +119,9 @@ int main(int argc, char **argv)
@@ -240,7 +329,7 @@ index dd1a4bd70..1f5bacf6e 100644
  		BIO *b;
  		X509 *x509;
 diff --git a/scripts/sign-file.c b/scripts/sign-file.c
-index 12acc70e5..d8861cd00 100644
+index 12acc70e5a7a..d8861cd00cdc 100644
 --- a/scripts/sign-file.c
 +++ b/scripts/sign-file.c
 @@ -144,6 +144,9 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
@@ -262,7 +351,7 @@ index 12acc70e5..d8861cd00 100644
  	} else {
  		BIO *b;
 diff --git a/usr/Kconfig b/usr/Kconfig
-index 8b4826de1..de9d04f2c 100644
+index 8b4826de1189..de9d04f2c0be 100644
 --- a/usr/Kconfig
 +++ b/usr/Kconfig
 @@ -32,6 +32,17 @@ config INITRAMFS_FORCE
@@ -283,82 +372,3 @@ index 8b4826de1..de9d04f2c 100644
  config INITRAMFS_ROOT_UID
  	int "User ID to map to 0 (user root)"
  	depends on INITRAMFS_SOURCE!=""
-diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-index 0bd1dd1..876bd5b 100644
---- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-+++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-@@ -960,6 +960,11 @@ static int fts_input_init(struct fts_ts_data *ts_data)
-     __set_bit(EV_KEY, input_dev->evbit);
-     __set_bit(BTN_TOUCH, input_dev->keybit);
-     __set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
-+#if FTS_GESTURE_EN
-+    /* The double tap is reported as KEY_WAKEUP on this device; input drops a
-+     * key that is not in keybit. See fts_gesture_readdata(). */
-+    __set_bit(KEY_WAKEUP, input_dev->keybit);
-+#endif
- 
-     if (pdata->have_key) {
-         FTS_INFO("set key capabilities");
-@@ -1846,6 +1851,17 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
-         FTS_ERROR("create fts workqueue fail");
-     }
- 
-+#if FTS_GESTURE_EN
-+    /*
-+     * Gesture suspend is gated on should_enable_gesture, and the only writer of
-+     * that flag is the Moto "dt-gesture" sensor class (fts_sensor_set_enable).
-+     * This tree has neither a Moto gesture service nor a Lineage touch HAL, so
-+     * the panel was powered down at every suspend and a double tap could never
-+     * be seen (doha #76). Default the gesture on; a userspace consumer can
-+     * still disable it by writing 0 to that sensor's enable node.
-+     */
-+    ts_data->should_enable_gesture = true;
-+#endif
-     spin_lock_init(&ts_data->irq_lock);
-     mutex_init(&ts_data->report_mutex);
-     mutex_init(&ts_data->bus_lock);
-diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
-index 92bcf55..43f2e02 100644
---- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
-+++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
-@@ -558,9 +558,25 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
- 
-     /* report gesture to OS */
- #if FOCALTECH_DT2W_ENABLE
--	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0]))
--#endif /* FOCALTECH_DT2W_ENABLE */
-+	if (detect_doubletap2wake(gesture->coordinate_x[0], gesture->coordinate_y[0])) {
- 		fts_gesture_report(input_dev, gesture->gesture_id);
-+		/*
-+		 * Nothing else consumes this event on doha: focaltech,report_gesture_key
-+		 * is not in the device tree, so fts_gesture_report() only feeds the Moto
-+		 * sensor class, and no Moto service or touch HAL is installed to read it.
-+		 * Send KEY_WAKEUP on the touch device itself - the framework handles that
-+		 * key before queueing and turns the screen on.
-+		 */
-+		if (gesture->gesture_id == GESTURE_DOUBLECLICK) {
-+			input_report_key(input_dev, KEY_WAKEUP, 1);
-+			input_sync(input_dev);
-+			input_report_key(input_dev, KEY_WAKEUP, 0);
-+			input_sync(input_dev);
-+		}
-+	}
-+#else
-+	fts_gesture_report(input_dev, gesture->gesture_id);
-+#endif /* FOCALTECH_DT2W_ENABLE */
- 
-     return 0;
- }
-diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/vendor/amogus_defconfig
---- a/arch/arm64/configs/vendor/amogus_defconfig
-+++ b/arch/arm64/configs/vendor/amogus_defconfig
-@@ -4618,7 +4618,7 @@
- CONFIG_SETUP_SSR_NOTIF_TIMEOUTS=y
- CONFIG_SSR_SYSMON_NOTIF_TIMEOUT=20000
- CONFIG_SSR_SUBSYS_NOTIF_TIMEOUT=20000
--CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y
-+# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set
- CONFIG_MSM_BOOT_STATS=y
- # CONFIG_MSM_BOOT_TIME_MARKER is not set
- # CONFIG_MSM_CORE_HANG_DETECT is not set
-
