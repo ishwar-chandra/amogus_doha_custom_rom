@@ -472,3 +472,55 @@ Note: the workspace cannot take this capture itself — `bugreportz` is refused 
 (`Failed to connect to dumpstatez service`, no `DUMP` permission), there is no root, and
 `adb pair` over Wireless debugging fails with `protocol fault (couldn't read status message)`
 when handed the port from the main screen instead of the pairing dialog.
+
+## P21 — Pre-reboot dexopt aborts on every update (4 tombstones)
+**Status:** open, needs a decision. **Severity:** medium (first boot after an update recompiles on demand).
+**Summary:** all four tombstones in capture F (2026-11-27 14:25) are the same native abort:
+
+```
+pid 18604/13866/12896/30619  >>> /apex/com.android.art/bin/dexopt_chroot_setup <<<
+signal 6 (SIGABRT), code -1 (SI_QUEUE)
+Abort message: 'Check failed: !OR_RETURN(IsSelfOrParentSymlink(target))
+                 /mnt/pre_reboot_dexopt/chroot/system_ext/lib'
+  #04 dexopt_chroot_setup ... BindMount()
+```
+
+`dalvik.vm.enable_pr_dexopt=true` and `pm.dexopt.ab-ota=speed-profile` are set, so system_server
+tries to AOT-compile the *new* build before rebooting for an OTA. Each attempt dies in
+`art/dexopt_chroot_setup/dexopt_chroot_setup.cc:183/206`, which refuse to bind-mount onto a path
+whose parent is a symlink (`IsSelfOrParentSymlink`, `:148`).
+**Cause:** this device has no separate `system_ext`/`product` partition — the build emits
+`/system_ext -> /system/system_ext` and `/product -> /system/product` (verified on the running
+ROM), and the chroot inherits those symlinks from the root mount, so the target
+`chroot/system_ext/lib` is a symlink. Pre-reboot dexopt therefore never runs, and the update
+pays the compile on first boot instead — the "feels slow after updating" symptom.
+**Fix, two options:**
+- [ ] ART patch (`patches/art.patch`): resolve a symlinked bind target and mount/umount the
+  resolved path (`IsSelfOrParentSymlink` already computes the real path via
+  `/proc/self/fd`, it just discards it), so pre-reboot dexopt works on retrofit-partition
+  devices.
+- [ ] Cheap alternative: `dalvik.vm.enable_pr_dexopt=false` in the device properties — no more
+  tombstones, but no pre-reboot compilation either (current effective behaviour).
+- [ ] Verify either way: after an OTA, `pm bg-dexopt-job` is not needed and first boot does not
+  sit in `dex2oat`; no new tombstone in `/data/tombstones` after an update.
+
+## P22 — `persist.debug.wfd.enable` rejected: Wi-Fi Display flag never applied
+**Status:** open, code-fix identified. **Severity:** low/medium (casting).
+**Summary:** capture F, boot 2.129 s: `init: Do not have permissions to set
+'persist.debug.wfd.enable' to '1' in property file '/vendor/build_doha.prop': SELinux permission
+check failed (source_context=u:r:vendor_init ...)`. The Motorola vendor prop file sets it, but
+`vendor_init` may not write a `system_prop`-labelled property, so the flag stays off and Wi-Fi
+Display support is decided without it.
+**Fix:** set it from the system side instead — `PRODUCT_PROPERTY_OVERRIDES +=
+persist.debug.wfd.enable=1` in `patches/device/motorola/amogus_doha.patch` (or `targets.patch`),
+which writes `/system/build.prop` as `init`.
+- [ ] After flashing: `getprop persist.debug.wfd.enable` is `1`, and the boot log has no
+  "Do not have permissions to set 'persist.debug.wfd.enable'".
+- [ ] Enable "Wireless display" in Cast/Screen cast; the device advertises over Wi-Fi Display.
+
+## P23 — Vendor prop typo `ro.product.bevice`
+**Status:** open, cosmetic. **Severity:** none (log noise only).
+**Summary:** same vendor prop file sets `ro.product.bevice` (missing `d`), which SELinux also
+rejects. It never had an effect; the property that matters, `ro.product.device`, comes from the
+device tree.
+**Fix:** drop or correct the line where the vendor props are generated; no behaviour change.
