@@ -53,7 +53,7 @@ index 9e00b92..fbca65a 100644
  
  # Recovery
 diff --git a/device.mk b/device.mk
-index 9051022..f9668f7 100644
+index 9051022..4817116 100644
 --- a/device.mk
 +++ b/device.mk
 @@ -27,7 +27,8 @@ TARGET_USES_FINGERPRINT_V2_1 := true
@@ -66,7 +66,7 @@ index 9051022..f9668f7 100644
  
  # Partitions
  TARGET_USES_DYNAMIC_PARTITIONS := false
-@@ -44,4 +45,53 @@ PRODUCT_BUILD_PROP_OVERRIDES += \
+@@ -44,4 +45,54 @@ PRODUCT_BUILD_PROP_OVERRIDES += \
      BuildDesc="doha_retail-user 10 QPIS30.28-Q3-28-26-4-1-3 f0a9a release-keys" \
      BuildFingerprint=motorola/doha_retail/doha:10/QPIS30.28-Q3-28-26-4-1-3/f0a9a:user/release-keys
  
@@ -95,8 +95,6 @@ index 9051022..f9668f7 100644
 +DOLBY_PATH := device/motorola/amogus_doha/dolby
 +
 +PRODUCT_COPY_FILES += \
-+    $(DOLBY_PATH)/system/app/MotoDolbyV3/MotoDolbyV3.apk:$(TARGET_COPY_OUT_SYSTEM)/app/MotoDolbyV3/MotoDolbyV3.apk \
-+    $(DOLBY_PATH)/system/priv-app/daxService/daxService.apk:$(TARGET_COPY_OUT_SYSTEM)/priv-app/daxService/daxService.apk \
 +    $(DOLBY_PATH)/system/etc/permissions/com.dolby.daxservice.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/com.dolby.daxservice.xml \
 +    $(DOLBY_PATH)/system/etc/permissions/com.motorola.dolby.dolbyui.features.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/com.motorola.dolby.dolbyui.features.xml \
 +    $(DOLBY_PATH)/system/etc/permissions/com.motorola.frameworks.core.addon.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/com.motorola.frameworks.core.addon.xml \
@@ -117,16 +115,40 @@ index 9051022..f9668f7 100644
 +    $(DOLBY_PATH)/vendor/etc/init/vendor.dolby.hardware.dms@1.0-service.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/vendor.dolby.hardware.dms@1.0-service.rc \
 +    $(DOLBY_PATH)/vendor/etc/dolby/dax-default.xml:$(TARGET_COPY_OUT_VENDOR)/etc/dolby/dax-default.xml
 +
-+PRODUCT_PACKAGES += vendor.dolby.hardware.dms@1.0-service
++PRODUCT_PACKAGES += \
++    MotoDolbyV3 \
++    daxService \
++    vendor.dolby.hardware.dms@1.0-service
 +PRODUCT_VENDOR_PROPERTIES += persist.vendor.audio_fx.current=dolby
 +DEVICE_MANIFEST_FILE += $(DOLBY_PATH)/vendor/etc/vintf/manifest/dolby.xml
 diff --git a/dolby/Android.mk b/dolby/Android.mk
 new file mode 100644
-index 0000000..031619f
+index 0000000..14bb781
 --- /dev/null
 +++ b/dolby/Android.mk
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,30 @@
 +LOCAL_PATH := $(call my-dir)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := MotoDolbyV3
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_DEX_PREOPT := false
++LOCAL_SRC_FILES := system/app/MotoDolbyV3/MotoDolbyV3.apk
++include $(BUILD_PREBUILT)
++
++include $(CLEAR_VARS)
++LOCAL_MODULE := daxService
++LOCAL_MODULE_CLASS := APPS
++LOCAL_MODULE_TAGS := optional
++LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
++LOCAL_CERTIFICATE := PRESIGNED
++LOCAL_PRIVILEGED_MODULE := true
++LOCAL_DEX_PREOPT := false
++LOCAL_SRC_FILES := system/priv-app/daxService/daxService.apk
++include $(BUILD_PREBUILT)
 +
 +include $(CLEAR_VARS)
 +LOCAL_MODULE := vendor.dolby.hardware.dms@1.0-service
