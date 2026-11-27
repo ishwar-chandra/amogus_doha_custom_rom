@@ -973,7 +973,42 @@ att)    gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" -- tmux att
 # build runs. Read by byte offset with short-lived commands instead, and say
 # which account was tried when the log is missing.
 logs)
-  tmp=$(mktemp); pending=$(mktemp); state=$(mktemp); seen=$(mktemp)
+  full=0
+  case ${2:-} in
+    --full|-f|--raw) full=1 ;;
+    '') ;;
+    *) echo "usage: $0 logs [--full]" >&2; exit 1 ;;
+  esac
+  tmp=$(mktemp)
+  size=$(gcloud_ compute ssh "$VM" --command 'wc -c < $HOME/build.log 2>/dev/null || echo x' 2>/dev/null | tr -d '[:space:]')
+  case ${size:-} in ''|*[!0-9]*)
+    rm -f "$tmp"
+    echo "no build.log in the home of $VUSER on $NAME: run with VUSER=<account that ran setup>" >&2
+    exit 1 ;;
+  esac
+  if [ "$full" = 1 ]; then
+    printf -- '-- full build log: %s (%s KiB), from the start --\n' "$NAME" "$((size / 1024))" >&2
+    trap 'rm -f "$tmp"' EXIT
+    off=0
+    first=0
+    while :; do
+      gcloud_ compute ssh "$VM" --command "tail -c +$((off + 1)) \$HOME/build.log" > "$tmp" 2>/dev/null || true
+      n=$(wc -c < "$tmp")
+      if [ "$n" -gt 0 ]; then
+        # Count what was copied, not what is printed: the log grows during the
+        # copy, so the next offset comes from the bytes received.
+        off=$(( off + n ))
+        if [ "$first" = 1 ] && [ "$off" -gt "$n" ]; then
+          sed '1d' "$tmp"
+        else
+          cat "$tmp"
+        fi
+        first=0
+      fi
+      sleep 5
+    done
+  fi
+  pending=$(mktemp); state=$(mktemp); seen=$(mktemp)
   LOGFMT="$ROOT/tools/logfmt.py"
   case ${FORCE_COLOR:-0} in
     1|true|yes|always) log_color=always ;;
@@ -987,11 +1022,6 @@ logs)
     exit 0
   }
   trap cleanup INT TERM
-  size=$(gcloud_ compute ssh "$VM" --command 'wc -c < $HOME/build.log 2>/dev/null || echo x' 2>/dev/null | tr -d '[:space:]')
-  case ${size:-} in ''|*[!0-9]*)
-    echo "no build.log in the home of $VUSER on $NAME: run with VUSER=<account that ran setup>" >&2
-    exit 1 ;;
-  esac
   if [ "$log_color" = never ]; then
     printf -- '-- build log: %s (%s KiB) --\n' "$NAME" "$((size / 1024))" >&2
   else

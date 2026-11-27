@@ -419,6 +419,9 @@ progress bar, and the TARGET_*/SOONG_* environment dump is hidden. Color is
 automatic on a TTY; use `FORCE_COLOR=1` when piping, or `NO_COLOR=1` to keep
 the layout without ANSI.
 
+`tools/gcp-build.sh logs --full` (also `--raw`/`-f`) prints the entire raw log
+from the beginning, with no filtering, dedupe, or wrapping.
+
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
 noise that only appears inside the dump). Use `--area drm`, `--area performance`, or `--area power`
