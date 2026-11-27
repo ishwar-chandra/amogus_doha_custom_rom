@@ -66,9 +66,9 @@
 #                                       updates OTA and deletes in one command
 set -euo pipefail
 
-PROJECT=${PROJECT:-customrom-514215}
-ZONE=${ZONE:-asia-south1-a}
-NAME=${NAME:-crdroid-build}
+PROJECT=${PROJECT:-$(gcloud config get-value project 2>/dev/null)}
+ZONE=${ZONE:-}
+NAME=${NAME:-}
 HOURS=${HOURS:-48}
 VARIANT=${VARIANT:-userdebug}
 # Same axis as build.sh's DEBLOAT: 1 leaves the optional crDroid extras out
@@ -148,6 +148,52 @@ gcloud_() { gcloud "$@" --project "$PROJECT" --zone "$ZONE"; }
 # in the instance metadata, so resolve it once and address the VM as $VM.
 VUSER=${VUSER:-}
 VM=$NAME
+
+# Resolve the instance from the authenticated gcloud project instead of
+# hardcoding one machine. NAME/ZONE still win when set, so two running
+# builds can be addressed independently (`NAME=vm-a ...`, `NAME=vm-b ...`);
+# with neither set, a single running instance is used. Instances created by
+# this script carry labels.doha-build=1, which keeps the discovery stable
+# when unrelated VMs share the project.
+resolve_instance() {
+  case ${PROJECT:-} in ''|'(unset)')
+    PROJECT=$(gcloud config get-value project 2>/dev/null) ;;
+  esac
+  case ${PROJECT:-} in ''|'(unset)')
+    echo "no gcloud project; run 'gcloud auth login' and 'gcloud config set project <id>', or set PROJECT=..." >&2
+    exit 1 ;;
+  esac
+  if [ -n "${NAME:-}" ]; then
+    if [ -z "${ZONE:-}" ]; then
+      ZONE=$(gcloud compute instances list --project "$PROJECT" \
+               --filter="name=${NAME}" --format='value(zone)' 2>/dev/null | head -1)
+      ZONE=${ZONE##*/}
+    fi
+    [ -n "${ZONE:-}" ] || {
+      echo "instance $NAME not found in project $PROJECT" >&2
+      exit 1
+    }
+    return 0
+  fi
+  local rows n
+  rows=$(gcloud compute instances list --project "$PROJECT" \
+           --filter='labels.doha-build=1 AND status=RUNNING' \
+           --format='value(name,zone)' 2>/dev/null)
+  [ -n "$rows" ] || rows=$(gcloud compute instances list --project "$PROJECT" \
+           --filter='status=RUNNING' --format='value(name,zone)' 2>/dev/null)
+  n=$(printf '%s\n' "$rows" | sed '/^$/d' | wc -l)
+  case $n in
+    0) echo "no running instance in $PROJECT; set NAME or create one" >&2; exit 1 ;;
+    1) ;;
+    *) echo "multiple running instances in $PROJECT; set NAME (and optionally ZONE) to choose one:" >&2
+       printf '%s\n' "$rows" | sed 's/^/  /' >&2
+       exit 1 ;;
+  esac
+  NAME=${rows%%$'\t'*}
+  ZONE=${rows##*$'\t'}
+  ZONE=${ZONE##*/}
+}
+
 resolve_vuser() {
   [ -n "$VUSER" ] ||
     VUSER=$(gcloud compute instances describe "$NAME" --project "$PROJECT" --zone "$ZONE" \
@@ -614,7 +660,12 @@ REMOTE
 # create/delete never log in (and create is the first call on a fresh VM, so
 # there is no metadata to read yet); everything that talks to the VM does.
 case "${1:-}" in
-  setup|build|state|verify|release|ota|att|logs|ssh|fetch|finish|auto-finish) resolve_vuser ;;
+  setup|build|state|verify|release|ota|att|logs|ssh|fetch|finish|auto-finish|delete)
+    resolve_instance; resolve_vuser ;;
+  create)
+    # create is the first call on a fresh project, so it needs a name and zone.
+    NAME=${NAME:-crdroid-build}
+    ZONE=${ZONE:-asia-south1-a} ;;
 esac
 
 case "${1:-}" in
@@ -658,6 +709,7 @@ create)
   esac
   gcloud_ compute instances create "$NAME" \
     --machine-type "$SYNC_MACHINE" \
+    --labels=doha-build=1 \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type "$DISK_TYPE" \
     "${ssd[@]}" \
