@@ -413,6 +413,12 @@ adb bugreport ./br.zip                  # from the phone, while the problem is h
 ./tools/integrity-setup.sh status       # Play Integrity: GApps, PIF, keybox, boot props
 ```
 
+`tools/gcp-build.sh logs` formats the remote build log while it streams: phase
+lines are cyan, warnings yellow, failures red, ninja percentages become a
+progress bar, and the TARGET_*/SOONG_* environment dump is hidden. Color is
+automatic on a TTY; use `FORCE_COLOR=1` when piping, or `NO_COLOR=1` to keep
+the layout without ANSI.
+
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
 noise that only appears inside the dump). Use `--area drm`, `--area performance`, or `--area power`

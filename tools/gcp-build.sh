@@ -973,16 +973,35 @@ att)    gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" -- tmux att
 # build runs. Read by byte offset with short-lived commands instead, and say
 # which account was tried when the log is missing.
 logs)
-  tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT
+  tmp=$(mktemp); pending=$(mktemp); state=$(mktemp)
+  LOGFMT="$ROOT/tools/logfmt.py"
+  case ${FORCE_COLOR:-0} in
+    1|true|yes|always) log_color=always ;;
+    *) if [ -t 1 ]; then log_color=auto; else log_color=never; fi ;;
+  esac
+  cleanup() {
+    python3 "$LOGFMT" --flush --pending "$pending" --state "$state" \
+      --color "$log_color" 2>/dev/null || true
+    rm -f "$tmp" "$pending" "$state"
+    printf '\n' >&2
+    exit 0
+  }
+  trap cleanup INT TERM
   size=$(gcloud_ compute ssh "$VM" --command 'wc -c < $HOME/build.log 2>/dev/null || echo x' 2>/dev/null | tr -d '[:space:]')
   case ${size:-} in ''|*[!0-9]*)
     echo "no build.log in the home of $VUSER on $NAME: run with VUSER=<account that ran setup>" >&2
     exit 1 ;;
   esac
+  if [ "$log_color" = never ]; then
+    printf -- '-- build log: %s (%s KiB) --\n' "$NAME" "$((size / 1024))" >&2
+  else
+    printf '\033[2m┌─\033[0m \033[1;36mbuild log\033[0m \033[2m· %s · %s KiB\033[0m\n' "$NAME" "$((size / 1024))" >&2
+    printf '\033[2m│\033[0m \033[2m✖ error   ▲ warning   ▸ phase   ✔ success   ▰ progress\033[0m\n' >&2
+    printf '\033[2m└─\033[0m following; Ctrl-C stops this view, the build keeps running\n' >&2
+  fi
   # Start ~8 KB back so there is context, without dumping a 12 MB log.
   off=$(( size > 8192 ? size - 8192 : 0 ))
   first=1
-  echo "following $VM:~/build.log ($size bytes); Ctrl-C stops following, the build keeps running" >&2
   while :; do
     gcloud_ compute ssh "$VM" --command "tail -c +$((off + 1)) \$HOME/build.log" > "$tmp" 2>/dev/null || true
     n=$(wc -c < "$tmp")
@@ -990,14 +1009,13 @@ logs)
       # Count what was copied, not what is printed: the log grows during the
       # copy, so the next offset comes from the bytes received.
       off=$(( off + n ))
-      if [ "$first" = 1 ] && [ "$off" -gt "$n" ]; then
-        sed '1d' "$tmp"    # started mid-line 8 KB back: drop the fragment
-      else
-        cat "$tmp"
-      fi
+      skip=
+      [ "$first" = 1 ] && [ "$off" -gt "$n" ] && skip=--skip-first
+      python3 "$LOGFMT" --pending "$pending" --state "$state" \
+        --color "$log_color" $skip "$tmp" || true
       first=0
     fi
-    sleep 10
+    sleep 5
   done ;;
 ssh)    gcloud_ compute ssh "$VM" ;;
 fetch)  mkdir -p "$OUT"; gcloud_ compute scp --recurse "$VM:/mnt/build/zips/*" "$OUT/"; echo "fetched into $OUT" ;;
