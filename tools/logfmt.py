@@ -2,10 +2,9 @@
 """Format the incremental tail of the remote build log for `tools/gcp-build.sh logs`.
 
 The caller fetches bytes in chunks. This helper keeps the incomplete last line
-in --pending, so a line split by a network chunk is still printed once, and it
-collapses repeated ninja percentages so the output stays readable.
-
-Colors are emitted only when asked (auto = stdout is a TTY, or FORCE_COLOR).
+in --pending, so a line split by a network chunk is still printed once. It
+wraps long lines to the terminal width, hides build-system chatter, collapses
+repeated warnings/info, and shows ninja percentages as a progress bar.
 """
 from __future__ import annotations
 
@@ -14,6 +13,7 @@ import os
 import re
 import shutil
 import sys
+import textwrap
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -21,7 +21,7 @@ DIM = "\033[2m"
 RED = "\033[1;31m"
 YELLOW = "\033[1;33m"
 GREEN = "\033[1;32m"
-CYAN = "\033[1;36m"
+CYAN = "\x1b[1;36m"
 BLUE = "\033[1;34m"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -30,10 +30,10 @@ PROGRESS_RE = re.compile(
 )
 EXIT_RE = re.compile(r"build\.sh exited\s+(\d+)")
 ERROR_RE = re.compile(
-    r"(?i)(^\s*(error|fatal)\s*:|^\s*FAILED\b|ninja:\s*error:"
-    r"|ninja:\s*build stopped|\*\*\*.*error|undefined reference"
-    r"|No rule to make target|\bexception\b|Permission denied"
-    r"|avc:\s*denied|SELinux.*denied)"
+    r"(?i)(^\s*(error|fatal)\s*:|\berror:\s|^\s*FAILED\b|ninja:\s*error:"
+    r"|ninja:\s*build stopped|kati failed|failed to build"
+    r"|\*\*\*.*error|undefined reference|No rule to make target"
+    r"|\bexception\b|Permission denied|avc:\s*denied|SELinux.*denied)"
 )
 WARN_RE = re.compile(
     r"(?i)(^\s*warning\s*:|\bwarning\b|No such file or directory"
@@ -49,10 +49,14 @@ PHASE_RE = re.compile(
     r"generating |target |soong|kati|bootstrap)"
 )
 NOISE_RE = re.compile(
-    r"(?i)^\s*(ninja: no work to do|ninja: entering directory|"
+    r"(?i)(^\s*(ninja: no work to do|ninja: entering directory|"
     r"TARGET_BUILD_VARIANT|TARGET_ARCH|TARGET_CPU|HOST_OS|HOST_CROSS_OS|"
     r"BUILD_ID|OUT_DIR|PRODUCT_SOONG_NAMESPACES|SOONG_|PLATFORM_VERSION|"
-    r"============================================)"
+    r"SISO_EXPERIMENTS|"
+    r"============================================)|"
+    r"trace_sys_linux|memory stall|Adding CUSTOM_LOCALES|"
+    r"out/soong/release-config/.*was modified|"
+    r"ninja:\s*(SISO|ignore|Entering|no work)|ninja:\s*$)"
 )
 
 
@@ -79,6 +83,8 @@ def classify(text: str):
         return "error", clean
     progress = PROGRESS_RE.match(clean)
     if progress:
+        if progress.group(4).lstrip().startswith("including "):
+            return "noise", clean
         return "progress", progress
     if SUCCESS_RE.search(clean):
         return "success", clean
@@ -91,10 +97,25 @@ def classify(text: str):
     return "info", clean
 
 
-def emit(kind, value, on: bool, width: int, last_pct, first_line: bool):
-    """Print one classified line. Returns the new last_pct and whether anything
-    was written."""
-    out = sys.stdout
+def write_block(out, on, width, icon, icon_color, text_color, value):
+    """Wrap a line to the terminal width with a hanging indent."""
+    available = max(20, width - 4)          # "│ " + icon/2 spaces
+    parts = textwrap.wrap(
+        value.expandtabs(4),
+        width=available,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
+    for index, part in enumerate(parts):
+        if index == 0:
+            lead = (f"{paint(on, DIM)}│{paint(on, RESET)} "
+                    f"{paint(on, icon_color)}{icon}{paint(on, RESET)} ")
+        else:
+            lead = f"{paint(on, DIM)}│{paint(on, RESET)}   "
+        out.write(f"{lead}{paint(on, text_color)}{part}{paint(on, RESET)}\n")
+
+
+def emit(out, on, width, kind, value, last_pct, wrote):
     if kind in ("blank", "noise"):
         return last_pct, False
 
@@ -110,7 +131,8 @@ def emit(kind, value, on: bool, width: int, last_pct, first_line: bool):
         filled = min(bar_width, max(0, round(pct * bar_width / 100)))
         bar = "▰" * filled + "▱" * (bar_width - filled)
         counts = f"{done}/{total}" if total else ""
-        room = max(12, width - 36)
+        counts = counts[:15]
+        room = max(12, width - 50)
         if len(target) > room:
             target = target[: room - 1] + "…"
         out.write(
@@ -121,27 +143,31 @@ def emit(kind, value, on: bool, width: int, last_pct, first_line: bool):
         return pct, True
 
     if kind == "phase":
-        if not first_line:
+        if wrote:
             out.write("\n")
-        out.write(f"{gutter(on)}{paint(on, CYAN)}▸{paint(on, RESET)} "
-                  f"{paint(on, CYAN)}{value}{paint(on, RESET)}\n")
+        write_block(out, on, width, "▸", CYAN, CYAN, value)
         return last_pct, True
     if kind == "success":
-        if not first_line:
+        if wrote:
             out.write("\n")
-        out.write(f"{gutter(on)}{paint(on, GREEN)}✔{paint(on, RESET)} "
-                  f"{paint(on, GREEN)}{paint(on, BOLD)}{value}{paint(on, RESET)}\n")
+        write_block(out, on, width, "✔", GREEN, GREEN, value)
         return last_pct, True
     if kind == "error":
-        out.write(f"{gutter(on)}{paint(on, RED)}✖{paint(on, RESET)} "
-                  f"{paint(on, RED)}{value}{paint(on, RESET)}\n")
+        write_block(out, on, width, "✖", RED, RED, value)
         return last_pct, True
     if kind == "warning":
-        out.write(f"{gutter(on)}{paint(on, YELLOW)}▲{paint(on, RESET)} "
-                  f"{paint(on, YELLOW)}{value}{paint(on, RESET)}\n")
+        write_block(out, on, width, "▲", YELLOW, YELLOW, value)
         return last_pct, True
-    out.write(f"{gutter(on)}{paint(on, DIM)}·{paint(on, RESET)} {value}\n")
+    write_block(out, on, width, "·", DIM, "", value)
     return last_pct, True
+
+
+def dedupe_key(kind, value):
+    if kind not in ("warning", "info", "phase"):
+        return None
+    key = re.sub(r"^\d{2}:\d{2}:\d{2}\s+", "", value)
+    key = re.sub(r"\s+", " ", key.strip())
+    return key or None
 
 
 def main() -> int:
@@ -149,6 +175,7 @@ def main() -> int:
     parser.add_argument("chunk", nargs="?")
     parser.add_argument("--pending", default="")
     parser.add_argument("--state", default="")
+    parser.add_argument("--seen", default="")
     parser.add_argument("--skip-first", action="store_true")
     parser.add_argument("--flush", action="store_true")
     parser.add_argument("--color", choices=("auto", "always", "never"), default="auto")
@@ -189,6 +216,14 @@ def main() -> int:
     if args.skip_first and lines:
         lines = lines[1:]
 
+    seen = set()
+    if args.seen:
+        try:
+            with open(args.seen, "r", encoding="utf-8", errors="replace") as f:
+                seen = {line.rstrip("\n") for line in f if line.strip()}
+        except FileNotFoundError:
+            pass
+
     last_pct = None
     if args.state:
         try:
@@ -201,13 +236,26 @@ def main() -> int:
     wrote = False
     for line in lines:
         kind, value = classify(line)
-        last_pct, printed = emit(kind, value, on, width, last_pct, not wrote)
+        key = dedupe_key(kind, value)
+        if key is not None:
+            if key in seen:
+                continue
+            seen.add(key)
+        last_pct, printed = emit(
+            sys.stdout, on, width, kind, value, last_pct, not wrote
+        )
         wrote = wrote or printed
 
     if args.flush and tail:
         kind, value = classify(tail)
-        last_pct, printed = emit(kind, value, on, width, last_pct, not wrote)
-        wrote = wrote or printed
+        key = dedupe_key(kind, value)
+        if key is None or key not in seen:
+            if key is not None:
+                seen.add(key)
+            last_pct, printed = emit(
+                sys.stdout, on, width, kind, value, last_pct, not wrote
+            )
+            wrote = wrote or printed
         tail = ""
 
     if args.pending:
@@ -216,6 +264,10 @@ def main() -> int:
     if args.state:
         with open(args.state, "w", encoding="ascii") as f:
             f.write("" if last_pct is None else str(last_pct))
+    if args.seen:
+        with open(args.seen, "w", encoding="utf-8") as f:
+            for key in list(seen)[-400:]:
+                f.write(key + "\n")
 
     sys.stdout.flush()
     return 0
