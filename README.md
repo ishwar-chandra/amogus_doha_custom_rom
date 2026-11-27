@@ -815,6 +815,16 @@ stock pieces under `device/motorola/amogus_doha/dolby/`:
   `audio_effects.xml`, and the `vendor.dolby.hardware.dms` entry in
   `DEVICE_MANIFEST_FILE`.
 
+`MotoDolbyV3.apk`'s manifest requires the Moto
+`com.motorola.frameworks.core.addon` shared library. The port copies that
+addon jar and its `<library>` permission XML, so the runtime resolves it, and
+sets `LOCAL_ENFORCE_USES_LIBRARIES := false` on the prebuilt: Android 17's
+`enforce_uses_libraries` check cannot be satisfied by declaring the library,
+because the addon is not a `JAVA_LIBRARIES` module and that declaration would
+create a dexpreopt dependency on a config that does not exist. The APK is a
+presigned Moto blob and is not dexpreopted, so the check is skipped for it
+alone.
+
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
 ship two audio-effect UIs. The system partition is fixed, so this frees blocks
