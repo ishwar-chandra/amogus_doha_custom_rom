@@ -910,6 +910,21 @@ is D8 (the vendor Wi-Fi HAL has no RTT service). `icnss_pm_suspend_noirq ... ret
 (one event) and `sensors-hal: mot_disprot_event ... status=3` are vendor driver/HAL
 behaviour with no kit-side lever.
 
+### 0.5x animations by default (`patches/frameworks/base.patch`)
+
+Sync animations ship at 0.5x (window, transition, animator) so a fresh install and an
+update both feel quicker without visiting Developer options. Three mechanisms are
+needed because the scale is a stored setting, not a build property:
+
+- `SettingsProvider/res/values/defaults.xml` carries the three fractions at 50%.
+- `DatabaseHelper.loadGlobalSettings()` seeds the three `Settings.Global` rows, since the
+  readers (`WindowManagerService`, the animator handler) fall back to `1.0f` when a row is
+  missing — a resource change alone does nothing.
+- `SETTINGS_VERSION` 236 → 237 adds a one-time upgrade step in `onUpgradeLocked()`, because
+  an existing device already has `1.0` stored and would otherwise keep it forever. The step
+  rewrites only the untouched default (`1.0`/`1`) and inserts where nothing was stored, so a
+  scale the user picked (off, 0.25x, 0.75x, 1.5x) survives the update. Device-untested.
+
 ### Performance profile (`performance-tuning` branch)
 
 The tuning is small because most of the obvious knobs are already written by the
