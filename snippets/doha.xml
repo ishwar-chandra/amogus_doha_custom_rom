@@ -31,6 +31,10 @@
   <project name="android_vendor_motorola_amogus" path="vendor/motorola/amogus" remote="aldair402" revision="85187ccfe24f696f8ccfc68f2f03529fc0caa98f" upstream="15" dest-branch="15" groups="local::doha" />
   <project name="android_vendor_motorola_amogus_doha" path="vendor/motorola/amogus_doha" remote="aldair402" revision="7b6d8adfee61b37bea3f08715d89936dd74d6849" upstream="14" dest-branch="14" groups="local::doha" />
   <project name="android_vendor_motorola_common" path="vendor/motorola/common" remote="moto-common" revision="5cfff4dfe2e257fd1c9df4176ffd1bbf3bd99f20" upstream="14" dest-branch="14" groups="local::doha" />
+  <!-- Dolby Atmos: DAX3 3.6 stack (DaxUI + daxService, dms@2.0 HAL, DAP
+       effect). Replaces the stock doha 10 Dolby blobs, whose libswdap
+       rejects every DAP parameter under Android 17's audioserver. -->
+  <project name="userariii/vendor_motorola-dolby" path="vendor/motorola-dolby" remote="github" revision="3fcddbc1471a80761c3a8597ad8f5d97ea675bb8" groups="local::doha" />
   <project name="platform_hardware_qcom_bootctrl" path="hardware/qcom/bootctrl" remote="moto-common" revision="bf0e3210326e5237bdd978f8205c31e7341f2e04" upstream="master" dest-branch="master" groups="local::doha" />
   <project name="platform_prebuilts_clang_host_linux-x86_clang-r383902" path="prebuilts/clang/host/linux-x86/clang-r383902" remote="moto-common" revision="8a74b63a5f9328ab91ba6b48e37c9627ae85c206" upstream="master" dest-branch="master" groups="local::doha" />
   <project name="platform_vendor_qcom_opensource_audio_sm8150" path="vendor/qcom/opensource/audio/sm8150" remote="aldair402" revision="d0dbea0f17eb102c82c880e913bf6ccdc0bfb13d" upstream="master" dest-branch="master" groups="local::doha" />

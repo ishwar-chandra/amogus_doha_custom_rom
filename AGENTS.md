@@ -38,7 +38,7 @@ Manifest composition, all included by `default.xml` (1031 own projects, 7 remote
 |---|---|---|
 |`snippets/crdroid.xml`|64 crDroid forks (`refs/heads/17.0`)|never edit|
 |`snippets/lineage.xml`|158 LineageOS projects|never edit|
-|`snippets/doha.xml`|27 SHA-pinned `local::doha` projects + **2 `<remove-project>`**|owned here|
+|`snippets/doha.xml`|28 SHA-pinned `local::doha` projects + **2 `<remove-project>`**|owned here|
 
 `doha.xml` removes AOSP `platform/external/fastrpc` (AOSPA copy wins) and LineageOS IPACM at
 `vendor/qcom/opensource/data-ipa-cfg-mgr-legacy-um` (removed by name **and** path so moto-common's
@@ -71,7 +71,7 @@ Patch groups (30 total):
 
 |Area|Patches|Representative change|
 |---|---|---|
-|Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe, Dolby Atmos (DMS HAL + `libswdap`, AudioFX removed)|
+|Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe, Dolby Atmos wiring (`vendor/motorola-dolby`, dms@2.0, AudioFX removed)|
 |Android 17 on 4.14|7: `kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base`, `art`, `frameworks/av`|`CONFIG_INITRAMFS_IGNORE_SKIP_FLAG`, `/proc/cmdline` bounds, BPF gates→warn, capability-bound `EINVAL` no longer panics, AppOp registration, pre-reboot dexopt symlink, frozen-callback `ENOSYS`|
 |Vendor, HIDL, blobs|11: `vendor/motorola/*`, `vendor/qcom/common`, `vendor/qcom/opensource/{audio/sm8150,interfaces,media/sm8150,thermal}`, `frameworks/hardware/interfaces`, `system/tools/hidl`, `hardware/{motorola,nxp/nfc}`|OEMCrypto, camera blob delta, restored `displayservice@1.0`/`fmt@1.0`, QCC/wificfr removal, thermal HAL rename|
 |Product, OTA, debloat|3: `vendor/lineage`, `packages/apps/Updater`, `packages/apps/crDroidSettings`|`DEBLOAT_BUILD` gating, per-channel OTA JSON, dead-preference pruning|
@@ -203,15 +203,15 @@ Invariants:
 |---|---|
 |`build.sh`|Sync, render/apply, build, Launcher3 `aapt2` gate, ADB-key leakage check, artifact copy|
 |`default.xml`|crDroid manifest + our remotes/includes; local edits deliberate|
-|`snippets/doha.xml`|27 pinned doha projects and the 2 removals|
+|`snippets/doha.xml`|28 pinned doha projects and the 2 removals|
 |`patches/vendor/motorola/amogus.patch`|Binary patch (`--binary` required on regeneration); the other is `patches/device/motorola/amogus_doha.patch`|
-|`patches/device/motorola/amogus_doha.patch`|Dolby prebuilts, package list, sepolicy, props; also the device tree's boot/config changes|
+|`patches/device/motorola/amogus_doha.patch`|Dolby vendor-stack wiring (`vendor/motorola-dolby`: package list, VNDK copy, VINTF fragment, sepolicy dir, props), recovery touch, overlays; also the device tree's boot/config changes|
 |`patches/device/motorola/amogus.patch`|fstab/boot cmdline/ext4/zram/read-ahead — most device behavior|
 |`patches/device/qcom/common.patch`|Single surviving read-ahead writer; 11 emptied sepolicy files|
 |`patches/kernel/motorola/msm-4.14.patch`|Android-17 initramfs/`/proc/cmdline`, WPA3, touch, defconfig|
 |`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; discovers the project/VM from gcloud (`NAME`/`ZONE` override, `create` labels `doha-build=1`); `logs [--full]` formatted/raw; every ssh/scp addresses the VM as the account that ran `setup` (recorded in instance metadata, `VUSER` overrides) because `build.log`, `build.exit`, `build.channel` and the tmux socket live in that account's `$HOME`; `finish` polls the VM's `build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
 |`tools/logfmt.py`|`logs` formatter: width wrapping, repeat dedupe, noise filtering, progress bars, `--full` raw mode|
-|`device/motorola/amogus_doha/dolby`|Stock-10 Moto Audio/`daxService` APKs, DMS HIDL service/libs, `libswdap`, `dax-default.xml`; APKs are `BUILD_PREBUILT`, copied by `device.mk`|
+|`vendor/motorola-dolby`|Pinned DAX3 3.6 Moto Dolby package (`userariii/vendor_motorola-dolby` v1.2): `DaxUI`/`daxService` APKs (platform-signed), dms@2.0 HAL, DAP effect libs, tuning XML, sepolicy, VINTF files; `device.mk` installs the audio subset, and the device tree carries only `dolby/manifest.xml`|
 |`tools/device-check.sh`, `tools/perf-audit.sh`, `tools/perf-multitask.sh`|Release-gating hardware checks|
 |`tools/flash.sh`|Set discovery via `.sha256sum`, checksum verify, both-slot flash + sideload|
 |`tools/integrity-setup.sh`|TrickyStore keybox import; the repo never ships a keybox|
@@ -266,8 +266,8 @@ rejects APKs in `PRODUCT_COPY_FILES`: use a `BUILD_PREBUILT` APPS module (`LOCAL
 PRESIGNED`, plus `LOCAL_PRIVILEGED_MODULE := true` for a priv-app). A prebuilt whose manifest
 declares `<uses-library>` must match the build system: set `LOCAL_USES_LIBRARIES` only when that
 name is a real `JAVA_LIBRARIES` module (otherwise the module's `dexpreopt.config` depends on a
-config with no rule), otherwise set `LOCAL_ENFORCE_USES_LIBRARIES := false` on that module alone
-(`MotoDolbyV3` needs this); never the product-wide `PRODUCT_BROKEN_VERIFY_USES_LIBRARIES`.
+config with no rule), otherwise set `LOCAL_ENFORCE_USES_LIBRARIES := false` on that module alone;
+never the product-wide `PRODUCT_BROKEN_VERIFY_USES_LIBRARIES`.
 
 Artifact validation:
 

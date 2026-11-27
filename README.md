@@ -16,7 +16,7 @@ The manifest is built on crDroid's own
 ([`crdroidandroid/android`](https://github.com/crdroidandroid/android),
 branch `17.0`): `snippets/crdroid.xml` and `snippets/lineage.xml` are
 copied from there unchanged, `default.xml` is their `default.xml` with
-our remotes and an extra include, and `snippets/doha.xml` holds the 27
+our remotes and an extra include, and `snippets/doha.xml` holds the 28
 doha projects (device, vendor, kernel, HALs and the AOSPA trees the port
 uses). crDroid's vendor tree is checked out at `vendor/lineage`, so the
 device trees' `vendor/lineage/config/*.mk` inheritance works as-is.
@@ -483,7 +483,7 @@ first section.
 ### crDroid 13
 
 - **The manifest is crDroid's.** `default.xml` is crDroid's own manifest
-  with our remotes, plus `snippets/doha.xml`, which holds the 27 doha
+  with our remotes, plus `snippets/doha.xml`, which holds the 28 doha
   projects. `snippets/crdroid.xml` and `snippets/lineage.xml` are
   crDroid's, unmodified. crDroid maps `vendor/lineage` and
   `device/lineage/sepolicy` to its own forks at those paths, so the
@@ -794,85 +794,75 @@ L1-capable apps see an L3 device. The patch copies the existing
 alone is not proof of L1: the DRM info app and an L1 stream still have to be
 tested on hardware. The current kit change is device-untested.
 
-### Dolby Atmos (`patches/device/motorola/amogus_doha.patch`, `patches/device/motorola/common.patch`, `patches/device/motorola/targets.patch`)
+### Dolby Atmos (`snippets/doha.xml` vendor project, `patches/device/motorola/amogus_doha.patch`, `patches/device/motorola/targets.patch`, `patches/vendor/qcom/opensource/audio/sm8150.patch`)
 
-The stock Android 10 firmware `QPIS30.28-Q3-28-26-4-1-7` ships Dolby Audio
-Processing as the `libswdap.so` sound effect (UUID
-`9d4921da-8225-4f29-aefa-39537a04bcaa`) plus the `vendor.dolby.hardware.dms`
-HIDL 1.0 service. The custom vendor tree carried neither, so the ROM had no
-Dolby effect at all even though the stock vendor did. This port carries the
-stock pieces under `device/motorola/amogus_doha/dolby/`:
+Dolby Audio Processing is the `dap` effect (`libswdap.so`, UUID
+`9d4921da-8225-4f29-aefa-39537a04bcaa`) plus the
+`vendor.dolby.hardware.dms` HIDL service. The stock doha 10 firmware
+(`QPIS30.28`) carries both, and earlier builds ported those blobs verbatim
+from the stock image.
 
-- `system/app/MotoDolbyV3` (Moto Audio, `com.motorola.dolby.dolbyui`) and
-  `system/priv-app/daxService` (`com.dolby.daxservice`), with their Moto
-  framework/permission/hidden-API files;
-- `vendor/bin/hw/vendor.dolby.hardware.dms@1.0-service`,
-  `lib{64}/vendor.dolby.hardware.dms@1.0*.so`, `libdlbdsservice`,
-  `libdapparamstorage`, and `lib{64}/soundfx/libswdap.so`;
-- `/vendor/etc/dolby/dax-default.xml`, the init service script, and
-  `sepolicy/vendor/dolby.te` for the DMS domain;
-- the `dap` library/effect entry in the audio HAL's trinket
-  `audio_effects.xml` (`vendor/qcom/opensource/audio/sm8150`, the copy that
-  wins for `/vendor/etc/audio_effects.xml`; `device/motorola/common`'s
-  rootdir file carries the same entry as a fallback), and the
-  `vendor.dolby.hardware.dms` entry in `DEVICE_MANIFEST_FILE`.
+That 2019 port does not survive Android 17. The `daxService` (targetSdk 29)
+and `libswdap` load, the effect attaches, but every DAP parameter query
+returns `-3` (EINVAL) inside the effect: `DolbyAudioEffect.getNumOfProfiles()`
+is the first call in its constructor, so `dolbyprovider` fails and Moto Audio
+(`com.motorola.dolby.dolbyui`) crashes reading
+`content://com.dolby.daxservice.dolbyprovider/3/status`. No SELinux denial is
+involved; it is the old blob's parameter store failing to initialise under
+the Android 17 audioserver.
 
-`MotoDolbyV3.apk`'s manifest requires the Moto
-`com.motorola.frameworks.core.addon` shared library. The port copies that
-addon jar and its `<library>` permission XML, so the runtime resolves it, and
-sets `LOCAL_ENFORCE_USES_LIBRARIES := false` on the prebuilt: Android 17's
-`enforce_uses_libraries` check cannot be satisfied by declaring the library,
-because the addon is not a `JAVA_LIBRARIES` module and that declaration would
-create a dexpreopt dependency on a config that does not exist. The APK is a
-presigned Moto blob and is not dexpreopted, so the check is skipped for it
-alone. The stock `vendor.dolby.hardware.dms@1.0-service` binary is in the same
-position for Android 17's `check_elf_files`: some of its `DT_NEEDED` libraries
-(`libdapparamstorage`, `libdlbdsservice`, `vendor.dolby.hardware.dms@1.0*`)
-are copied blobs, not build modules, so that module sets
-`LOCAL_CHECK_ELF_FILES := false` rather than a `LOCAL_SHARED_LIBRARIES` list
-the build cannot resolve. The HAL also has to be declared in a device framework
-compatibility matrix: Android 17's `check_vintf_all` rejects
-`vendor.dolby.hardware.dms@1.0::IDms/default` as "in the device manifest but
-not specified in framework compatibility matrix" otherwise.
-`dolby/vendor/etc/vintf/compatibility_matrix.dolby.xml` supplies that entry and
-is added through `DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE` in `device.mk`.
+The stack is therefore replaced by the DAX3 3.6 Motorola Dolby package from
+`userariii/vendor_motorola-dolby` (branch `v1.2`), pinned in
+`snippets/doha.xml` at `vendor/motorola-dolby`. It is built for Android 13+,
+talks `vendor.dolby.hardware.dms@2.0` instead of `@1.0`, and ships:
 
-On device the HAL must also pass SELinux and the app permission checks:
-`hal_dms_default` adds `android.hidl.base::IBase`, the app (`priv_app_36`) and
-the audio HAL (`hal_audio_default`) are DMS clients, `DolbyManagerService` has a
-`service_contexts` entry, and daxService holds `INTERACT_ACROSS_USERS_FULL`.
-`/data/vendor/dolby` is created at `post-fs-data`. These came from the
-2026-11-27 bugreport; the crash-by-crash record is in `CHANGELOG.md`.
+- `DaxUI` (`com.dolby.daxappui`) and `daxService`
+  (`com.dolby.daxservice`), installed to `/system_ext/priv-app` and
+  **re-signed with the platform key** (`android_app_import`,
+  `certificate: "platform"`). That is what lets `daxService` hold
+  `INTERACT_ACROSS_USERS_FULL`: the permission stays `signature`-only, so the
+  earlier `frameworks/base` rewrite of its protection level, and the privapp
+  allowlist it forced for every other holder, are both gone;
+- the `dms@2.0` HAL, `/vendor/etc/dolby/dax-default.xml`, the DAP effect
+  libraries, and the `privapp`/`sysconfig` permission and hidden-API files.
 
-On Android 17 the stock `daxService` is signed with the stock platform key and
-`INTERACT_ACROSS_USERS_FULL` is `signature|installer|module|role`, so the
-privapp whitelist cannot grant it; `patches/frameworks/base.patch` adds
-`privileged` so the existing whitelist can, without re-signing the app (which
-would break its stock signature relationship with the DMS/Dolby broadcast
-permission). The versioned `priv_app_36`/`hal_audio_default` domains get
-explicit `hal_dms_hwservice`/`hal_dms` rules in
-`patches/device/motorola/amogus_doha.patch` because the `hal_client_domain`
-macro did not cover them.
+`patches/device/motorola/amogus_doha.patch` installs only the audio subset:
+the two APKs, the dms 2.0 HAL and its libraries, the effect, the tuning XML
+and the permission files. The donor's AC4/DD+ decoding pieces
+(`libstagefrightdolby`, `libstagefright_soft_{ac4,ddp}dec`,
+`media_codecs_dolby_audio.xml`) and its `dms360` ODM service are not carried,
+so Dolby *decoding* of AC-4/E-AC-3 is not enabled by this change.
+`libdlbdsservice` links `libstagefright_foundation-v33.so`, so the VNDK v33
+stage is copied from `prebuilts/vndk/v33` (still present in lineage-24.0).
+`DEVICE_MANIFEST_FILE` gets a device-tree HIDL 2.0 fragment
+(`dolby/manifest.xml`; the donor's copy declares `target-level="5"`, a stale
+level that trips the VINTF check when merged on Android 17) and
+`DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE` gets the donor's framework
+matrix. The donor's `sepolicy/vendor` joins `BOARD_VENDOR_SEPOLICY_DIRS` (it defines
+`hal_dms`/`hal_dms_client`/`hal_dms_server`, `hal_dms_hwservice`, and labels
+`/data/vendor/dolby` as `vendor_data_file`). The stock stack's `dolby.te`,
+contexts, VINTF files, permission XMLs and APKs are removed from the device
+patch.
 
-`persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
-the `targets` patch filters `AudioFX` out of the product so the ROM does not
-ship two audio-effect UIs. The system partition is fixed, so this frees blocks
-inside `/system` rather than shrinking it. An incremental `out/` keeps the old
-APK, so `build.sh` runs one `mka installclean` when the stale APK is still
-staged; later builds stay incremental.
-`tools/flash.sh`/`device-check.sh` do not know about
-Dolby, so this is **device-untested** until a flash shows the effect and the
-app:
+The `dap` effect entry stays in the audio HAL's `audio_effects.xml`
+(`vendor/qcom/opensource/audio/sm8150`) because the effect is loaded by
+audioserver. `device.mk` installs `persist.vendor.audio_fx.current=dolby`,
+`ro.vendor.audio.dolby.dax.support`, the DAX3 version property and the
+`vendor.audio.dolby.ds2.*` overrides, and sets `TARGET_EXCLUDES_AUDIOFX`
+alongside the existing `AudioFX` filter in the `targets` patch so the ROM
+does not ship two audio-effect UIs.
+
+Device-untested as of this change. Verify with:
 
 ```sh
 adb shell dumpsys media.audio_flinger | grep -i -A2 dap
-adb shell pm list packages | grep -iE 'dolby|MotoDolby'
-# open Moto Audio, toggle it, and play through speaker/headphones
+adb shell pm list packages | grep -iE 'dolby'
+adb shell lshal | grep -i dms
+# open the Dolby UI, toggle it, and play through speaker/headphones
 ```
 
-If the effect is not listed, the vendor DMS service or the SELinux domain did
-not start; check `adb shell getprop | grep -i dolby` and `dmesg`/`logcat` for
-`hal_dms_default`. Revert the three patches to restore AudioFX.
+If the effect is not listed, the dms@2.0 HAL did not register; check the
+HAL's log and `avc` denials for `hal_dms_default`.
 
 ### Play Integrity
 

@@ -20,9 +20,9 @@ the patches, and builds an unofficial ROM for the Motorola Moto G8 Plus
   steps, known issues, and — importantly — one section per fix explaining
   why it exists. `AGENTS.md` is the compact repo mechanics guide.
 - `tools/gcp-build.sh` discovers the project/VM from `gcloud config`;
-  `logs [--full]` formats the tail or streams the raw log. The 2026-11-27
-  build carries the Dolby Atmos stack under
-  `device/motorola/amogus_doha/dolby` and removes AudioFX; see README.
+  `logs [--full]` formats the tail or streams the raw log. The 2026-11-28
+  build carries the DAX3 Dolby Atmos stack from the pinned
+  `vendor/motorola-dolby` project and removes AudioFX; see README.
 
 The Android sources themselves are never committed here. Even the device
 trees and vendor blobs are third-party (Aldair402, moto-common); the value

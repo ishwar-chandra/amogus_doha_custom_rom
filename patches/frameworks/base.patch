@@ -17,19 +17,6 @@ index dfdd8b063..e9b68abd2 100644
              // Notifications
              OP_POST_NOTIFICATION,
              // Health
-diff --git a/core/res/AndroidManifest.xml b/core/res/AndroidManifest.xml
-index d51a83548..8e8f73a30 100644
---- a/core/res/AndroidManifest.xml
-+++ b/core/res/AndroidManifest.xml
-@@ -3842,7 +3842,7 @@
-          types of interactions
-          @hide -->
-     <permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL"
--        android:protectionLevel="signature|installer|module|role" />
-+        android:protectionLevel="signature|installer|module|role|privileged" />
-     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
- 
-     <!-- Allows interaction across profiles in the same profile group. -->
 diff --git a/packages/SettingsProvider/res/values/defaults.xml b/packages/SettingsProvider/res/values/defaults.xml
 index 580dce2c6..f944d85a7 100644
 --- a/packages/SettingsProvider/res/values/defaults.xml

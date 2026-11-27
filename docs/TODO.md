@@ -269,6 +269,12 @@ the number of knobs the phone is not actually running.
 
 - [x] Carry the stock 10 DMS HIDL 1.0 service, `libswdap`, `dax-default.xml`,
   Moto Audio and `daxService` under `device/motorola/amogus_doha/dolby`.
+- [x] 2026-11-28: that stack cannot work under Android 17 - every DAP
+  parameter returns EINVAL inside the 2019 effect and Moto Audio crashes
+  reading `dolbyprovider`. Replaced with the `vendor/motorola-dolby` DAX3
+  3.6 stack (DaxUI + `daxService`, dms@2.0 HAL, DAP effect), re-signed with
+  the platform key; the `frameworks/base` protection-level override and its
+  privapp allowlist are removed with it.
 - [x] Register the `dap` effect in the audio HAL's trinket `audio_effects.xml`
   (`vendor/qcom/opensource/audio/sm8150/configs/trinket`, which becomes
   `/vendor/etc/audio_effects.xml`; the `device/motorola/common` rootdir copy is

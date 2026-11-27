@@ -4,6 +4,31 @@ Unofficial crDroid 13.1 (Android 17) for the Motorola Moto G8 Plus (`doha`,
 in-tree device `amogus_doha`). One section per build; the date in the heading is
 what `tools/gcp-build.sh release` matches to fill the GitHub release notes.
 
+## 2026-11-28 (unreleased)
+
+Build `crDroidAndroid-17.0-20261128-amogus_doha-v13.1` (standard, userdebug).
+Baseline: `2026-11-27`.
+
+### Highlights
+
+- **Dolby Atmos stack replaced.** The stock Android 10 port cannot work
+  under Android 17: its 2019 `libswdap` rejects every DAP parameter
+  (`getNumOfProfiles` returns `-3`), so `daxService`'s provider fails and
+  Moto Audio crashes reading it. The ROM now carries the DAX3 3.6 Motorola
+  package (`vendor/motorola-dolby`, pinned) - `DaxUI` + `daxService`
+  (re-signed with the platform key), `vendor.dolby.hardware.dms@2.0`, the
+  DAP effect and its tuning. Moto Audio is replaced by Dolby's DaxUI.
+- **`frameworks/base` no longer rewrites `INTERACT_ACROSS_USERS_FULL`.**
+  Platform-signing the Dolby apps grants the signature permission, so the
+  `privileged` protection-level change, and the privapp allowlist it forced
+  for every other holder, are removed.
+
+### Known issues
+
+- Dolby AC-4/E-AC-3 decoding is not enabled (the donor's codec libraries and
+  `media_codecs_dolby_audio.xml` are not carried).
+- The new Dolby stack is device-untested until this build is flashed.
+
 ## 2026-11-27 (unreleased)
 
 Build `crDroidAndroid-17.0-20261127-amogus_doha-v13.1` (standard, userdebug;

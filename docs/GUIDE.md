@@ -358,9 +358,10 @@ Checklist (from `README.md` → Status), on real hardware:
 - Boot; touch in Android and in recovery; all four cameras; fingerprint.
 - Calls both ways, SMS, mobile data; Wi-Fi; speaker, wired and Bluetooth
   audio.
-- Dolby Atmos (2026-11-27+): Moto Audio opens; `dumpsys media.audio_flinger |
-  grep -i -A2 dap` lists the effect; `pm list packages | grep -i audiofx`
-  is empty.
+- Dolby Atmos (2026-11-28+): the Dolby UI (DaxUI) opens; `dumpsys
+  media.audio_flinger | grep -i -A2 dap` lists the effect; `lshal | grep -i
+  dms` shows `vendor.dolby.hardware.dms@2.0::IDms/default`; `pm list
+  packages | grep -i audiofx` is empty.
 - GApps (if used): setup wizard, sign-in, Play Store.
 - Magisk (if used).
 - Known issues: VoLTE depends on the modem carrier profile; double-tap to

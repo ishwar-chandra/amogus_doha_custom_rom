@@ -65,8 +65,8 @@ index 1fb3410..1091469 100644
  # Inherit some common Lineage stuff.
  $(call inherit-product, vendor/lineage/config/common_full_phone.mk)
  
-+# AudioFX is superseded by the Dolby Atmos stack in
-+# device/motorola/amogus_doha/dolby; do not ship two audio effect UIs.
++# AudioFX is superseded by the Dolby Atmos stack in vendor/motorola-dolby;
++# do not ship two audio effect UIs.
 +PRODUCT_PACKAGES := $(filter-out AudioFX,$(PRODUCT_PACKAGES))
 +
  # Kernel
