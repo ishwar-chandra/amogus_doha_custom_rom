@@ -201,3 +201,32 @@ index 0000000..8971ac0
 +recovery_only(`
 +  allow init vendor_sysfs_touchpanel:file w_file_perms;
 +')
+diff --git a/props/build_doha.prop b/props/build_doha.prop
+index f48afb7..04f28a4 100644
+--- a/props/build_doha.prop
++++ b/props/build_doha.prop
+@@ -11,10 +11,7 @@ ro.boot.product.vendor.sku=doha
+ 
+ # Camera
+ persist.vendor.camera.customer.config=camera_config_doha.xml
+-ro.product.bevice=doha
+ 
+ # Density
+ ro.sf.lcd_density=380
+ 
+-# Wfd
+-persist.debug.wfd.enable=1
+diff --git a/device.mk b/device.mk
+--- a/device.mk
++++ b/device.mk
+@@ -60,3 +60,10 @@
+     device/motorola/amogus_doha/recovery/root/system/etc/init/touch_doha.rc:$(TARGET_COPY_OUT_RECOVERY)/root/system/etc/init/touch_doha.rc
+ 
+ $(call inherit-product-if-exists, vendor/motorola/amogus_doha/amogus_doha-vendor.mk)
++
++# Wi-Fi Display. The vendor prop file cannot set this: persist.debug.* is a
++# system property and /vendor/build_doha.prop is loaded as vendor_init, which
++# SELinux denies (init: Do not have permissions to set 'persist.debug.wfd.enable').
++# Write it from /system/build.prop, where init owns the property.
++PRODUCT_PROPERTY_OVERRIDES += \
++    persist.debug.wfd.enable=1
