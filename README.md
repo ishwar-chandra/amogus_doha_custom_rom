@@ -823,7 +823,12 @@ sets `LOCAL_ENFORCE_USES_LIBRARIES := false` on the prebuilt: Android 17's
 because the addon is not a `JAVA_LIBRARIES` module and that declaration would
 create a dexpreopt dependency on a config that does not exist. The APK is a
 presigned Moto blob and is not dexpreopted, so the check is skipped for it
-alone.
+alone. The stock `vendor.dolby.hardware.dms@1.0-service` binary is in the same
+position for Android 17's `check_elf_files`: some of its `DT_NEEDED` libraries
+(`libdapparamstorage`, `libdlbdsservice`, `vendor.dolby.hardware.dms@1.0*`)
+are copied blobs, not build modules, so that module sets
+`LOCAL_CHECK_ELF_FILES := false` rather than a `LOCAL_SHARED_LIBRARIES` list
+the build cannot resolve.
 
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not

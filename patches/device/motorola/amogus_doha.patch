@@ -126,7 +126,7 @@ new file mode 100644
 index 0000000..14bb781
 --- /dev/null
 +++ b/dolby/Android.mk
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,41 @@
 +LOCAL_PATH := $(call my-dir)
 +
 +include $(CLEAR_VARS)
@@ -163,6 +163,10 @@ index 0000000..14bb781
 +LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR)/bin/hw
 +LOCAL_SRC_FILES := vendor/bin/hw/vendor.dolby.hardware.dms@1.0-service
 +LOCAL_MODULE_TAGS := optional
++# The stock binary's DT_NEEDED libs are copied blobs (libdapparamstorage,
++# libdlbdsservice, vendor.dolby.hardware.dms@1.0*), not build modules, so
++# Android 17's check_elf_files cannot be satisfied for this prebuilt.
++LOCAL_CHECK_ELF_FILES := false
 +include $(BUILD_PREBUILT)
 diff --git a/dolby/system/app/MotoDolbyV3/MotoDolbyV3.apk b/dolby/system/app/MotoDolbyV3/MotoDolbyV3.apk
 new file mode 100644
