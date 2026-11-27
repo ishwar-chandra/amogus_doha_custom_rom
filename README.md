@@ -811,9 +811,11 @@ stock pieces under `device/motorola/amogus_doha/dolby/`:
   `libdapparamstorage`, and `lib{64}/soundfx/libswdap.so`;
 - `/vendor/etc/dolby/dax-default.xml`, the init service script, and
   `sepolicy/vendor/dolby.te` for the DMS domain;
-- the `dap` library/effect entry in `device/motorola/common`'s
-  `audio_effects.xml`, and the `vendor.dolby.hardware.dms` entry in
-  `DEVICE_MANIFEST_FILE`.
+- the `dap` library/effect entry in the audio HAL's trinket
+  `audio_effects.xml` (`vendor/qcom/opensource/audio/sm8150`, the copy that
+  wins for `/vendor/etc/audio_effects.xml`; `device/motorola/common`'s
+  rootdir file carries the same entry as a fallback), and the
+  `vendor.dolby.hardware.dms` entry in `DEVICE_MANIFEST_FILE`.
 
 `MotoDolbyV3.apk`'s manifest requires the Moto
 `com.motorola.frameworks.core.addon` shared library. The port copies that
