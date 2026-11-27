@@ -169,8 +169,8 @@ new VMs `doha-build=1`). Also
   `device/qcom/sepolicy_vndr/legacy-um`, `frameworks/hardware/interfaces`, `hardware/nxp/nfc`,
   `vendor/qcom/opensource/interfaces`; AOSP for `system/tools/hidl`, `system/zygote`.
 - **Kernel**: either extend `patches/kernel/motorola/msm-4.14.patch`, or land it in
-  `ishwar-chandra/android_kernel_motorola_msm-4.14` (branch `fix`) and bump the SHA pin in
-  `snippets/doha.xml` (`9a3cf72…`). Never leave a fix in both places.
+  `ishwar-chandra/android_kernel_motorola_msm-4.14` (branch `lts`) and bump the SHA pin in
+  `snippets/doha.xml` (`def1be59…`). Never leave a fix in both places.
 - **Comments**: state the device-specific trigger and why the workaround exists; cite the
   `doha_android#N` issue and sibling patch. Keep license headers, match module style.
 - **Commits**: lowercase area prefix + imperative subject, no period (`build.sh:`, `kernel:`,
