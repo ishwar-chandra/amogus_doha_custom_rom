@@ -973,16 +973,16 @@ att)    gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" -- tmux att
 # build runs. Read by byte offset with short-lived commands instead, and say
 # which account was tried when the log is missing.
 logs)
-  tmp=$(mktemp); pending=$(mktemp); state=$(mktemp)
+  tmp=$(mktemp); pending=$(mktemp); state=$(mktemp); seen=$(mktemp)
   LOGFMT="$ROOT/tools/logfmt.py"
   case ${FORCE_COLOR:-0} in
     1|true|yes|always) log_color=always ;;
     *) if [ -t 1 ]; then log_color=auto; else log_color=never; fi ;;
   esac
   cleanup() {
-    python3 "$LOGFMT" --flush --pending "$pending" --state "$state" \
+    python3 "$LOGFMT" --flush --pending "$pending" --state "$state" --seen "$seen" \
       --color "$log_color" 2>/dev/null || true
-    rm -f "$tmp" "$pending" "$state"
+    rm -f "$tmp" "$pending" "$state" "$seen"
     printf '\n' >&2
     exit 0
   }
@@ -1011,7 +1011,7 @@ logs)
       off=$(( off + n ))
       skip=
       [ "$first" = 1 ] && [ "$off" -gt "$n" ] && skip=--skip-first
-      python3 "$LOGFMT" --pending "$pending" --state "$state" \
+      python3 "$LOGFMT" --pending "$pending" --state "$state" --seen "$seen" \
         --color "$log_color" $skip "$tmp" || true
       first=0
     fi
