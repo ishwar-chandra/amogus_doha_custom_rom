@@ -126,7 +126,7 @@ new file mode 100644
 index 0000000..14bb781
 --- /dev/null
 +++ b/dolby/Android.mk
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,37 @@
 +LOCAL_PATH := $(call my-dir)
 +
 +include $(CLEAR_VARS)
@@ -136,6 +136,13 @@ index 0000000..14bb781
 +LOCAL_MODULE_SUFFIX := $(COMMON_ANDROID_PACKAGE_SUFFIX)
 +LOCAL_CERTIFICATE := PRESIGNED
 +LOCAL_DEX_PREOPT := false
++# MotoDolbyV3.apk's manifest requires com.motorola.frameworks.core.addon.
++# The jar and its <library> permission XML are copied by device.mk, so it
++# resolves at runtime, but the addon is not a JAVA_LIBRARIES module here, so
++# declaring LOCAL_USES_LIBRARIES would add a dexpreopt dependency on a
++# config that does not exist. The APK is a presigned Moto blob we cannot
++# retag and is not dexpreopted, so skip the coherence check for it.
++LOCAL_ENFORCE_USES_LIBRARIES := false
 +LOCAL_SRC_FILES := system/app/MotoDolbyV3/MotoDolbyV3.apk
 +include $(BUILD_PREBUILT)
 +
