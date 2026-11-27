@@ -1,5 +1,5 @@
 diff --git a/core/java/android/app/AppOpsManager.java b/core/java/android/app/AppOpsManager.java
-index dfdd8b0..e9b68ab 100644
+index dfdd8b063..e9b68abd2 100644
 --- a/core/java/android/app/AppOpsManager.java
 +++ b/core/java/android/app/AppOpsManager.java
 @@ -2994,7 +2994,13 @@ public class AppOpsManager {
@@ -17,32 +17,19 @@ index dfdd8b0..e9b68ab 100644
              // Notifications
              OP_POST_NOTIFICATION,
              // Health
-diff --git a/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java b/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
-index d12dc24..d12c624 100644
---- a/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
-+++ b/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
-@@ -952,5 +952,5 @@
-         /**
--         * Parses an SC timestamp and returns a currentTimeMillis()-style timestamp, or 0 if
--         * invalid.
-+         * Parses an SC timestamp and returns a currentTimeMillis()-style timestamp. Falls back to
-+         * the current time when the PDU carries an out-of-range field.
-          */
-         long getSCTimestampMillis() {
-@@ -990,8 +990,11 @@
-                         localDateTime.toEpochSecond(ZoneOffset.UTC) - timeZoneOffsetSeconds;
-                 // Convert to milliseconds.
-                 return epochSeconds * 1000;
-             } catch (DateTimeException ex) {
--                Rlog.e(LOG_TAG, "Invalid timestamp", ex);
-+                // A malformed SCTS (month 0 was seen from both BSNL and JIO SMSCs in the
-+                // 2026-11-26 bugreport) must not date the message to 1970, and a stack
-+                // trace per PDU floods the radio buffer.
-+                Rlog.w(LOG_TAG, "Invalid SCTS, using receive time: " + ex.getMessage());
-+                return System.currentTimeMillis();
-             }
--            return 0;
-         }
+diff --git a/core/res/AndroidManifest.xml b/core/res/AndroidManifest.xml
+index d51a83548..8e8f73a30 100644
+--- a/core/res/AndroidManifest.xml
++++ b/core/res/AndroidManifest.xml
+@@ -3842,7 +3842,7 @@
+          types of interactions
+          @hide -->
+     <permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL"
+-        android:protectionLevel="signature|installer|module|role" />
++        android:protectionLevel="signature|installer|module|role|privileged" />
+     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
+ 
+     <!-- Allows interaction across profiles in the same profile group. -->
 diff --git a/packages/SettingsProvider/res/values/defaults.xml b/packages/SettingsProvider/res/values/defaults.xml
 index 580dce2c6..f944d85a7 100644
 --- a/packages/SettingsProvider/res/values/defaults.xml
@@ -130,3 +117,33 @@ index aa3c00d17..f2bfc9c0d 100644
                  // vXXX: Add new settings above this point.
  
                  if (currentVersion != newVersion) {
+diff --git a/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java b/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
+index d12dc24da..d12c6243d 100644
+--- a/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
++++ b/telephony/java/com/android/internal/telephony/gsm/SmsMessage.java
+@@ -950,8 +950,8 @@ public class SmsMessage extends SmsMessageBase {
+         }
+ 
+         /**
+-         * Parses an SC timestamp and returns a currentTimeMillis()-style timestamp, or 0 if
+-         * invalid.
++         * Parses an SC timestamp and returns a currentTimeMillis()-style timestamp. Falls back to
++         * the current time when the PDU carries an out-of-range field.
+          */
+         long getSCTimestampMillis() {
+             // TP-Service-Centre-Time-Stamp
+@@ -991,9 +991,12 @@ public class SmsMessage extends SmsMessageBase {
+                 // Convert to milliseconds.
+                 return epochSeconds * 1000;
+             } catch (DateTimeException ex) {
+-                Rlog.e(LOG_TAG, "Invalid timestamp", ex);
++                // A malformed SCTS (month 0 was seen from both BSNL and JIO SMSCs in the
++                // 2026-11-26 bugreport) must not date the message to 1970, and a stack
++                // trace per PDU floods the radio buffer.
++                Rlog.w(LOG_TAG, "Invalid SCTS, using receive time: " + ex.getMessage());
++                return System.currentTimeMillis();
+             }
+-            return 0;
+         }
+ 
+         /**

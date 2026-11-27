@@ -844,6 +844,16 @@ the audio HAL (`hal_audio_default`) are DMS clients, `DolbyManagerService` has a
 `/data/vendor/dolby` is created at `post-fs-data`. These came from the
 2026-11-27 bugreport; the crash-by-crash record is in `CHANGELOG.md`.
 
+On Android 17 the stock `daxService` is signed with the stock platform key and
+`INTERACT_ACROSS_USERS_FULL` is `signature|installer|module|role`, so the
+privapp whitelist cannot grant it; `patches/frameworks/base.patch` adds
+`privileged` so the existing whitelist can, without re-signing the app (which
+would break its stock signature relationship with the DMS/Dolby broadcast
+permission). The versioned `priv_app_36`/`hal_audio_default` domains get
+explicit `hal_dms_hwservice`/`hal_dms` rules in
+`patches/device/motorola/amogus_doha.patch` because the `hal_client_domain`
+macro did not cover them.
+
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
 ship two audio-effect UIs. The system partition is fixed, so this frees blocks

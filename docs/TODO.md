@@ -283,6 +283,13 @@ the number of knobs the phone is not actually running.
   this frees blocks inside them, not partition size.
 - [x] Prebuilt APKs are `BUILD_PREBUILT` (`PRESIGNED`, `daxService` privileged);
   Android 17 rejects APKs in `PRODUCT_COPY_FILES`.
+- [x] Android 17 permission: `INTERACT_ACROSS_USERS_FULL` is
+  `signature|installer|module|role`; add `privileged` in
+  `patches/frameworks/base.patch` so the privapp whitelist grants it without
+  re-signing the stock app.
+- [x] Explicit `hal_dms_hwservice`/`hal_dms` SELinux rules for
+  `priv_app_36`/`hal_audio_default`; the `hal_client_domain` macro did not
+  cover the versioned domains.
 - [ ] Device-test: Moto Audio opens; `dumpsys media.audio_flinger | grep -i -A2 dap`
   lists the effect; `pm list packages | grep -i audiofx` is empty; test
   speaker and headphones.

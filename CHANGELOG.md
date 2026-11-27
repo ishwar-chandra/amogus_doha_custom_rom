@@ -87,8 +87,15 @@ showed two independent failures and three policy gaps:
   `addFrozenStateChangeCallback returned -38` from the old audio HAL, and
   `motoexttelephony` service denials.
 
-Still device-untested until the next flash confirms the effect is listed and
-the app opens without a crash.
+
+The next device run showed the HAL/effect side fixed (`IDms` registered,
+`DAP FULL` loaded) but `daxService` still crashed: on Android 17
+`INTERACT_ACROSS_USERS_FULL` is `signature|installer|module|role` (the privapp
+whitelist cannot grant it), and SELinux still denied `hal_dms_hwservice` find
+for `priv_app_36`/`hal_audio_default`. `patches/frameworks/base.patch` adds
+`privileged` to the permission (the app keeps its stock signature, preserving
+the DMS/Dolby broadcast relationship), and
+`patches/device/motorola/amogus_doha.patch` adds the explicit client rules.
 
 ### art and frameworks/av (2026-11-27 bugreport)
 
