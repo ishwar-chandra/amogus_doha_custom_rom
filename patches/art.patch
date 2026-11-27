@@ -1,0 +1,46 @@
+diff --git a/dexopt_chroot_setup/dexopt_chroot_setup.cc b/dexopt_chroot_setup/dexopt_chroot_setup.cc
+index 8ef01ab..b0885a1 100644
+--- a/dexopt_chroot_setup/dexopt_chroot_setup.cc
++++ b/dexopt_chroot_setup/dexopt_chroot_setup.cc
+@@ -179,8 +179,18 @@ Result<void> Unmount(const std::string& target, bool logging = true) {
+ // `BindMountDirect` is safe to use only if there is no child mount points under `target`. DO NOT
+ // mount or unmount under `target` because mount events propagate to `source`.
+ Result<void> BindMountDirect(const std::string& source, const std::string& target) {
+-  // Don't follow symlinks.
+-  CHECK(!OR_RETURN(IsSelfOrParentSymlink(target))) << target;
++  // doha: with no separate system_ext/product partition the build ships
++  // /system_ext -> /system/system_ext and /product -> /system/product, and the
++  // chroot inherits those symlinks from the root mount. Upstream aborts here
++  // (CHECK), which killed pre-reboot dexopt on every OTA -- four tombstones per
++  // update -- so the first boot after an update recompiled on demand instead.
++  // Skipping the mount is safe: the symlink resolves inside the same chroot, so
++  // dexopt sees the same files it would have bind-mounted.
++  if (OR_RETURN(IsSelfOrParentSymlink(target))) {
++    LOG(WARNING) << ART_FORMAT("Not bind-mounting '{}': '{}' is behind a symlink",
++                               source, target);
++    return {};
++  }
+   if (mount(source.c_str(),
+             target.c_str(),
+             /*fs_type=*/nullptr,
+@@ -202,8 +212,18 @@ Result<void> BindMount(const std::string& source,
+   if (check_source_is_not_in_chroot) {
+     CHECK(!PathStartsWith(source, DexoptChrootSetup::CHROOT_DIR));
+   }
+-  // Don't follow symlinks.
+-  CHECK(!OR_RETURN(IsSelfOrParentSymlink(target))) << target;
++  // doha: with no separate system_ext/product partition the build ships
++  // /system_ext -> /system/system_ext and /product -> /system/product, and the
++  // chroot inherits those symlinks from the root mount. Upstream aborts here
++  // (CHECK), which killed pre-reboot dexopt on every OTA -- four tombstones per
++  // update -- so the first boot after an update recompiled on demand instead.
++  // Skipping the mount is safe: the symlink resolves inside the same chroot, so
++  // dexopt sees the same files it would have bind-mounted.
++  if (OR_RETURN(IsSelfOrParentSymlink(target))) {
++    LOG(WARNING) << ART_FORMAT("Not bind-mounting '{}': '{}' is behind a symlink",
++                               source, target);
++    return {};
++  }
+   // system_server has a different mount namespace from init, and it uses slave mounts. E.g:
+   //
+   //    a: init mount ns: shared(1):          /foo

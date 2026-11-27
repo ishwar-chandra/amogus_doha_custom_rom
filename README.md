@@ -925,6 +925,27 @@ needed because the scale is a stored setting, not a build property:
   rewrites only the untouched default (`1.0`/`1`) and inserts where nothing was stored, so a
   scale the user picked (off, 0.25x, 0.75x, 1.5x) survives the update. Device-untested.
 
+### Pre-reboot dexopt on a symlinked system_ext (`patches/art.patch`)
+
+Every OTA left four tombstones from
+`/apex/com.android.art/bin/dexopt_chroot_setup`, all `SIGABRT` with
+`Check failed: !OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`.
+This device has no separate `system_ext`/`product` partition, so the build ships
+`/system_ext -> /system/system_ext` and `/product -> /system/product`; the dexopt chroot inherits
+those symlinks from the root mount, and `BindMount()`/`BindMountDirect()` abort rather than
+follow a symlinked target. Result: `dalvik.vm.enable_pr_dexopt=true` was set but pre-reboot
+dexopt never ran, so the first boot after an update recompiled on demand. The patch skips the
+mount and logs a warning instead — the symlink resolves inside the same chroot, so dexopt sees
+the files it would have bind-mounted. Device-untested.
+
+### Wi-Fi Display property (`patches/device/motorola/amogus_doha.patch`)
+
+`/vendor/build_doha.prop` sets `persist.debug.wfd.enable=1`, but that file is loaded as
+`vendor_init`, which SELinux denies for a `persist.debug.*` (system) property, so the flag never
+took effect. It is now written from `device.mk` as `PRODUCT_PROPERTY_OVERRIDES`, i.e. into
+`/system/build.prop` where `init` owns the property. The same file carried a `ro.product.bevice`
+typo that was always rejected; it is removed. Device-untested.
+
 ### Performance profile (`performance-tuning` branch)
 
 The tuning is small because most of the obvious knobs are already written by the
