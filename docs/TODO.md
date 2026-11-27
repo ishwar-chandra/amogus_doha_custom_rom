@@ -269,8 +269,15 @@ the number of knobs the phone is not actually running.
 
 - [x] Carry the stock 10 DMS HIDL 1.0 service, `libswdap`, `dax-default.xml`,
   Moto Audio and `daxService` under `device/motorola/amogus_doha/dolby`.
-- [x] Register the `dap` effect in `device/motorola/common/audio_effects.xml`;
-  add the HAL to `DEVICE_MANIFEST_FILE`; add the `hal_dms` SELinux domain.
+- [x] Register the `dap` effect in the audio HAL's trinket `audio_effects.xml`
+  (`vendor/qcom/opensource/audio/sm8150/configs/trinket`, which becomes
+  `/vendor/etc/audio_effects.xml`; the `device/motorola/common` rootdir copy is
+  only a fallback). Add the HAL to `DEVICE_MANIFEST_FILE` and the device
+  framework compatibility matrix; add the `hal_dms` domain.
+- [x] Runtime fixes from the 2026-11-27 20:21 bugreport: daxService's
+  `INTERACT_ACROSS_USERS_FULL` privapp grant, `hidl_base_hwservice` add for the
+  DMS HAL, `priv_app_36`/`hal_audio_default` DMS clients, and the
+  `DolbyManagerService` service_contexts + post-fs-data `/data/vendor/dolby`.
 - [x] Filter `AudioFX` from `PRODUCT_PACKAGES`; run `mka installclean` so the
   old staging does not survive. The system/vendor partitions are fixed, so
   this frees blocks inside them, not partition size.

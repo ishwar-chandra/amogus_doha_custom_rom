@@ -837,6 +837,13 @@ not specified in framework compatibility matrix" otherwise.
 `dolby/vendor/etc/vintf/compatibility_matrix.dolby.xml` supplies that entry and
 is added through `DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE` in `device.mk`.
 
+On device the HAL must also pass SELinux and the app permission checks:
+`hal_dms_default` adds `android.hidl.base::IBase`, the app (`priv_app_36`) and
+the audio HAL (`hal_audio_default`) are DMS clients, `DolbyManagerService` has a
+`service_contexts` entry, and daxService holds `INTERACT_ACROSS_USERS_FULL`.
+`/data/vendor/dolby` is created at `post-fs-data`. These came from the
+2026-11-27 bugreport; the crash-by-crash record is in `CHANGELOG.md`.
+
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
 ship two audio-effect UIs. The system partition is fixed, so this frees blocks

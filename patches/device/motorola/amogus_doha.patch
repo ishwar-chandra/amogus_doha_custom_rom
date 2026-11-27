@@ -81501,10 +81501,10 @@ HcmV?d00001
 
 diff --git a/dolby/system/etc/permissions/com.dolby.daxservice.xml b/dolby/system/etc/permissions/com.dolby.daxservice.xml
 new file mode 100644
-index 0000000..6b8bd09
+index 0000000..87ed5d7
 --- /dev/null
 +++ b/dolby/system/etc/permissions/com.dolby.daxservice.xml
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,21 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +
 +<!--Copyright (C) 2018 Dolby Laboratories
@@ -81520,6 +81520,7 @@ index 0000000..6b8bd09
 +<permissions>
 +    <privapp-permissions package="com.dolby.daxservice">
 +        <permission name="android.permission.INTERACT_ACROSS_USERS"/>
++        <permission name="android.permission.INTERACT_ACROSS_USERS_FULL"/>
 +        <permission name="android.permission.MANAGE_USERS"/>
 +    </privapp-permissions>
 +</permissions>
@@ -96394,14 +96395,17 @@ index 0000000..e23f359
 +</device_data>
 diff --git a/dolby/vendor/etc/init/vendor.dolby.hardware.dms@1.0-service.rc b/dolby/vendor/etc/init/vendor.dolby.hardware.dms@1.0-service.rc
 new file mode 100644
-index 0000000..558b937
+index 0000000..721ae34
 --- /dev/null
 +++ b/dolby/vendor/etc/init/vendor.dolby.hardware.dms@1.0-service.rc
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,9 @@
 +service dms-hal-1-0 /vendor/bin/hw/vendor.dolby.hardware.dms@1.0-service
 +    class hal
 +    user media
 +    group audio media
++on post-fs-data
++    mkdir /data/vendor/dolby 0770 media media
++
 +on boot
 +    mkdir /data/vendor/dolby 0770 media media
 diff --git a/dolby/vendor/etc/vintf/compatibility_matrix.dolby.xml b/dolby/vendor/etc/vintf/compatibility_matrix.dolby.xml
@@ -120592,10 +120596,10 @@ index 0000000..8971ac0
 +')
 diff --git a/sepolicy/vendor/dolby.te b/sepolicy/vendor/dolby.te
 new file mode 100644
-index 0000000..238c2fc
+index 0000000..caf13b1
 --- /dev/null
 +++ b/sepolicy/vendor/dolby.te
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,42 @@
 +# Dolby Media Service (DMS) HIDL HAL and the DAP effect client.
 +# The stock doha vendor policy has the same types; this is the source form.
 +type hal_dms_default, domain;
@@ -120624,6 +120628,20 @@ index 0000000..238c2fc
 +allow hal_dms_default audio_device:chr_file rw_file_perms;
 +allow hal_dms_default vendor_file:file { read open execute getattr map };
 +allow hal_dms_default vendor_file:dir search;
++
++# Registering a HIDL service also adds android.hidl.base::IBase.
++allow hal_dms_default hidl_base_hwservice:hwservice_manager add;
++
++# The app and audio HAL run in versioned domains; the plain priv_app /
++# audioserver aliases above do not cover them.
++hal_client_domain(priv_app_36, hal_dms)
++hal_client_domain(hal_audio_default, hal_dms)
++
++# Native binder service the DAP effect looks up through servicemanager.
++type dolby_manager_service, service_manager_type;
++allow hal_dms_default dolby_manager_service:service_manager { add find };
++allow hal_audio_default dolby_manager_service:service_manager find;
++allow priv_app_36 dolby_manager_service:service_manager find;
 diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
 new file mode 100644
 index 0000000..03de81b
@@ -120645,3 +120663,10 @@ index 0000000..6761ff0
 +++ b/sepolicy/vendor/property_contexts
 @@ -0,0 +1 @@
 +persist.vendor.dolby.loglevel u:object_r:vendor_dolby_loglevel_prop:s0
+diff --git a/sepolicy/vendor/service_contexts b/sepolicy/vendor/service_contexts
+new file mode 100644
+index 0000000..9e0cd81
+--- /dev/null
++++ b/sepolicy/vendor/service_contexts
+@@ -0,0 +1 @@
++DolbyManagerService u:object_r:dolby_manager_service:s0
