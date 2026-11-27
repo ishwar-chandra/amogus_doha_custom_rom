@@ -773,6 +773,43 @@ L1-capable apps see an L3 device. The patch copies the existing
 alone is not proof of L1: the DRM info app and an L1 stream still have to be
 tested on hardware. The current kit change is device-untested.
 
+### Dolby Atmos (`patches/device/motorola/amogus_doha.patch`, `patches/device/motorola/common.patch`, `patches/device/motorola/targets.patch`)
+
+The stock Android 10 firmware `QPIS30.28-Q3-28-26-4-1-7` ships Dolby Audio
+Processing as the `libswdap.so` sound effect (UUID
+`9d4921da-8225-4f29-aefa-39537a04bcaa`) plus the `vendor.dolby.hardware.dms`
+HIDL 1.0 service. The custom vendor tree carried neither, so the ROM had no
+Dolby effect at all even though the stock vendor did. This port carries the
+stock pieces under `device/motorola/amogus_doha/dolby/`:
+
+- `system/app/MotoDolbyV3` (Moto Audio, `com.motorola.dolby.dolbyui`) and
+  `system/priv-app/daxService` (`com.dolby.daxservice`), with their Moto
+  framework/permission/hidden-API files;
+- `vendor/bin/hw/vendor.dolby.hardware.dms@1.0-service`,
+  `lib{64}/vendor.dolby.hardware.dms@1.0*.so`, `libdlbdsservice`,
+  `libdapparamstorage`, and `lib{64}/soundfx/libswdap.so`;
+- `/vendor/etc/dolby/dax-default.xml`, the init service script, and
+  `sepolicy/vendor/dolby.te` for the DMS domain;
+- the `dap` library/effect entry in `device/motorola/common`'s
+  `audio_effects.xml`, and the `vendor.dolby.hardware.dms` entry in
+  `DEVICE_MANIFEST_FILE`.
+
+`persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
+the `targets` patch filters `AudioFX` out of the product so the ROM does not
+ship two audio-effect UIs. `tools/flash.sh`/`device-check.sh` do not know about
+Dolby, so this is **device-untested** until a flash shows the effect and the
+app:
+
+```sh
+adb shell dumpsys media.audio_flinger | grep -i -A2 dap
+adb shell pm list packages | grep -iE 'dolby|MotoDolby'
+# open Moto Audio, toggle it, and play through speaker/headphones
+```
+
+If the effect is not listed, the vendor DMS service or the SELinux domain did
+not start; check `adb shell getprop | grep -i dolby` and `dmesg`/`logcat` for
+`hal_dms_default`. Revert the three patches to restore AudioFX.
+
 ### Play Integrity
 
 Measured on the 2026-11-20 build (bugreport `2026-11-20-07-07-57`, phone

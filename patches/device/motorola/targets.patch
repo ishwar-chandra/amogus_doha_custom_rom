@@ -49,10 +49,10 @@ index 41e309b..b4a9e82 100644
 +# further chasing Make product-config inheritance order.
 +PRODUCT_VENDOR_KERNEL_HEADERS := device/motorola/amogus-kernel/kernel-headers
 diff --git a/rom/lineage.mk b/rom/lineage.mk
-index 1fb3410..f3faac1 100644
+index 1fb3410..1091469 100644
 --- a/rom/lineage.mk
 +++ b/rom/lineage.mk
-@@ -12,6 +12,9 @@
+@@ -12,12 +12,19 @@
  # See the License for the specific language governing permissions and
  # limitations under the License.
  
@@ -61,4 +61,14 @@ index 1fb3410..f3faac1 100644
 +
  # Common
  include device/motorola/targets/include/common.mk
+ 
+ # Inherit some common Lineage stuff.
+ $(call inherit-product, vendor/lineage/config/common_full_phone.mk)
+ 
++# AudioFX is superseded by the Dolby Atmos stack in
++# device/motorola/amogus_doha/dolby; do not ship two audio effect UIs.
++PRODUCT_PACKAGES := $(filter-out AudioFX,$(PRODUCT_PACKAGES))
++
+ # Kernel
+ $(call inherit-product, device/motorola/targets/include/kernel/source.mk)
  
