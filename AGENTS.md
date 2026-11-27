@@ -3,7 +3,7 @@
 Build recipe for an unofficial **crDroid 13.1 (Android 17)** ROM on the Motorola Moto G8 Plus
 (`doha`, in-tree device `amogus_doha`; Snapdragon 665/trinket, 4.14 kernel, LineageOS 24.0 base).
 This repository is **not** an Android source tree: no `src/`, no app code, no tests. Its product is
-**28 patch files** pinned against third-party trees by a `repo` manifest, driven by `build.sh` and
+**30 patch files** pinned against third-party trees by a `repo` manifest, driven by `build.sh` and
 `tools/`.
 
 ## Project Overview
@@ -24,7 +24,7 @@ This repository is **not** an Android source tree: no `src/`, no app code, no te
 ```mermaid
 flowchart LR
   M["default.xml + snippets/*.xml<br/>last-wins includes"] --> R["repo init/sync<br/>SHA-pinned third-party trees"]
-  P["patches/&lt;project-path&gt;.patch<br/>28 files"] --> A["per project: reset --hard + clean -fd<br/>render 4 tokens, git apply"]
+  P["patches/&lt;project-path&gt;.patch<br/>30 files"] --> A["per project: reset --hard + clean -fd<br/>render 4 tokens, git apply"]
   R --> A
   A --> B["breakfast amogus_doha $VARIANT<br/>mka bacon"]
   B --> G["Launcher3 aapt2 gate<br/>ADB_KEY leakage check"]
@@ -67,12 +67,12 @@ Rendered knobs (changing one re-applies exactly the affected patches):
 |`@READAHEAD_KB@`|`READAHEAD_KB`|`patches/device/motorola/amogus.patch:186`, `patches/device/qcom/common.patch:256,324`|
 |`@UPDATER_CHANNEL@`|`standard`/`debloat`|`patches/packages/apps/Updater.patch:10,13,30`|
 
-Patch groups (28 total):
+Patch groups (30 total):
 
 |Area|Patches|Representative change|
 |---|---|---|
 |Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe, Dolby Atmos (DMS HAL + `libswdap`, AudioFX removed)|
-|Android 17 on 4.14|5: `kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base`|`CONFIG_INITRAMFS_IGNORE_SKIP_FLAG`, `/proc/cmdline` bounds, BPF gates→warn, capability-bound `EINVAL` no longer panics, AppOp registration|
+|Android 17 on 4.14|7: `kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base`, `art`, `frameworks/av`|`CONFIG_INITRAMFS_IGNORE_SKIP_FLAG`, `/proc/cmdline` bounds, BPF gates→warn, capability-bound `EINVAL` no longer panics, AppOp registration, pre-reboot dexopt symlink, frozen-callback `ENOSYS`|
 |Vendor, HIDL, blobs|11: `vendor/motorola/*`, `vendor/qcom/common`, `vendor/qcom/opensource/{audio/sm8150,interfaces,media/sm8150,thermal}`, `frameworks/hardware/interfaces`, `system/tools/hidl`, `hardware/{motorola,nxp/nfc}`|OEMCrypto, camera blob delta, restored `displayservice@1.0`/`fmt@1.0`, QCC/wificfr removal, thermal HAL rename|
 |Product, OTA, debloat|3: `vendor/lineage`, `packages/apps/Updater`, `packages/apps/crDroidSettings`|`DEBLOAT_BUILD` gating, per-channel OTA JSON, dead-preference pruning|
 |Launcher|1: `packages/apps/Launcher3`|`workspaceLoading` reset in `finally`, missing-drawable guard, DT2S default on|
@@ -83,7 +83,7 @@ Patch groups (28 total):
 |---|---|
 |`build.sh`|Only build entry point: validate, sync, render/apply patches, build, gates, copy artifacts|
 |`default.xml`, `snippets/*.xml`|Remotes, includes, removals, exact revisions|
-|`patches/**`|The 28 fixes; one diff per manifest project (two are binary: `patches/vendor/motorola/amogus.patch`, `patches/device/motorola/amogus_doha.patch`)|
+|`patches/**`|The 30 fixes; one diff per manifest project (two are binary: `patches/vendor/motorola/amogus.patch`, `patches/device/motorola/amogus_doha.patch`)|
 |`tools/`|13 scripts (11 bash + 2 stdlib Python: `bugreport-scan.py`, `logfmt.py`) + `gms-trim.components`|
 |`docs/`|`GUIDE.md` procedures, `TODO.md` worklist, `BUGREPORT.md` evidence, `OPTIMIZATION.md` measured tuning, `README.md` index|
 |`gcp-out/`|Gitignored artifact dir; default for `tools/flash.sh`|

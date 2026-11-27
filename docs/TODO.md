@@ -287,6 +287,22 @@ the number of knobs the phone is not actually running.
   lists the effect; `pm list packages | grep -i audiofx` is empty; test
   speaker and headphones.
 
+## Bugreport follow-ups (2026-11-27)
+
+- [x] `art`: pre-reboot dexopt aborted on the symlinked `system_ext`/`product`
+  layout (`patches/art.patch`); five tombstones in the archive.
+- [x] `frameworks/av`: ignore `INVALID_OPERATION` (-ENOSYS) from the optional
+  frozen-state callback in `AudioFlinger`/`AAudioClientTracker`.
+- [ ] Vendor-only, no source in the manifest: `xtra-daemon` SIGSEGV,
+  `gatekeeper@1.0`/`keymaster@4.1` SIGABRT at `QSEECom_shutdown_app`; the
+  daemons restart. Not patched.
+- [ ] `moto_ext_telephony.registry` needs the stock Moto framework; the
+  `moto-telephony.jar` alone does not register it. `vendor_qtelephony` logs the
+  miss and continues.
+- [ ] Google service-missing (no GApps), `keystore2` attestation (vendor
+  keymaster; TrickyStore + user keybox), Wi-Fi/BT coex (vendor supplicant lacks
+  `setBtCoexistenceMode`), Passpoint/DHCP logs: expected.
+
 ## Debloat leftovers (2026-11-20)
 
 - [x] **Settings kept entries for apps the debloat build removes.** crDroid

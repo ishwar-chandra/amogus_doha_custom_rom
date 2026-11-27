@@ -90,6 +90,29 @@ showed two independent failures and three policy gaps:
 Still device-untested until the next flash confirms the effect is listed and
 the app opens without a crash.
 
+### art and frameworks/av (2026-11-27 bugreport)
+
+- **`patches/art.patch`** (project `art`): pre-reboot dexopt aborted with
+  `Check failed: !OR_RETURN(IsSelfOrParentSymlink(target))
+  /mnt/pre_reboot_dexopt/chroot/system_ext/lib` on every OTA; the archive has
+  five tombstones (`tombstone_00..04`). The device ships `system_ext` and
+  `product` as symlinks inside `/system`; the patch skips the bind mount when
+  the target is behind a symlink, which resolves inside the chroot, so dexopt
+  sees the same files.
+- **`patches/frameworks/av.patch`** (project `frameworks/av`): `AudioFlinger`
+  and `AAudioClientTracker` call the optional frozen-state callback; the 4.14
+  binder returns `INVALID_OPERATION` (-ENOSYS), 200x as "returned -38". The
+  patch ignores exactly that code and still warns on other failures. The call
+  is on the client binder, not the audio HAL.
+- **Vendor-only findings, not patched** (no source in the manifest, or expected
+  on this ROM): `xtra-daemon`/`DgnssNtripSourc` SIGSEGV and
+  `gatekeeper@1.0`/`keymaster@4.1` SIGABRT at `QSEECom_shutdown_app` are stock
+  blobs that restart; `moto_ext_telephony.registry` needs the stock Moto
+  framework; Google service-missing lines mean no GApps; `keystore2`
+  attestation fails on the vendor keymaster (TrickyStore + user keybox is the
+  route); the vendor supplicant lacks `setBtCoexistenceMode`, and Passpoint
+  null-OSU/DHCP logs are network conditions.
+
 ### Kernel
 
 - `0baf855` pin the kernel project to `lts` (`def1be59`, ahead 106/behind 0

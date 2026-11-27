@@ -1017,7 +1017,7 @@ needed because the scale is a stored setting, not a build property:
 
 ### Pre-reboot dexopt on a symlinked system_ext (`patches/art.patch`)
 
-Every OTA left four tombstones from
+Every OTA in the 2026-11-27 archive left five tombstones from
 `/apex/com.android.art/bin/dexopt_chroot_setup`, all `SIGABRT` with
 `Check failed: !OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`.
 This device has no separate `system_ext`/`product` partition, so the build ships
@@ -1027,6 +1027,36 @@ follow a symlinked target. Result: `dalvik.vm.enable_pr_dexopt=true` was set but
 dexopt never ran, so the first boot after an update recompiled on demand. The patch skips the
 mount and logs a warning instead — the symlink resolves inside the same chroot, so dexopt sees
 the files it would have bind-mounted. Device-untested.
+
+### Frozen-state callback warning (`patches/frameworks/av.patch`)
+
+`AudioFlinger` and `AAudioClientTracker` register the optional frozen-state callback on each
+client binder. The doha 4.14 kernel's binder has no frozen-state support, so
+`IBinder::addFrozenStateChangeCallback` returns `INVALID_OPERATION` (-ENOSYS), logged 200x as
+"returned -38" in the 2026-11-27 bugreport. The patch ignores exactly that code in both files and
+still warns on every other failure. No HAL is involved: the call is on the client binder, not the
+audio HAL. Device-untested.
+
+### 2026-11-27 bugreport follow-ups
+
+**Pre-reboot dexopt and frozen-state callback.** See the two sections above:
+`patches/art.patch` and `patches/frameworks/av.patch`.
+
+**Vendor daemons, no source in the manifest.** `xtra-daemon` (`DgnssNtripSourc`) took one
+`SIGSEGV`; it is a stock proprietary binary under `vendor/qcom/common/vendor/gps-legacy`, and it
+restarts with a new pid. `gatekeeper@1.0` and `keymaster@4.1` took one `SIGABRT` each at boot:
+the stock QSEE daemons double-own a `RefBase` at `QSEECom_shutdown_app`; both restart and serve.
+Keymaster attestation is refused separately (see Play Integrity below).
+
+**Moto telephony extension.** `moto_ext_telephony.registry` is missing. The
+`moto-telephony.jar` is installed, but the registering service belongs to the stock Moto
+framework, which this ROM does not carry; `vendor_qtelephony` logs the miss and continues.
+
+**Expected on this ROM.** Google service-missing lines (no GApps), `keystore2` attestation
+errors (the vendor keymaster refuses attestation; TrickyStore plus a user keybox is the supported
+route), the vendor supplicant's `setBtCoexistenceMode` service-specific exception (the stock
+supplicant lacks the Android 17 AIDL method), and Passpoint null-OSU/DHCP logs (network
+conditions, not errors).
 
 ### Wi-Fi Display property (`patches/device/motorola/amogus_doha.patch`)
 

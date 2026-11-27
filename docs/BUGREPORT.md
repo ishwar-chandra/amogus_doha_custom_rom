@@ -458,7 +458,7 @@ deprecated global setting, so a device policy can also drive it.
 - *On every reboot:* the value is not persisting. Either nothing writes it before shutdown, or
   something rewrites it during boot after `AudioService` restores it (policy, vendor audio HAL
   init, or a crash in `AudioService`/`NotificationManagerService`). This is the case to fix with
-  a patch; nothing in the current 28 patches touches ringer mode, so it is inherited behaviour.
+  a patch; nothing in the current 30 patches touches ringer mode, so it is inherited behaviour.
 **Evidence needed (no capture exists yet):**
 - [ ] `adb shell settings get global mode_ringer` → reboot → the same command again
   (`1` before and `2` after proves it is being reset, not lost).
