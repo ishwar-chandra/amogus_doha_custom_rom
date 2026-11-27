@@ -857,8 +857,9 @@ macro did not cover them.
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
 ship two audio-effect UIs. The system partition is fixed, so this frees blocks
-inside `/system` rather than shrinking it; an incremental `out/` keeps the old
-APK unless `mka installclean` (or a separate output dir) runs first.
+inside `/system` rather than shrinking it. An incremental `out/` keeps the old
+APK, so `build.sh` runs one `mka installclean` when the stale APK is still
+staged; later builds stay incremental.
 `tools/flash.sh`/`device-check.sh` do not know about
 Dolby, so this is **device-untested** until a flash shows the effect and the
 app:

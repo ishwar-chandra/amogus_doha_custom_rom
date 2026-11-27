@@ -278,8 +278,10 @@ the number of knobs the phone is not actually running.
   `INTERACT_ACROSS_USERS_FULL` privapp grant, `hidl_base_hwservice` add for the
   DMS HAL, `priv_app_36`/`hal_audio_default` DMS clients, and the
   `DolbyManagerService` service_contexts + post-fs-data `/data/vendor/dolby`.
-- [x] Filter `AudioFX` from `PRODUCT_PACKAGES`; run `mka installclean` so the
-  old staging does not survive. The system/vendor partitions are fixed, so
+- [x] Filter `AudioFX` from `PRODUCT_PACKAGES`
+  (`patches/device/motorola/targets.patch:68-70`); `build.sh` runs one
+  `mka installclean` when the stale APK is still staged, so the image is clean
+  while later builds stay incremental. The system/vendor partitions are fixed;
   this frees blocks inside them, not partition size.
 - [x] Prebuilt APKs are `BUILD_PREBUILT` (`PRESIGNED`, `daxService` privileged);
   Android 17 rejects APKs in `PRODUCT_COPY_FILES`.

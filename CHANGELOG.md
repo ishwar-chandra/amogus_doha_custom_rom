@@ -96,6 +96,9 @@ for `priv_app_36`/`hal_audio_default`. `patches/frameworks/base.patch` adds
 `privileged` to the permission (the app keeps its stock signature, preserving
 the DMS/Dolby broadcast relationship), and
 `patches/device/motorola/amogus_doha.patch` adds the explicit client rules.
+The stale `AudioFX` APK left by incremental builds is now removed
+automatically: `build.sh` runs one `mka installclean` when the filtered package
+is still staged, then returns to incremental builds.
 
 ### art and frameworks/av (2026-11-27 bugreport)
 

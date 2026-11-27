@@ -251,6 +251,16 @@ fi
 set +eu
 source build/envsetup.sh
 breakfast "$DEVICE" "$VARIANT" || exit 1
+# The targets patch filters AudioFX out of PRODUCT_PACKAGES, but an
+# incremental out/ still carries the APK installed by an earlier build and
+# would pack it into the system image. One installclean after the filter
+# removes it; later builds stay incremental.
+if [ "${FORCE_INSTALLCLEAN:-0}" = 1 ] ||
+   [ -d "$product/system/app/AudioFX" ] ||
+   [ -d "$product/system/priv-app/AudioFX" ]; then
+  echo "AudioFX still staged in $product: running installclean"
+  mka installclean || exit 1
+fi
 # bacon alone: crDroid's OTA packaging uses the target-files staging
 # directory and deletes it afterwards. Asking for target-files-package as
 # well makes ninja zip that tree while it is being removed (lstat ENOENT).
