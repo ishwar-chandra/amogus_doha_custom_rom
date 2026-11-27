@@ -93,7 +93,8 @@ tools/gcp-build.sh setup      # install deps, clone the recipe
 tools/gcp-build.sh build      # start sync+build in tmux
 AUTO_FINISH=1 tools/gcp-build.sh build   # wait, release, update OTA, delete
 tools/gcp-build.sh state      # exit file, tmux, last log lines
-tools/gcp-build.sh logs       # tail -f the build log
+tools/gcp-build.sh logs       # formatted tail (color, phases, progress)
+tools/gcp-build.sh logs --full # raw log from the beginning
 tools/gcp-build.sh att        # attach to the tmux session (Ctrl-b d to detach)
 tools/gcp-build.sh fetch      # copy zips/ to ./gcp-out locally
 tools/gcp-build.sh finish     # wait, verify, release, update OTA, delete
@@ -106,21 +107,30 @@ tools/gcp-build.sh delete     # delete the VM now
 
 Typical session: `create; setup; build; finish`.
 
+The project comes from `gcloud config`; the script discovers the running
+instance (preferring `labels.doha-build=1`, which `create` sets). With two
+VMs active, set `NAME` and/or `ZONE`; no instance name is hardcoded.
+
 Knobs: `VARIANT`, `DEBLOAT` (`1` = debloat variant, zip gets `-debloat`), `JOBS`,
 `SYNC_JOBS`, `REPO_DEPTH` (default `1`), `SWAP_GB`, `HOURS` (hard stop/auto-delete,
 default 48), `TAG=...`, `BRANCH` (default: the branch checked out in this repo),
-`OTA_CHANNEL=standard|debloat|test`, `NO_RELEASE=1`, `NO_OTA=1`, `NO_DELETE=1`.
+`OTA_CHANNEL=standard|debloat|test`, `NAME`/`ZONE` (select one of several
+running VMs), `NO_RELEASE=1`, `NO_OTA=1`, `NO_DELETE=1`.
+
+`VARIANT` is a build-label choice only: crDroid sets
+`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so `userdebug` and `user` both report
+`ro.build.type=user` and `ro.debuggable=0` (no `adb root`/`dmesg`).
 
 The VM self-deletes after `HOURS`. A failed build leaves the VM alive for
 log reading; `finish` exits before deleting anything.
 
-### 2.4 No persistent backup
+### 2.4 Optional persistent backup
 
-There is no Drive, rclone, GCS or `.repo` backup. The VM is disposable:
-after a successful build `finish` publishes the zip and images to the GitHub
-release, updates the OTA feed, and deletes the VM. A later build re-syncs and
-rebuilds; `ccache` and `.repo` do not survive the VM. Use `fetch` if you want
-the artifacts locally before `finish` deletes the machine.
+The build/release chain has no Drive, rclone, GCS or `.repo` step; the VM is
+disposable. `tools/drive-backup.sh` can back up and restore the tree
+separately (§4.5) and never blocks a release. After a successful build
+`finish` publishes the zip and images, updates the OTA feed, and deletes the
+VM; use `fetch` if you want the artifacts locally first.
 
 ### 2.5 Both variants on one VM
 
@@ -147,13 +157,13 @@ In `ZIP_DIR` (VM: `/mnt/build/zips`):
 | File | What |
 | --- | --- |
 | `crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip` | flashable OTA |
-| `boot.img` | kernel + recovery ramdisk |
-| `dtbo.img` | device tree overlay (touch in recovery on Tianma panels) |
-| `vbmeta.img` | verity-disabled vbmeta |
+| `crDroidAndroid-...-boot.img` | kernel + recovery ramdisk |
+| `crDroidAndroid-...-dtbo.img` | device tree overlay (touch in recovery on Tianma panels) |
+| `crDroidAndroid-...-vbmeta.img` | verity-disabled vbmeta |
 | `crDroidAndroid-...zip.sha256sum` | checksums for all four |
 
-The zip keeps its versioned name; the images use plain names, as in most
-custom-ROM builds.
+The zip keeps its versioned name; `build.sh` prefixes every image with the
+zip name so a standard and a debloat build can share `ZIP_DIR`.
 
 ## 4. Flash it
 
@@ -169,10 +179,10 @@ the ROM, not to Google apps.
 commands.
 
 ```sh
-fastboot flash boot boot.img
-fastboot flash dtbo dtbo.img
+fastboot flash boot <zip-name>-boot.img
+fastboot flash dtbo <zip-name>-dtbo.img
 # only if you hit verification errors; the anti-rollback warning is expected:
-# fastboot flash vbmeta vbmeta.img
+# fastboot flash vbmeta <zip-name>-vbmeta.img
 ```
 
 Then boot recovery:
@@ -273,16 +283,18 @@ symlinks and mtimes):
 tools/drive-backup.sh backup
 BACKUP_WAIT=1 tools/drive-backup.sh backup
 tools/drive-backup.sh status
-gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/backup.log'
+gcloud compute ssh <instance> --zone <zone> --command 'tail -f ~/backup.log'
 
 # On a fresh VM later:
 tools/gcp-build.sh create && tools/gcp-build.sh setup
 tools/drive-backup.sh restore
-gcloud compute ssh crdroid-build --zone asia-south1-a --command 'tail -f ~/restore.log'
+gcloud compute ssh <instance> --zone <zone> --command 'tail -f ~/restore.log'
 ```
 
 Defaults: `RCLONE_CONF=~/.config/rclone/rclone.conf`,
-`BACKUP_REMOTE=gdrive:doha-backup/crdroid-17.0`. Pass `SKIP_OUT=1` to skip
+`BACKUP_REMOTE=gdrive:doha-backup/crdroid-17.0`. It uses
+`NAME`/`ZONE`/`PROJECT` (defaults `crdroid-build`/`asia-south1-a`/
+`customrom-514215`); set them when two VMs exist. Pass `SKIP_OUT=1` to skip
 `out.tar.zst` (useful if you need a clean `out/` rebuild).
 
 The Drive remote needs a re-auth roughly every 7 days. The OAuth client lives in
@@ -301,7 +313,7 @@ Google Cloud project `gen-lang-client-0544155453` and that app is still in
   acceptable for a personal client).
 
 `build.sh`/`gcp-build.sh` never depend on Drive: a failed backup leaves the
-release and OTA update intact, and `tools/gcp-build.sh backup` can be re-run at
+release and OTA update intact, and `tools/drive-backup.sh backup` can be re-run at
 any time while the VM still exists.
 
 ## 5. Google apps (optional)
@@ -329,15 +341,15 @@ Rules:
 
 ## 6. Root (optional)
 
-Magisk: patch the release's `boot.img` in the Magisk app (Install → Patch
-firmware/image), then
+Magisk: patch the release's `<zip-name>-boot.img` in the Magisk app (Install →
+Patch firmware/image), then
 
 ```sh
 adb reboot bootloader
 fastboot flash boot magisk_patched-*.img
 ```
 
-Every ROM update replaces `boot.img`, so repeat after updating.
+Every ROM update replaces that boot image, so repeat after updating.
 
 ## 7. Verify the build
 
@@ -346,6 +358,9 @@ Checklist (from `README.md` → Status), on real hardware:
 - Boot; touch in Android and in recovery; all four cameras; fingerprint.
 - Calls both ways, SMS, mobile data; Wi-Fi; speaker, wired and Bluetooth
   audio.
+- Dolby Atmos (2026-11-27+): Moto Audio opens; `dumpsys media.audio_flinger |
+  grep -i -A2 dap` lists the effect; `pm list packages | grep -i audiofx`
+  is empty.
 - GApps (if used): setup wizard, sign-in, Play Store.
 - Magisk (if used).
 - Known issues: VoLTE depends on the modem carrier profile; double-tap to
@@ -397,6 +412,8 @@ tools/gcp-build.sh promote crdroid-20261126             # writes standard/doha.j
 | `not well-formed (invalid token)` in `snippets/*.xml` | `--` inside an XML comment | never put `--` in comments; re-validate with `python3 -c 'import xml.dom.minidom as m; m.parse("snippets/doha.xml")'` |
 | build exits 1 at `lstat .../Settings/oat` | old `mka target-files-package bacon` raced crDroid's cleanup | the fix is in `build.sh` (`mka bacon` only); pull the repo and rebuild |
 | `build.exit` missing, "no exit file yet" | still building | `tools/gcp-build.sh state` / `logs`; ninja % is action count, not time |
+| `Prebuilt apk found in PRODUCT_COPY_FILES` | Android 17 rejects APKs in copy lists | use a `BUILD_PREBUILT` APPS module (`LOCAL_CERTIFICATE := PRESIGNED`) |
+| removed app still present in the new image | a stale incremental `out/` staging | `mka installclean` (or a separate output dir) before the build; partitions do not shrink |
 | `scp` of a 1.2 GB file dies (`Broken pipe`) | gcloud scp tunnel drops | use `gcp-out` fetch in the background |
 | GApps "Insufficient storage" | system partition too small | MindTheGapps (verified) or NikGapps Core |
 | `adb root`/`dmesg` denied | `ro.debuggable=0` (spoofed props) | use `logcat`; pstore from recovery |
@@ -413,9 +430,18 @@ tools/gcp-build.sh promote crdroid-20261126             # writes standard/doha.j
   New files must be staged (`git add -N`) or they will not be in the diff;
   `build.sh` resets and cleans patched projects on every run.
 - Every fix needs a README section naming the patch and the symptom.
-- `@SKIN_THROTTLE_MC@` is the only placeholder (rendered from
-  `SKIN_THROTTLE_C`); the stamp `<src>/.repo/doha-patches` decides whether a
+- Four placeholders are rendered: `@SKIN_THROTTLE_MC@` (from
+  `SKIN_THROTTLE_C`), `@DEBLOAT@`, `@READAHEAD_KB@`, and
+  `@UPDATER_CHANNEL@`; the stamp `<src>/.repo/doha-patches` decides whether a
   project is re-patched.
+- Removing a package: filter `PRODUCT_PACKAGES`, then run `mka installclean`
+  (or use a separate `OUT`) before rebuilding. The partitions are fixed
+  (`system`/`vendor` sizes in `BoardConfig.mk`), so removal frees blocks inside
+  the filesystem, not partition size. `AudioFX` is removed this way for the
+  Dolby port.
+- Adding a prebuilt APK: Android 17 rejects APKs in `PRODUCT_COPY_FILES`; use
+  a `BUILD_PREBUILT` `APPS` module with `LOCAL_CERTIFICATE := PRESIGNED`
+  (and `LOCAL_PRIVILEGED_MODULE := true` for a priv-app).
 - Branch policy: `tools/gcp-build.sh` builds the branch checked out in this
   clone. Keep untested work on `performance-tuning` and merge it into
   `crdroid-android-17` only after device testing; never merge crDroid work back
@@ -442,9 +468,11 @@ Commit messages: plain-language subject, optional area prefix
   regional limit (32) does not help. `create` preflights the quota and refuses a wider machine with that reason
   instead of failing inside gcloud. After an increase, `MACHINE=n2-custom-16-49152` (or 24) works unchanged.
 - `HOURS` (default 48) is a hard stop that deletes the VM even if forgotten. There is
-  no persistent tree or ccache: a later VM re-syncs and rebuilds.
-- Nothing is uploaded to Drive or GCS. After a successful build, only the GitHub
-  release and its OTA feed survive the VM.
+  no persistent tree or ccache in the build/release chain; a later VM re-syncs
+  and rebuilds, or restores the optional Drive backup (§4.5).
+- The build/release chain uploads nothing to Drive or GCS; the optional
+  `tools/drive-backup.sh` backup is separate. After a successful build, only
+  the GitHub release and its OTA feed are required.
 
 ## 12. Where to look
 
@@ -454,4 +482,5 @@ Commit messages: plain-language subject, optional area prefix
 | `CLAUDE.md` / `AGENTS.md` | repo mechanics for humans/AI assistants |
 | `TODO.md` | live hardware-issue list with device evidence |
 | `build.sh` | sync → patch → build → artifacts |
-| `tools/gcp-build.sh` | GCP cycle, release and OTA feed; no backup |
+| `tools/gcp-build.sh` | GCP cycle (project/VM discovery), release and OTA feed; optional backup in §4.5 |
+| `tools/logfmt.py` | formatted `logs` helper: wrapping, dedupe, progress, `--full` raw mode |

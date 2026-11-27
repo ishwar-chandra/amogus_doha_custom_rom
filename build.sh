@@ -28,9 +28,10 @@
 #                 SOURCE_DIR)
 #   SKIP_SYNC=1   don't run repo init or repo sync
 #   VARIANT       build variant: userdebug (default), user or eng.
-#                 userdebug keeps ro.debuggable=1, so `adb root`, dmesg
-#                 and /sys/fs/pstore work; `user` is what a release zip
-#                 usually ships as, and gives up all of that.
+#                 crDroid sets PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG, so both
+#                 userdebug and user report ro.build.type=user and
+#                 ro.debuggable=0; there is no adb root or shell dmesg.
+#                 Read pstore from recovery.
 #   ADB_KEY       test builds only: an adb public key (adbkey.pub) to trust
 #                 in recovery and Android, with USB adb on by default, so
 #                 adb works after a wipe without tapping "Allow"
@@ -74,7 +75,8 @@ esac
 # Runtime read_ahead_kb applied to mmcblk0 and dm-*. device/qcom/common's
 # init.aospa.perf.common.rc is the only writer that survives boot (it re-applies
 # on vendor.post_boot.parsed=1, after qcom-post-boot); the value is rendered into
-# patches/device/qcom/common.patch, so changing it re-applies that patch.
+# patches/device/qcom/common.patch and patches/device/motorola/amogus.patch, so
+# changing it re-applies those patches.
 # 128 is AOSPA's own value and what the device ran before this knob existed.
 READAHEAD_KB=${READAHEAD_KB:-128}
 case $SKIN_THROTTLE_C in

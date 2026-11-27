@@ -34,8 +34,9 @@ several years of upstream security and stability fixes. `uname -r` shows
 `4.14.357-openela+`.
 
 The LineageOS 24.0 (Android 17) version of this ROM, with the same
-device work, is on the `lineage-24.0` branch. The LineageOS 23.2
-(Android 16) version is on `main`. This branch is `crdroid-android-17`.
+device work, is on the `lineage-24.0` branch. There is no `main` branch:
+this checkout is `crdroid-android-17` (integration) or `performance-tuning`
+(daily work), depending on what is checked out.
 
 New here? [`docs/GUIDE.md`](docs/GUIDE.md) walks through a build end to end: local and
 GCP, flashing, GApps, releasing and troubleshooting.
@@ -95,6 +96,11 @@ docker run --rm -it \
 
 Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 
+For GCP, `tools/gcp-build.sh` reads the project from `gcloud config` and
+discovers the running VM (preferring `labels.doha-build=1`; `create` sets
+it). `NAME`/`ZONE` select one when two VMs are active; no instance name is
+hardcoded.
+
 Both `build.sh` and `tools/gcp-build.sh` build the branch checked out in the
 clone: from `performance-tuning` they build that branch, and from
 `crdroid-android-17` they build the release line. There is no silent default.
@@ -115,13 +121,14 @@ clone: from `performance-tuning` they build that branch, and from
 3. Creates the empty file `device/motorola/amogus_doha/kernel-headers`
    (see [the kernel headers fix](#kernel-headers)).
 4. Runs `breakfast amogus_doha userdebug` and `mka bacon`.
-5. Copies the zip, `boot.img`, `dtbo.img` and `vbmeta.img` into
-   `~/doha/zips`, with a `.sha256sum` file.
+5. Copies the zip and its `-boot.img`, `-dtbo.img` and `-vbmeta.img`
+   (prefixed with the zip name) into `~/doha/zips`, with a `.sha256sum`
+   file.
 
 The output is
 `~/doha/zips/crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`, next to
-plain `boot.img`, `dtbo.img` and `vbmeta.img`, plus the zip's
-`.sha256sum` file. The
+`crDroidAndroid-17.0-<date>-amogus_doha-v13.1-boot.img`, `-dtbo.img` and
+`-vbmeta.img`, plus the zip's `.sha256sum` file. The
 copies are worth keeping: crDroid's `bacon` renames the OTA zip in `out/`
 to that `crDroidAndroid-*.zip` name and deletes the target-files
 intermediates it was built from, so `build.sh` takes the images straight
@@ -179,7 +186,10 @@ reports throttling (the default is 40). With Docker, pass these as
 `-e NAME=value`.
 
 The build is `userdebug`, unsigned (it uses the AOSP test keys) and has no
-GApps; you can add them yourself (see Installing).
+GApps; you can add them yourself (see Installing). crDroid sets
+`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so both `userdebug` and `user` report
+`ro.build.type=user` and `ro.debuggable=0`: there is no `adb root` or shell
+`dmesg`; read pstore from recovery.
 
 ### Pinning the sources
 
@@ -239,8 +249,8 @@ boot/dtbo/vbmeta and sideloads the zip.
 ./tools/flash.sh --dry-run  # print the fastboot/adb commands
 ```
 
-1. `fastboot flash boot <boot.img>` and `fastboot flash dtbo
-   <dtbo.img>`. This is only needed when you're coming from stock or a
+1. `fastboot flash boot <zip-name>-boot.img` and `fastboot flash dtbo
+   <zip-name>-dtbo.img`. This is only needed when you're coming from stock or a
    different ROM, including the LineageOS builds of this device. Recovery
    runs with the dtbo of the current slot, and with stock's, the
    touchscreen doesn't work in recovery on phones with the Tianma
@@ -310,7 +320,7 @@ Magisk app and flash it:
 
 1. Install the Magisk app (31.1 or newer) from
    [its GitHub releases](https://github.com/topjohnwu/Magisk/releases).
-2. Copy `boot.img` from the release you have installed to the phone. In
+2. Copy the release's `<zip-name>-boot.img` to the phone. In
    Magisk, tap **Install**, choose **Patch firmware / image** and select
    that file. The app saves `magisk_patched-*.img` in Downloads.
 3. Copy the patched image to your computer and flash it to the active
@@ -367,7 +377,9 @@ device; those items still have to be re-run on the crDroid releases:
 
 NFC, the sensors and GNSS start but haven't been tried by hand. Not
 tested: the Himax and Novatek touch panels, the Egistec fingerprint
-sensor and the dual-SIM XT2019-2.
+sensor and the dual-SIM XT2019-2. The 2026-11-27 build adds the Dolby
+Atmos stack below; it is device-untested, and AudioFX is removed from
+that product.
 
 Known issues:
 
@@ -805,7 +817,10 @@ stock pieces under `device/motorola/amogus_doha/dolby/`:
 
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
-ship two audio-effect UIs. `tools/flash.sh`/`device-check.sh` do not know about
+ship two audio-effect UIs. The system partition is fixed, so this frees blocks
+inside `/system` rather than shrinking it; an incremental `out/` keeps the old
+APK unless `mka installclean` (or a separate output dir) runs first.
+`tools/flash.sh`/`device-check.sh` do not know about
 Dolby, so this is **device-untested** until a flash shows the effect and the
 app:
 

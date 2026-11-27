@@ -1,10 +1,11 @@
 # doha optimization plan
 
 Plan of record for "make the Moto G8 Plus lag-free under heavy multitasking".
-Nothing here beyond the baseline measurement has been executed. Each phase lists
-what changes, how it is measured, and how it is undone.
+The phases below were executed; the execution log at the end records what
+shipped and the flash verification. The baseline and phase text stay as the
+measurement record.
 
-Status: planning. Device serial `ZF6522633X`, build `crDroidAndroid-17.0-20261118`
+Status: executed in phases. Device serial `ZF6522633X`, build `crDroidAndroid-17.0-20261118`
 (the 2 GB zram commit `4826962` is **not** on it yet), kernel `4.14` pinned at
 `9a3cf72` on branch `fix`.
 

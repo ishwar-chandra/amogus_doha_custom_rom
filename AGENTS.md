@@ -71,7 +71,7 @@ Patch groups (28 total):
 
 |Area|Patches|Representative change|
 |---|---|---|
-|Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe|
+|Device, storage, policy|8: `device/motorola/{amogus,amogus_doha,common,targets}`, `device/lineage/sepolicy`, `device/qcom/common`, `device/qcom/sepolicy_vndr/legacy-um`, `system/sepolicy`|ext4 system + `/metadata`, `nodiscard` on `/data`, zram 4 GiB, single read-ahead writer, sepolicy dedupe, Dolby Atmos (DMS HAL + `libswdap`, AudioFX removed)|
 |Android 17 on 4.14|5: `kernel/motorola/msm-4.14`, `packages/modules/Connectivity`, `hardware/interfaces`, `system/zygote`, `frameworks/base`|`CONFIG_INITRAMFS_IGNORE_SKIP_FLAG`, `/proc/cmdline` bounds, BPF gates→warn, capability-bound `EINVAL` no longer panics, AppOp registration|
 |Vendor, HIDL, blobs|11: `vendor/motorola/*`, `vendor/qcom/common`, `vendor/qcom/opensource/{audio/sm8150,interfaces,media/sm8150,thermal}`, `frameworks/hardware/interfaces`, `system/tools/hidl`, `hardware/{motorola,nxp/nfc}`|OEMCrypto, camera blob delta, restored `displayservice@1.0`/`fmt@1.0`, QCC/wificfr removal, thermal HAL rename|
 |Product, OTA, debloat|3: `vendor/lineage`, `packages/apps/Updater`, `packages/apps/crDroidSettings`|`DEBLOAT_BUILD` gating, per-channel OTA JSON, dead-preference pruning|
@@ -83,8 +83,8 @@ Patch groups (28 total):
 |---|---|
 |`build.sh`|Only build entry point: validate, sync, render/apply patches, build, gates, copy artifacts|
 |`default.xml`, `snippets/*.xml`|Remotes, includes, removals, exact revisions|
-|`patches/**`|The 28 fixes; one plain diff per manifest project|
-|`tools/`|12 self-contained ops scripts (11 bash + 1 stdlib Python) + `gms-trim.components`|
+|`patches/**`|The 28 fixes; one diff per manifest project (two are binary: `patches/vendor/motorola/amogus.patch`, `patches/device/motorola/amogus_doha.patch`)|
+|`tools/`|13 scripts (11 bash + 2 stdlib Python: `bugreport-scan.py`, `logfmt.py`) + `gms-trim.components`|
 |`docs/`|`GUIDE.md` procedures, `TODO.md` worklist, `BUGREPORT.md` evidence, `OPTIMIZATION.md` measured tuning, `README.md` index|
 |`gcp-out/`|Gitignored artifact dir; default for `tools/flash.sh`|
 |`bugreports/`|Gitignored bugreport archives|
@@ -140,7 +140,10 @@ git -C ~/android/crdroid-17.0/device/motorola/amogus_doha add -N path/to/new_fil
 git -C ~/android/crdroid-17.0/vendor/motorola/amogus diff --binary > patches/vendor/motorola/amogus.patch
 ```
 
-Release/device operations: `tools/gcp-build.sh create|setup|gh-check|build|state|verify|release|ota|finish|auto-finish|fetch|delete`,
+Release/device operations: `tools/gcp-build.sh create|setup|gh-check|build|state|logs|verify|release|ota|finish|auto-finish|fetch|delete`.
+`logs [--full]` formats the tail or streams the raw log; the VM is discovered
+from the gcloud project (`NAME`/`ZONE` select one of several; `create` labels
+new VMs `doha-build=1`). Also
 `tools/gcp-build-both.sh` (both variants, one VM/TAG, separate OTA channels),
 `tools/drive-backup.sh backup|restore|status`, `tools/flash.sh gcp-out --list` then without
 `--list` to flash.
@@ -153,8 +156,9 @@ Release/device operations: `tools/gcp-build.sh create|setup|gh-check|build|state
   `adb` probe does not kill the sweep. `build.sh` drops `-eu` around `envsetup.sh`/`breakfast`/`mka`
   and checks statuses instead.
 - **Patch format**: plain `git diff` with `a/`/`b/` paths, applied by `git apply --whitespace=nowarn`
-  after a hard reset; no path rewriting. One `GIT binary patch`
-  (`patches/vendor/motorola/amogus.patch`). `patches/system/zygote.patch` carries a prose preamble
+  after a hard reset; no path rewriting. Two `GIT binary patch` files
+  (`patches/vendor/motorola/amogus.patch`, `patches/device/motorola/amogus_doha.patch`).
+  `patches/system/zygote.patch` carries a prose preamble
   before the diff — regenerating with plain `git diff` drops that rationale.
   `patches/device/qcom/common.patch` empties 11 files to the empty blob
   (`..e69de29b`) instead of deleting them; new files appear as `new file mode` (18 of them, so
@@ -191,17 +195,7 @@ Invariants:
 - A syncing run destroys hand edits in every project. Durable changes belong in `patches/` or a
   fork.
 
-Known doc hazards (trust the code, not the prose):
-
-|Claim|Reality|
-|---|---|
-|`README.md:114-120`, `docs/GUIDE.md:148-154`: plain `boot.img`/`dtbo.img`/`vbmeta.img`|`build.sh:289-299` prefixes every image with the zip name|
-|`docs/GUIDE.md:393`: "`@SKIN_THROTTLE_MC@` is the only placeholder"|`build.sh:154-160` renders four tokens|
-|`docs/GUIDE.md:117`, `docs/TODO.md:143`: no Drive backup|`tools/drive-backup.sh` exists and is documented in GUIDE §4.5|
-|`build.sh:26-30`, `docs/TODO.md:148`: userdebug keeps `ro.debuggable=1`|`build.sh:191-192` and `tools/flash.sh:31`: crDroid sets `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`; both variants report `ro.build.type=user`, `ro.debuggable=0`|
-|`README.md:37`, `CLAUDE.md:14`, `docs/GUIDE.md:396`: `main` branch|No `main` ref exists; integration is `performance-tuning` → `crdroid-android-17`|
-|`docs/OPTIMIZATION.md:4,7`: "planning, nothing executed"|Its own execution log at `:50+` records shipped phases and a flash verification|
-|`build.sh:56-60`: read-ahead rendered only into `patches/device/qcom/common.patch`|Also rendered into `patches/device/motorola/amogus.patch:186`|
+**Documentation:** the prose is kept in sync with the code; if a doc disagrees, the code is authoritative.
 
 ## Important Files
 
@@ -210,11 +204,14 @@ Known doc hazards (trust the code, not the prose):
 |`build.sh`|Sync, render/apply, build, Launcher3 `aapt2` gate, ADB-key leakage check, artifact copy|
 |`default.xml`|crDroid manifest + our remotes/includes; local edits deliberate|
 |`snippets/doha.xml`|27 pinned doha projects and the 2 removals|
-|`patches/vendor/motorola/amogus.patch`|The only binary patch (`--binary` required on regeneration)|
+|`patches/vendor/motorola/amogus.patch`|Binary patch (`--binary` required on regeneration); the other is `patches/device/motorola/amogus_doha.patch`|
+|`patches/device/motorola/amogus_doha.patch`|Dolby prebuilts, package list, sepolicy, props; also the device tree's boot/config changes|
 |`patches/device/motorola/amogus.patch`|fstab/boot cmdline/ext4/zram/read-ahead — most device behavior|
 |`patches/device/qcom/common.patch`|Single surviving read-ahead writer; 11 emptied sepolicy files|
 |`patches/kernel/motorola/msm-4.14.patch`|Android-17 initramfs/`/proc/cmdline`, WPA3, touch, defconfig|
-|`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; every ssh/scp addresses the VM as the account that ran `setup` (recorded in instance metadata, `VUSER` overrides) because `build.log`, `build.exit`, `build.channel` and the tmux socket live in that account's `$HOME`; `finish` polls the VM's `build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
+|`tools/gcp-build.sh`|Remote build → verify → GitHub release → OTA feed; discovers the project/VM from gcloud (`NAME`/`ZONE` override, `create` labels `doha-build=1`); `logs [--full]` formatted/raw; every ssh/scp addresses the VM as the account that ran `setup` (recorded in instance metadata, `VUSER` overrides) because `build.log`, `build.exit`, `build.channel` and the tmux socket live in that account's `$HOME`; `finish` polls the VM's `build.exit`, then deletes the VM (kept on failure); `promote` copies a tested `test/doha.json` entry to `standard/`|
+|`tools/logfmt.py`|`logs` formatter: width wrapping, repeat dedupe, noise filtering, progress bars, `--full` raw mode|
+|`device/motorola/amogus_doha/dolby`|Stock-10 Moto Audio/`daxService` APKs, DMS HIDL service/libs, `libswdap`, `dax-default.xml`; APKs are `BUILD_PREBUILT`, copied by `device.mk`|
 |`tools/device-check.sh`, `tools/perf-audit.sh`, `tools/perf-multitask.sh`|Release-gating hardware checks|
 |`tools/flash.sh`|Set discovery via `.sha256sum`, checksum verify, both-slot flash + sideload|
 |`tools/integrity-setup.sh`|TrickyStore keybox import; the repo never ships a keybox|
@@ -248,6 +245,7 @@ Cheap checks:
 ```sh
 bash -n build.sh
 bash -n tools/<changed-script>.sh
+python3 -m py_compile tools/logfmt.py
 python3 -c 'import xml.dom.minidom as m; m.parse("snippets/doha.xml")'
 # From a pristine checkout of the matching pinned project, not this manifest root:
 git -C <project> apply --check --whitespace=nowarn patches/<project-path>.patch
@@ -256,6 +254,11 @@ git -C <project> apply --check --whitespace=nowarn patches/<project-path>.patch
 `git apply --check` is not compilation. `build.sh` gates the Launcher3 APK with `aapt2`
 (`widget_internal_focus_bg`); missing means a stale `resources.arsc` — delete `out/` and rebuild,
 a module-level clean is insufficient. With no `aapt2`, it only warns.
+
+Removing a package from `PRODUCT_PACKAGES` does not shrink the fixed partitions; run
+`mka installclean` (or a separate `OUT`) first or the stale staging APK survives. Android 17
+rejects APKs in `PRODUCT_COPY_FILES`: use a `BUILD_PREBUILT` APPS module (`LOCAL_CERTIFICATE :=
+PRESIGNED`, plus `LOCAL_PRIVILEGED_MODULE := true` for a priv-app).
 
 Artifact validation:
 
