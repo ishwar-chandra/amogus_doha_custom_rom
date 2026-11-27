@@ -326,6 +326,27 @@ install_deps() {
   touch "$HOME/.deps-installed"
 }
 
+# out/ is 135 GB (112 GB of it Soong intermediates) and the tree plus .repo is
+# another 230 GB: on one 369 GB disk a clean build dies at 93% with "No space
+# left on device" while add_img_to_target_files stages target_files. Keep out/
+# on the second device. The move itself is a one-off (mv + bind mount); this
+# only re-establishes the mount, because a reboot drops it while the data stays
+# on the cache disk.
+ensure_out_on_cache() {
+  local out=$SRC/out cache_out=$CACHE/out
+  [ "$CACHE" = "$BUILD/cache" ] && return 0     # no second disk to move onto
+  mountpoint -q "$CACHE" || return 0
+  [ -d "$cache_out" ] || return 0                # nothing migrated yet
+  mountpoint -q "$out" && return 0               # already bound
+  if [ -d "$out" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
+    echo "WARN: $out is not empty and $cache_out exists; leaving it alone" >&2
+    return 0
+  fi
+  sudo mkdir -p "$out"
+  sudo mount --bind "$cache_out" "$out"
+  echo "out/ on $CACHE ($(df -h --output=avail "$out" | tail -1 | tr -d ' ') free) -- one disk cannot hold tree + out/"
+}
+
 # One place for both tools: install on first use, no-op afterwards.
 install_gh() {
   command -v gh >/dev/null && return
@@ -407,6 +428,7 @@ setup)  install_deps
         grow_root
         mkdir -p "$SRC" "$ZIPS" "$CCACHE"
         ensure_swap
+        ensure_out_on_cache
         [ -d "$MANIFEST/.git" ] || git clone -b "$BRANCH" "$REPO" "$MANIFEST"
         echo "setup done: $(nproc) cpus, $(free -g | awk 'NR==2{print $2}') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')" ;;
 
@@ -423,6 +445,7 @@ build)
         # `finish`/`ota` default to this, so a manual run cannot publish a test
         # build into standard just because it did not repeat OTA_CHANNEL.
         printf '%s\n' "$CHANNEL" > "$HOME/build.channel"
+        ensure_out_on_cache
         # The VM builds from its own clone of this recipe, so a change that was
         # not pushed never reaches it. Pull the branch first and say which
         # commit is being built; the caller checks for uncommitted work.
