@@ -255,10 +255,19 @@ git -C <project> apply --check --whitespace=nowarn patches/<project-path>.patch
 (`widget_internal_focus_bg`); missing means a stale `resources.arsc` — delete `out/` and rebuild,
 a module-level clean is insufficient. With no `aapt2`, it only warns.
 
+An interrupted `repo sync` can leave a project whose HEAD still matches its pin with every file
+staged as deleted; `repo sync` then skips it, and a full Soong analysis fails on a missing
+prebuilt. Find them with `repo forall -c 'git diff --cached --quiet || echo $REPO_PATH'` and
+restore each with `git -C <project> checkout -f HEAD -- .` (the objects are local; no re-sync).
+
 Removing a package from `PRODUCT_PACKAGES` does not shrink the fixed partitions; run
 `mka installclean` (or a separate `OUT`) first or the stale staging APK survives. Android 17
 rejects APKs in `PRODUCT_COPY_FILES`: use a `BUILD_PREBUILT` APPS module (`LOCAL_CERTIFICATE :=
-PRESIGNED`, plus `LOCAL_PRIVILEGED_MODULE := true` for a priv-app).
+PRESIGNED`, plus `LOCAL_PRIVILEGED_MODULE := true` for a priv-app). A prebuilt whose manifest
+declares `<uses-library>` must match the build system: set `LOCAL_USES_LIBRARIES` only when that
+name is a real `JAVA_LIBRARIES` module (otherwise the module's `dexpreopt.config` depends on a
+config with no rule), otherwise set `LOCAL_ENFORCE_USES_LIBRARIES := false` on that module alone
+(`MotoDolbyV3` needs this); never the product-wide `PRODUCT_BROKEN_VERIFY_USES_LIBRARIES`.
 
 Artifact validation:
 
