@@ -828,7 +828,12 @@ position for Android 17's `check_elf_files`: some of its `DT_NEEDED` libraries
 (`libdapparamstorage`, `libdlbdsservice`, `vendor.dolby.hardware.dms@1.0*`)
 are copied blobs, not build modules, so that module sets
 `LOCAL_CHECK_ELF_FILES := false` rather than a `LOCAL_SHARED_LIBRARIES` list
-the build cannot resolve.
+the build cannot resolve. The HAL also has to be declared in a device framework
+compatibility matrix: Android 17's `check_vintf_all` rejects
+`vendor.dolby.hardware.dms@1.0::IDms/default` as "in the device manifest but
+not specified in framework compatibility matrix" otherwise.
+`dolby/vendor/etc/vintf/compatibility_matrix.dolby.xml` supplies that entry and
+is added through `DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE` in `device.mk`.
 
 `persist.vendor.audio_fx.current=dolby` is installed as a vendor property, and
 the `targets` patch filters `AudioFX` out of the product so the ROM does not
