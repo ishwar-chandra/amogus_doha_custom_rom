@@ -438,3 +438,37 @@ File: `bugreports/bugreport-doha-CP2A.260605.016-2026-11-20-07-07-57.zip`.
 - **Verified live on `1795135461`:** `/data` mounted with `nodiscard`, `SwapTotal 4194300 kB`
   (4 GB zram), `smb5` `prop 4` log spam gone. `doha-dexopt-once` still absent from `init.svc.*`
   (tracked in `docs/TODO.md`).
+
+## P20 — Sound profile returns to "General" (ringing) after reboot
+**Status:** open, needs a capture. **Severity:** medium (user-visible, silent alarms/calls risk).
+**Summary:** set the phone to **Vibrate**, reboot, and it comes back on **General / ring**. This
+tree has no LineageOS System Profiles (`class ProfileManager` is absent from `frameworks/base`),
+so the setting involved is the ringer mode, `Settings.Global.MODE_RINGER`
+(`0` silent, `1` vibrate, `2` normal) — the Developer-options/Sound-panel "sound profile".
+**Where it lives:** `AudioService.systemReady()` reads the stored value with
+`AudioManager.RINGER_MODE_NORMAL` as default, so a missing row is indistinguishable from "ring"
+(`services/core/java/com/android/server/audio/AudioService.java:3521`); written back at `:3532`
+and `:11850` on every change. `DevicePolicyManagerService:743` still lists `MODE_RINGER` as a
+deprecated global setting, so a device policy can also drive it.
+**Two distinct causes, told apart by how often it happens:**
+- *Once, on the first boot after a flash/update:* expected AOSP behaviour — the settings upgrade
+  step `v119: Reset zen + ringer mode` (`SettingsProvider.UpgradeController#onUpgradeLocked`)
+  writes `MODE_RINGER` back to the default when the settings database comes from version 118.
+  Not a defect, but it should not repeat.
+- *On every reboot:* the value is not persisting. Either nothing writes it before shutdown, or
+  something rewrites it during boot after `AudioService` restores it (policy, vendor audio HAL
+  init, or a crash in `AudioService`/`NotificationManagerService`). This is the case to fix with
+  a patch; nothing in the current 28 patches touches ringer mode, so it is inherited behaviour.
+**Evidence needed (no capture exists yet):**
+- [ ] `adb shell settings get global mode_ringer` → reboot → the same command again
+  (`1` before and `2` after proves it is being reset, not lost).
+- [ ] `adb shell dumpsys audio | grep -i ringer` before and after the reboot.
+- [ ] `adb logcat -b all -v time | grep -iE "ringer|AudioService|mode_ringer"` across the reboot.
+- [ ] `adb shell settings list global | grep -iE "mode_ringer|zen_mode"` to see whether a
+  `zen_mode` write lands on top of it.
+- [ ] Confirm it happens with a third-party launcher/notification app out of the picture.
+
+Note: the workspace cannot take this capture itself — `bugreportz` is refused for app uid
+(`Failed to connect to dumpstatez service`, no `DUMP` permission), there is no root, and
+`adb pair` over Wireless debugging fails with `protocol fault (couldn't read status message)`
+when handed the port from the main screen instead of the pairing dialog.
