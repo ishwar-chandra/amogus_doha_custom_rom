@@ -37,6 +37,16 @@ kernel `4.14.357-openela+ #16`).
   `com.google.android.gms` with no literal `null`, and disabling keybox alerts
   must remove a pending prompt. A real Play verdict still requires a
   Google-rooted keybox supplied by the user.
+- [ ] **DaxUI's in-app power button is unreliable.** Presses reach
+  `DolbyManagerService.doOnDapParamUpdate`, and one press did flip the DAP
+  effect `Disabled`/`Enabled` in `dumpsys media.audio_policy` on the
+  2026-11-28 build, but in practice the button often does nothing
+  (uiautomator reports `clickable=false`), the power icon never repaints
+  live, and the effect state does not consistently follow the press. The
+  Quick Settings tile remains the reliable toggle. The shipped APK is the
+  vendor one with `dsPowerChanged`'s off-state branch nop'd
+  (`dolby/DaxUI.apk`, `dolby/Android.bp`), so the remaining work is in
+  `FragPower.onCreateView`/`dsPowerChanged` interaction, not resources.
 - [ ] **VoLTE / IMS.** Evidence from the device:
   - the IMS PDN connects, then drops and rebuilds every 5–11 minutes
     (17 transitions in one window, e.g. 20:14 → 20:41 on 11-15), and
