@@ -18,6 +18,11 @@ Baseline: `2026-11-27`.
   package (`vendor/motorola-dolby`, pinned) - `DaxUI` + `daxService`
   (re-signed with the platform key), `vendor.dolby.hardware.dms@2.0`, the
   DAP effect and its tuning. Moto Audio is replaced by Dolby's DaxUI.
+- **DaxUI's power button works.** The vendor APK's off state replaces the
+  UI with a full-screen image and disables the controls, so the app could
+  not turn Dolby back on. The device tree now ships the same APK with that
+  branch (`dsPowerChanged`'s `if-eqz v13, +0x122`) replaced by two nops and
+  imports it as `DaxUI-patched`.
 - **`frameworks/base` no longer rewrites `INTERACT_ACROSS_USERS_FULL`.**
   Platform-signing the Dolby apps grants the signature permission, so the
   `privileged` protection-level change, and the privapp allowlist it forced

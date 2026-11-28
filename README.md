@@ -874,8 +874,20 @@ adb shell lshal | grep -i dms
 ```
 
 The effect reads `Disabled` while the phone is idle; the power button in
-DaxUI enables it for playback. If it never registers, the dms@2.0 HAL did
-not start; check `lshal` and `avc` denials for `hal_dms_default`.
+DaxUI toggles it for playback. The vendor APK cannot be used as-is: while
+Dolby is off, `MainActivity.dsPowerChanged(false)` swaps the UI for a
+full-screen "Dolby is off" image and disables every control, so the app's
+own power button cannot turn it back on (only the Quick Settings tile can).
+The device tree therefore ships `dolby/DaxUI.apk` - the same APK with the
+`if-eqz v13, +0x122` at dex offset `0x16ac72` (the branch into the off
+state) replaced by two nops - and `dolby/Android.bp` imports it as
+`DaxUI-patched` (`certificate: "platform"`, `system_ext_specific: true`).
+After any dex edit the header must be fixed in this order, or ART rejects
+the dex and every class fails to load: `sha1(dexd[32:])` into
+`dexd[12:32]`, then `adler32(dexd[12:])` into `dexd[8:12]`.
+`android_app_import` re-signs the APK, so the copy in the patch can carry
+any signature. If the effect never registers, the dms@2.0 HAL did not
+start; check `lshal` and `avc` denials for `hal_dms_default`.
 
 ### Play Integrity
 
