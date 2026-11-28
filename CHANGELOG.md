@@ -4,41 +4,66 @@ Unofficial crDroid 13.1 (Android 17) for the Motorola Moto G8 Plus (`doha`,
 in-tree device `amogus_doha`). One section per build; the date in the heading is
 what `tools/gcp-build.sh release` matches to fill the GitHub release notes.
 
-## 2026-11-28 (unreleased)
+## 2026-11-28 (released)
 
-Build `crDroidAndroid-17.0-20261128-amogus_doha-v13.1` (standard, userdebug).
-Baseline: `2026-11-27`.
+Build `crDroidAndroid-17.0-20261128-amogus_doha-v13.1` (standard + debloat,
+userdebug; manifest `2719d1f`). The key points cover **everything since the
+last published build, `crdroid-20261120-3`**; the 2026-11-27 draft below
+details the intermediate build.
 
-### Highlights
+### Key points
 
-- **Dolby Atmos stack replaced.** The stock Android 10 port cannot work
-  under Android 17: its 2019 `libswdap` rejects every DAP parameter
-  (`getNumOfProfiles` returns `-3`), so `daxService`'s provider fails and
-  Moto Audio crashes reading it. The ROM now carries the DAX3 3.6 Motorola
-  package (`vendor/motorola-dolby`, pinned) - `DaxUI` + `daxService`
-  (re-signed with the platform key), `vendor.dolby.hardware.dms@2.0`, the
-  DAP effect and its tuning. Moto Audio is replaced by Dolby's DaxUI.
-- **DaxUI's power button works.** The vendor APK's off state replaces the
-  UI with a full-screen image and disables the controls, so the app could
-  not turn Dolby back on. The device tree now ships the same APK with that
-  branch (`dsPowerChanged`'s `if-eqz v13, +0x122`) replaced by two nops and
-  imports it as `DaxUI-patched`.
-- **`frameworks/base` no longer rewrites `INTERACT_ACROSS_USERS_FULL`.**
-  Platform-signing the Dolby apps grants the signature permission, so the
-  `privileged` protection-level change, and the privapp allowlist it forced
-  for every other holder, are removed.
+- **Kernel moved to the fork's `lts` branch** (`def1be59`): 106 commits on
+  top of the old `fix` pin, carrying the 4.14.357 OpenELA baseline. The
+  kernel patch is rebased onto that tip; the `lts` merge's duplicate
+  `POWER_SUPPLY_PROP_ONLINE` case is dropped, the `/proc/cmdline` append is
+  bounded together with boot-time scheduler margins, the glink IRQ stays
+  enabled without wake arming (the P2 RPM suspend deadlock), and Doze motion
+  sensing is off for idle battery.
+- **Dolby Atmos replaced and working.** The stock QPIS30.28 port cannot work
+  on Android 17 (its 2019 `libswdap` rejects every DAP parameter with `-3`),
+  so the ROM now carries the DAX3 3.6 package (`vendor/motorola-dolby`):
+  `DaxUI`, `daxService`, the `dms@2.0` HAL and the DAP tuning,
+  platform-signed, with the effect registered in the trinket
+  `audio_effects.xml`. The in-app power button works too: the vendor APK's
+  off-state branch is nop'd (`DaxUI-patched`), so the UI no longer collapses
+  into the full-screen image.
+- **`frameworks/base` no longer rewrites `INTERACT_ACROSS_USERS_FULL`** -
+  platform-signing the Dolby apps grants the signature permission, so the
+  `privileged` protection-level change and its privapp allowlist are gone.
+- **Boot and system fixes**: pre-reboot dexopt survives symlinked
+  `system_ext`/`product` (`art`); the old audio HAL's `-38` frozen-state
+  callback is tolerated (`frameworks/av`); 0.5x animations by default; a page
+  reserve and malformed-SMS SCTS handling; the Wi-Fi Display prop is fixed;
+  OEMCrypto is packaged.
+- **Settings and product**: crDroidSettings' Kotlin call is fixed and the
+  patch rebased; the `vendor/lineage` debloat patch is rebased onto the
+  MatLog block; the stale AudioFX APK is removed by a one-time `installclean`.
+- **Build and release**: standard and debloat both build and publish; the
+  maintainer `test` OTA channel with `promote` is in place; GitHub release and
+  OTA feed automation; `out/` lives on the second disk; the build VM is
+  discovered from the gcloud project.
+- **Docs**: README/GUIDE/TODO/OPTIMIZATION synced; the P20-P23 fixes and the
+  Dolby stack are recorded.
 
 ### Known issues
 
 - Dolby AC-4/E-AC-3 decoding is not enabled (the donor's codec libraries and
   `media_codecs_dolby_audio.xml` are not carried).
+- Moto-only hooks stay inert without the missing Moto apps: `daxService`
+  requests `com.motorola.gamemode.permission.LAUNCH_GAMEMODE` and
+  `MotoDolbyV3` requests `com.motorola.permission.ACCESS_CHECKIN`.
+- DaxUI's power icon does not repaint live and the button is unreliable in
+  practice; the Quick Settings tile remains the reliable toggle
+  (`docs/TODO.md`).
 
 ### Verified
 
-- Flashed `1795817209` (debloat): the dms@2.0 HAL and `daxservice` run,
-  DaxUI renders the Dynamic/Movie/Music/Custom presets, the HAL commits its
-  DAP parameter sets, and no `DolbyAudioEffect ... -3` appears.
-  Speaker/headphone output still to be confirmed by ear.
+- The 2026-11-28 build runs the `dms@2.0` HAL and `daxservice`, DaxUI renders
+  the presets, and the app's power button flips the DAP effect
+  `Disabled`/`Enabled` while music plays (`dumpsys media.audio_policy`), with
+  `doOnDapParamUpdate` on every press and the HAL committing its parameter
+  sets.
 
 ## 2026-11-27 (unreleased)
 
