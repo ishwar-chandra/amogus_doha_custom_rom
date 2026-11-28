@@ -1,4 +1,4 @@
-BE3pE0l.png
+[IMG]https://i.imgur.com/BE3pE0l.png[/IMG]
 
 A special thanks to [USER=12919039]@Aldairsoraki[/USER] for the device tree, vendor blobs and recovery this build stands on, and to christiaan for the 4.14 kernel fork (lts branch). Without them this ROM would not exist.
 
@@ -77,10 +77,7 @@ Without them there would be nothing to flash.
 DOWNLOAD
 
 
-
-
-
-download
+[URL='https://github.com/ishwar-chandra/amogus_doha_custom_rom/releases/tag/crdroid-20261128']Download crdroid-20261128 (standard and debloat zips, images and sha256sums)[/URL]
 
 
 
@@ -114,11 +111,11 @@ This ROM comes without Google apps. Use crDroid's own package for Android 17 / a
 
 
 
-NikGapps-crdroid-official-arm64-17 (486 MB)
+[URL='https://sourceforge.net/projects/crdroid/files/gapps/NikGapps-crdroid-official-arm64-17-20261021.zip/download']NikGapps-crdroid-official-arm64-17 (486 MB)[/URL]
 
 
 
-It lives in crDroid's gapps folder — take the newest arm64-17 official file if that date has been superseded. MindTheGapps 17.0.0 arm64 is the smaller alternative and is what this device was tested with.
+It lives in [URL='https://sourceforge.net/projects/crdroid/files/gapps/']crDroid's gapps folder[/URL] — take the newest arm64-17 official file if that date has been superseded. [URL='https://github.com/MindTheGapps/17.0.0-arm64/releases']MindTheGapps 17.0.0 arm64[/URL] is the smaller alternative and is what this device was tested with.
 
 
 
@@ -266,9 +263,9 @@ SOURCES AND DOCUMENTATION
 
 
 
-• ROM source / build recipe (manifest + the 30 patches that make Android 17 boot on doha): ishwar-chandra/amogus_doha_custom_rom
+• ROM source / build recipe (manifest + the 30 patches that make Android 17 boot on doha): [URL='https://github.com/ishwar-chandra/amogus_doha_custom_rom']ishwar-chandra/amogus_doha_custom_rom[/URL]
 
-• Kernel: christiaan/android_kernel_motorola_msm-4.14 (branch lts)
+• Kernel: [URL='https://github.com/christiaan/android_kernel_motorola_msm-4.14']christiaan/android_kernel_motorola_msm-4.14[/URL] (branch lts)
 
 • Device tree, vendor blobs, HALs: Aldair402 / moto-common, pinned in [ICODE]snippets/doha.xml[/ICODE]
 
