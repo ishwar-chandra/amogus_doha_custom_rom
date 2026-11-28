@@ -37,10 +37,10 @@ index bf0f432..e07a03f 100644
  ifneq ($(PRODUCT_NO_CAMERA),true)
  PRODUCT_PACKAGES += \
 diff --git a/config/crdroid.mk b/config/crdroid.mk
-index a959e7e..874e5e3 100644
+index 4229b61..586a356 100644
 --- a/config/crdroid.mk
 +++ b/config/crdroid.mk
-@@ -44,17 +44,24 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += \
+@@ -44,14 +44,20 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += \
  PRODUCT_PACKAGES += \
      AxSandbox \
      AxThemeStore \
@@ -63,6 +63,10 @@ index a959e7e..874e5e3 100644
 +ifneq ($(DEBLOAT_BUILD),1)
  PRODUCT_PACKAGES += \
      MatLog
+ 
+@@ -59,6 +65,7 @@ PRODUCT_PACKAGES += \
+ PRODUCT_SYSTEM_PROPERTIES += \
+     ro.logd.kernel=true
  endif
 +endif
  

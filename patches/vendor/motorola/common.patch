@@ -1,0 +1,12 @@
+diff --git a/hardware/qcom/qcom-vendor.mk b/hardware/qcom/qcom-vendor.mk
+index a131dba..24c7a3b 100644
+--- a/hardware/qcom/qcom-vendor.mk
++++ b/hardware/qcom/qcom-vendor.mk
+@@ -59,6 +59,7 @@ PRODUCT_COPY_FILES += \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/libsns_direct_channel_stub.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libsns_direct_channel_stub.so \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/libsoc_helper.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libsoc_helper.so \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/libsoc_helper_jni.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libsoc_helper_jni.so \
++    vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/liboemcrypto.so:$(TARGET_COPY_OUT_VENDOR)/lib64/liboemcrypto.so \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/libwvhidl.so:$(TARGET_COPY_OUT_VENDOR)/lib64/libwvhidl.so \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/motorola.hardware.sensors-V1-ndk_platform.so:$(TARGET_COPY_OUT_VENDOR)/lib64/motorola.hardware.sensors-V1-ndk_platform.so \
+     vendor/motorola/common/hardware/qcom/proprietary/vendor/lib64/vendor.qti.hardware.bluetooth_sar@1.0.so:$(TARGET_COPY_OUT_VENDOR)/lib64/vendor.qti.hardware.bluetooth_sar@1.0.so \

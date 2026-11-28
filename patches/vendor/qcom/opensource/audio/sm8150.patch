@@ -1,5 +1,25 @@
+diff --git a/configs/trinket/audio_effects.xml b/configs/trinket/audio_effects.xml
+index add0925..6ad8e41 100644
+--- a/configs/trinket/audio_effects.xml
++++ b/configs/trinket/audio_effects.xml
+@@ -35,6 +35,7 @@
+         <library name="downmix" path="libdownmix.so"/>
+         <library name="loudness_enhancer" path="libldnhncr.so"/>
+         <library name="dynamics_processing" path="libdynproc.so"/>
++        <library name="dap" path="libswdap.so"/>
+         <library name="proxy" path="libeffectproxy.so"/>
+         <library name="offload_bundle" path="libqcompostprocbundle.so"/>
+         <library name="audio_pre_processing" path="libqcomvoiceprocessing.so"/>
+@@ -80,6 +81,7 @@
+         <effect name="hw_acc" library="offload_bundle" uuid="7d1580bd-297f-4683-9239-e475b6d1d69f"/>
+         <effect name="loudness_enhancer" library="loudness_enhancer" uuid="fa415329-2034-4bea-b5dc-5b381c8d1e2c"/>
+         <effect name="dynamics_processing" library="dynamics_processing" uuid="e0e6539b-1781-7261-676f-6d7573696340"/>
++        <effect name="dap" library="dap" uuid="9d4921da-8225-4f29-aefa-39537a04bcaa"/>
+         <effect name="aec" library="audio_pre_processing" uuid="0f8d0d2a-59e5-45fe-b6e4-248c8a799109"/>
+         <effect name="ns" library="audio_pre_processing" uuid="1d97bb0b-9e2f-4403-9ae3-58c2554306f8"/>
+         <effect name="music_helper" library="volume_listener" uuid="08b8b058-0590-11e5-ac71-0025b32654a0"/>
 diff --git a/hal/audio_extn/spkr_protection.c b/hal/audio_extn/spkr_protection.c
-index e1be59fa..c320829f 100644
+index e1be59f..c320829 100644
 --- a/hal/audio_extn/spkr_protection.c
 +++ b/hal/audio_extn/spkr_protection.c
 @@ -1138,7 +1138,7 @@ static void spkr_calibrate_wait()

@@ -19,16 +19,21 @@ possible in this workspace.
 Build: `ro.build.date=Wed Nov 18 02:13:54 UTC 2026`, `ro.build.version.sdk=37`,
 `ro.build.type=user`, `ro.crdroid.version=17.0`.
 
+Capture E: `bugreports/bugreport-doha-CP2A.260605.016-2026-11-26-18-14-59.zip`,
+2026-11-26 18:14, serial `ZF6522633X`, uptime 1 d 17 h 54 m, BSNL + JIO both LTE,
+build 2026-11-20 (`ro.build.date=Fri Nov 20 02:13:41 UTC 2026`, kernel `#7` Nov 20),
+boot reason `reboot`, no panic. It produced P18/P19 and refreshed P11 and C1.
+
 ## Status at a glance
 
 | Status | Entries | Individual issues |
 |---|---|---|
-| Fixed in code, device-unverified | 3 (P1, P3, D5) | 5 |
+| Fixed in code, device-unverified | 5 (P1, P3, P18, P19, D5) | 7 |
 | Partially fixed | 3 (P2, P10, P14) | 3 entries, several sub-items open |
 | Mitigation only | 3 (P6, P8, P9) | 3 |
 | Likely fixed upstream, unverified | 1 (P4) | 1 |
 | Open | 11 (P5/P7/P11/P12/P13/P15/P16/P17, D6, D8, D9) | 35 |
-| **Tracked total** | **21** | **44** |
+| **Tracked total** | **23** | **46** |
 
 `P5` is the old `D4`; `D2` is closed (the green verified-boot property is crDroid's SafetyNet spoof).
 `D5` is one row of P10.
@@ -43,8 +48,8 @@ Legend: `[x]` done in code, `[ ]` needs verification or work.
 kernel (`Subsys notifier chain for modem taking too long`); pstore also records
 `androidboot.bootreason=kernel_panic`.
 **Fix:** kernel `d93bfa2` (qcacld: move SSR cleanup off `FW_DOWN`, do it on `FW_CRASHED`) plus
-`710ed46` (dump stuck task before panic). Both are in the pinned branch `doha-kernel-fixes-2026-11-19`
-at `73b7957`.
+`710ed46` (dump stuck task before panic). Both are ancestors of the pinned kernel `fix`
+at `9a3cf72`.
 - [x] Kernel commits present in the build pin.
 - [ ] Rebuild with a syncing `./build.sh`; no `SKIP_SYNC=1`.
 - [ ] Reboot 5× and reproduce hotspot/WLAN-SSR; `dmesg` must not contain
@@ -52,7 +57,7 @@ at `73b7957`.
 - [ ] If it still panics, attach the new stack dump from `710ed46`.
 
 ## P2 — Suspend deadlock after dropping `IRQF_NO_SUSPEND` on glink/smp2p (reverted)
-**Status:** reverted in kit patch (`patches/kernel/motorola/msm-4.14.patch`), device-unverified. **Severity:** critical (was high).
+**Status:** reverted in kernel branch `fix` at `9a3cf72`, device-unverified. **Severity:** critical (was high).
 **Summary:** Dropping `IRQF_NO_SUSPEND` in fork commits `a8b9cfcea310` (glink) and `0c55710bfa99`
 (smp2p) to silence `misconfigured IRQ 20 glink-native` broke deep suspend completely on both
 `crdroid-20261120` and `crdroid-20261120-2`: 6 of 6 non-reboot boots (`last_kmsg`..`last_kmsg.7` in
@@ -65,12 +70,19 @@ running the ISR and RPM `msm_rpm_wait_for_ack()` hangs forever inside `dpm_suspe
 the panel off and `msm_watchdog_suspend()` disabled (looks like a silent power-off until long-press
 `KPDPWR_N` / `hardware_reset`). Confirmed by Qualcomm's own msm-4.14 commit `647d16d0`
 (`deesin@codeaurora.org`).
-**Fix:** `patches/kernel/motorola/msm-4.14.patch` reverts both commits on top of pin `73b7957`,
-restoring `IRQF_NO_SUSPEND | IRQF_SHARED` (`qcom_glink_native.c`) and `IRQF_NO_SUSPEND |
-IRQF_ONESHOT` (`smp2p.c`). Do **not** remove `IRQF_NO_SUSPEND` from glink without also wiring
-`pm_system_wakeup()` + `glink_native_pm_ops` on both RPM and SMEM transports.
-- [x] Revert hunks in `patches/kernel/motorola/msm-4.14.patch`, verified with `git apply --check`
-  against pinned `73b7957`.
+**Fix:** kernel branch `fix` at `9a3cf72` restores `IRQF_NO_SUSPEND | IRQF_SHARED`
+(`qcom_glink_native.c`) and `IRQF_NO_SUSPEND | IRQF_ONESHOT` (`smp2p.c`). Do **not** remove
+`IRQF_NO_SUSPEND` from glink without also wiring `pm_system_wakeup()` + `glink_native_pm_ops` on
+both RPM and SMEM transports.
+
+The same kernel branch also skips `enable_irq_wake()` on the non-GVM glink path. That is the
+separate `misconfigured IRQ 20` fix: glink stays enabled through noirq suspend (`IRQF_NO_SUSPEND`
+is retained), but is no longer armed as a wake source. This must not be confused with the failed
+`a8b9cfc`/`0c55710` commits, which removed `IRQF_NO_SUSPEND`; smp2p still keeps both flags because
+its sleep-state handshake requires wake arming.
+- [x] Kernel `fix` branch pushed; kit pins `9a3cf72` and removes the redundant glink/smp2p patch
+  hunks.
+- [x] Kernel patch applies against `9a3cf72` with `git apply --check`.
 - [ ] Rebuild, flash, unplug USB, lock with Power button for 5 min, wake cleanly; repeat 5×.
 - [ ] Confirm `Battery History` shows `-running` -> `+running` resumes and no `KPDPWR_N` reset.
 
@@ -231,6 +243,36 @@ badges.
 - [ ] Reproduce each with the latest app version.
 - [ ] Only revisit if the same failure is seen with AOSP apps.
 
+## P18 — Binder transactions fail under memory pressure
+**Status:** fixed in code (device init), device-unverified. **Severity:** high.
+**Summary:** 11× `binder: <pid>_N: page allocation failure: order:0` at 16:21:42 and
+16:52:35 (capture E), each followed by `binder: <pid>:<tid> ioctl c0306201 ... returned -14`
+(EFAULT, `BINDER_WRITE_READ`): reclaim could not fault in the user page for the binder
+copy-to-user (`Normal free: 1516kB` against `min:2012kB`). The same window has
+`binder_alloc_buf, no vma`, `DeadObjectException`, a crashed Chrome sandboxed process and,
+later, 8 `lmkd` kills. No `page allocation`/`binder_alloc` wording exists in captures A-D.
+**Fix:** `patches/device/motorola/amogus.patch` writes `vm.min_free_kbytes=16384` from
+`init.amogus.rc` (`on init`). It only raises the kernel watermark; read-ahead,
+`nr_requests`, zram and LMK thresholds are untouched, and it is not
+`config_extraFreeKbytesAdjust`.
+- [x] Knob in the kit patch.
+- [ ] Flash and replay the 16:52 load (camera open + Chrome + Maps).
+- [ ] KERNEL LOG must have zero `page allocation failure` and zero `returned -14`.
+- [ ] LMK kills and screen-off drain must not regress against the 2026-11-23 baseline.
+
+## P19 — Malformed SMS timestamp (month 0)
+**Status:** fixed in code (`frameworks/base`), device-unverified. **Severity:** low.
+**Summary:** 96 lines at 17:17:12 (capture E): `SmsMessage: Invalid timestamp` →
+`java.time.DateTimeException: Invalid value for MonthOfYear (valid values 1 - 12): 0`.
+The PDU's SCTS is invalid, so `getSCTimestampMillis()` returned 0 (message dated 1970) and
+every parse dumped a stack trace into the radio buffer.
+**Fix:** `patches/frameworks/base.patch` makes the parser fall back to
+`System.currentTimeMillis()` and log one warning instead of a stack trace. The PDU stays
+malformed; only its effect on the message date changes.
+- [x] Parser change in the kit patch.
+- [ ] Receive SMS from the same sender; `logcat -b radio` must show no stack trace.
+- [ ] Message list must show the receive date, not 1970.
+
 ---
 
 ## Legacy items
@@ -297,14 +339,15 @@ required. All `[x]` marks mean the code/patch is committed; none mean hardware-v
 | Boot reason | `reboot,hardware_reset` (user power cycle) |
 | Crashes | 0 ANR, 0 FATAL, 0 watchdog kills |
 
-**C1. `dexopt_chroot_setup` aborted once (tombstone).** `Check failed:
+**C1. `dexopt_chroot_setup` aborts on every shutdown/reboot (tombstone).** `Check failed:
 !OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`,
 SIGABRT, uid 1082, ppid 1. ART's pre-reboot dexopt copies the partition layout into a
 chroot and bind-mounts `system_ext/lib`; on this device there are no dynamic partitions,
 so `/system_ext` is a symlink into `/system`, and the target is a symlink's child. The
 check refuses that and the process aborts. Effect: **pre-reboot dexopt is skipped after
-an update** (one tombstone per update, no crash loop). Deliberately **not** patched: the
-fix lives in ART's chroot plumbing (`dexopt_chroot_setup.cc`, `BindMount`), where a
+an update and at every reboot**; capture E has three tombstones (05:15, 06:50, 08:51 on
+2026-11-20) matching its three shutdown checkpoints, not a one-off and no crash loop.
+Deliberately **not** patched: the fix lives in ART's chroot plumbing (`dexopt_chroot_setup.cc`, `BindMount`), where a
 symlinked parent has to be resolved before mounting; a blind C++ change to a core
 runtime that cannot be compile-tested outside the build is a worse trade than one
 skipped dexopt pass. The first-boot `speed-profile` hook below is the compensation and
@@ -395,3 +438,89 @@ File: `bugreports/bugreport-doha-CP2A.260605.016-2026-11-20-07-07-57.zip`.
 - **Verified live on `1795135461`:** `/data` mounted with `nodiscard`, `SwapTotal 4194300 kB`
   (4 GB zram), `smb5` `prop 4` log spam gone. `doha-dexopt-once` still absent from `init.svc.*`
   (tracked in `docs/TODO.md`).
+
+## P20 — Sound profile returns to "General" (ringing) after reboot
+**Status:** open, needs a capture. **Severity:** medium (user-visible, silent alarms/calls risk).
+**Summary:** set the phone to **Vibrate**, reboot, and it comes back on **General / ring**. This
+tree has no LineageOS System Profiles (`class ProfileManager` is absent from `frameworks/base`),
+so the setting involved is the ringer mode, `Settings.Global.MODE_RINGER`
+(`0` silent, `1` vibrate, `2` normal) — the Developer-options/Sound-panel "sound profile".
+**Where it lives:** `AudioService.systemReady()` reads the stored value with
+`AudioManager.RINGER_MODE_NORMAL` as default, so a missing row is indistinguishable from "ring"
+(`services/core/java/com/android/server/audio/AudioService.java:3521`); written back at `:3532`
+and `:11850` on every change. `DevicePolicyManagerService:743` still lists `MODE_RINGER` as a
+deprecated global setting, so a device policy can also drive it.
+**Two distinct causes, told apart by how often it happens:**
+- *Once, on the first boot after a flash/update:* expected AOSP behaviour — the settings upgrade
+  step `v119: Reset zen + ringer mode` (`SettingsProvider.UpgradeController#onUpgradeLocked`)
+  writes `MODE_RINGER` back to the default when the settings database comes from version 118.
+  Not a defect, but it should not repeat.
+- *On every reboot:* the value is not persisting. Either nothing writes it before shutdown, or
+  something rewrites it during boot after `AudioService` restores it (policy, vendor audio HAL
+  init, or a crash in `AudioService`/`NotificationManagerService`). This is the case to fix with
+  a patch; nothing in the current 30 patches touches ringer mode, so it is inherited behaviour.
+**Evidence needed (no capture exists yet):**
+- [ ] `adb shell settings get global mode_ringer` → reboot → the same command again
+  (`1` before and `2` after proves it is being reset, not lost).
+- [ ] `adb shell dumpsys audio | grep -i ringer` before and after the reboot.
+- [ ] `adb logcat -b all -v time | grep -iE "ringer|AudioService|mode_ringer"` across the reboot.
+- [ ] `adb shell settings list global | grep -iE "mode_ringer|zen_mode"` to see whether a
+  `zen_mode` write lands on top of it.
+- [ ] Confirm it happens with a third-party launcher/notification app out of the picture.
+
+Note: the workspace cannot take this capture itself — `bugreportz` is refused for app uid
+(`Failed to connect to dumpstatez service`, no `DUMP` permission), there is no root, and
+`adb pair` over Wireless debugging fails with `protocol fault (couldn't read status message)`
+when handed the port from the main screen instead of the pairing dialog.
+
+## P21 — Pre-reboot dexopt aborts on every update (4 tombstones)
+**Status:** open, needs a decision. **Severity:** medium (first boot after an update recompiles on demand).
+**Summary:** all four tombstones in capture F (2026-11-27 14:25) are the same native abort:
+
+```
+pid 18604/13866/12896/30619  >>> /apex/com.android.art/bin/dexopt_chroot_setup <<<
+signal 6 (SIGABRT), code -1 (SI_QUEUE)
+Abort message: 'Check failed: !OR_RETURN(IsSelfOrParentSymlink(target))
+                 /mnt/pre_reboot_dexopt/chroot/system_ext/lib'
+  #04 dexopt_chroot_setup ... BindMount()
+```
+
+`dalvik.vm.enable_pr_dexopt=true` and `pm.dexopt.ab-ota=speed-profile` are set, so system_server
+tries to AOT-compile the *new* build before rebooting for an OTA. Each attempt dies in
+`art/dexopt_chroot_setup/dexopt_chroot_setup.cc:183/206`, which refuse to bind-mount onto a path
+whose parent is a symlink (`IsSelfOrParentSymlink`, `:148`).
+**Cause:** this device has no separate `system_ext`/`product` partition — the build emits
+`/system_ext -> /system/system_ext` and `/product -> /system/product` (verified on the running
+ROM), and the chroot inherits those symlinks from the root mount, so the target
+`chroot/system_ext/lib` is a symlink. Pre-reboot dexopt therefore never runs, and the update
+pays the compile on first boot instead — the "feels slow after updating" symptom.
+**Fix, two options:**
+- [ ] ART patch (`patches/art.patch`): resolve a symlinked bind target and mount/umount the
+  resolved path (`IsSelfOrParentSymlink` already computes the real path via
+  `/proc/self/fd`, it just discards it), so pre-reboot dexopt works on retrofit-partition
+  devices.
+- [ ] Cheap alternative: `dalvik.vm.enable_pr_dexopt=false` in the device properties — no more
+  tombstones, but no pre-reboot compilation either (current effective behaviour).
+- [ ] Verify either way: after an OTA, `pm bg-dexopt-job` is not needed and first boot does not
+  sit in `dex2oat`; no new tombstone in `/data/tombstones` after an update.
+
+## P22 — `persist.debug.wfd.enable` rejected: Wi-Fi Display flag never applied
+**Status:** open, code-fix identified. **Severity:** low/medium (casting).
+**Summary:** capture F, boot 2.129 s: `init: Do not have permissions to set
+'persist.debug.wfd.enable' to '1' in property file '/vendor/build_doha.prop': SELinux permission
+check failed (source_context=u:r:vendor_init ...)`. The Motorola vendor prop file sets it, but
+`vendor_init` may not write a `system_prop`-labelled property, so the flag stays off and Wi-Fi
+Display support is decided without it.
+**Fix:** set it from the system side instead — `PRODUCT_PROPERTY_OVERRIDES +=
+persist.debug.wfd.enable=1` in `patches/device/motorola/amogus_doha.patch` (or `targets.patch`),
+which writes `/system/build.prop` as `init`.
+- [ ] After flashing: `getprop persist.debug.wfd.enable` is `1`, and the boot log has no
+  "Do not have permissions to set 'persist.debug.wfd.enable'".
+- [ ] Enable "Wireless display" in Cast/Screen cast; the device advertises over Wi-Fi Display.
+
+## P23 — Vendor prop typo `ro.product.bevice`
+**Status:** open, cosmetic. **Severity:** none (log noise only).
+**Summary:** same vendor prop file sets `ro.product.bevice` (missing `d`), which SELinux also
+rejects. It never had an effect; the property that matters, `ro.product.device`, comes from the
+device tree.
+**Fix:** drop or correct the line where the vendor props are generated; no behaviour change.

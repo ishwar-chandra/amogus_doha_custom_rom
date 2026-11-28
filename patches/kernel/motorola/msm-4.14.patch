@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/vendor/amogus_defconfig
-index 2ac915b04..866954d2d 100644
+index d4a6e5f610db..d44033d337e6 100644
 --- a/arch/arm64/configs/vendor/amogus_defconfig
 +++ b/arch/arm64/configs/vendor/amogus_defconfig
 @@ -179,6 +179,7 @@ CONFIG_DEFAULT_USE_ENERGY_AWARE=y
@@ -10,7 +10,16 @@ index 2ac915b04..866954d2d 100644
  CONFIG_RD_GZIP=y
  CONFIG_RD_BZIP2=y
  CONFIG_RD_LZMA=y
-@@ -5286,6 +5287,7 @@ CONFIG_SDFAT_UEVENT=y
+@@ -4621,7 +4622,7 @@ CONFIG_MSM_PIL_SSR_GENERIC=y
+ CONFIG_SETUP_SSR_NOTIF_TIMEOUTS=y
+ CONFIG_SSR_SYSMON_NOTIF_TIMEOUT=20000
+ CONFIG_SSR_SUBSYS_NOTIF_TIMEOUT=20000
+-CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y
++# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set
+ CONFIG_MSM_BOOT_STATS=y
+ # CONFIG_MSM_BOOT_TIME_MARKER is not set
+ # CONFIG_MSM_CORE_HANG_DETECT is not set
+@@ -5289,6 +5290,7 @@ CONFIG_SDFAT_UEVENT=y
  # Pseudo filesystems
  #
  CONFIG_PROC_FS=y
@@ -18,8 +27,42 @@ index 2ac915b04..866954d2d 100644
  # CONFIG_PROC_KCORE is not set
  CONFIG_PROC_SYSCTL=y
  CONFIG_PROC_PAGE_MONITOR=y
+diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+index 03e3fdcff304..61627988672c 100755
+--- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
++++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
+@@ -963,6 +963,11 @@ static int fts_input_init(struct fts_ts_data *ts_data)
+     __set_bit(EV_KEY, input_dev->evbit);
+     __set_bit(BTN_TOUCH, input_dev->keybit);
+     __set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
++#if FTS_GESTURE_EN
++    /* The double tap is reported as KEY_WAKEUP on this device; input drops a
++     * key that is not in keybit. See fts_gesture_readdata(). */
++    __set_bit(KEY_WAKEUP, input_dev->keybit);
++#endif
+ 
+     if (pdata->have_key) {
+         FTS_INFO("set key capabilities");
+@@ -1849,6 +1854,17 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
+         FTS_ERROR("create fts workqueue fail");
+     }
+ 
++#if FTS_GESTURE_EN
++    /*
++     * Gesture suspend is gated on should_enable_gesture, and the only writer of
++     * that flag is the Moto "dt-gesture" sensor class (fts_sensor_set_enable).
++     * This tree has neither a Moto gesture service nor a Lineage touch HAL, so
++     * the panel was powered down at every suspend and a double tap could never
++     * be seen (doha #76). Default the gesture on; a userspace consumer can
++     * still disable it by writing 0 to that sensor's enable node.
++     */
++    ts_data->should_enable_gesture = true;
++#endif
+     spin_lock_init(&ts_data->irq_lock);
+     mutex_init(&ts_data->report_mutex);
+     mutex_init(&ts_data->bus_lock);
 diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
-index b70156a71..1dddc40ff 100755
+index b70156a71f98..1dddc40ff13f 100755
 --- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 +++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_flash.c
 @@ -265,8 +265,15 @@ int fts_fw_resume(bool need_reset)
@@ -51,269 +94,11 @@ index b70156a71..1dddc40ff 100755
          FTS_INFO("download fw from bootimage");
          ret = fts_fw_download(upg->fw, upg->fw_length, need_reset);
      } else {
-diff --git a/drivers/power/supply/qcom/qpnp-smb2.c b/drivers/power/supply/qcom/qpnp-smb2.c
-index c0e59cec2..36867d5cb 100644
---- a/drivers/power/supply/qcom/qpnp-smb2.c
-+++ b/drivers/power/supply/qcom/qpnp-smb2.c
-@@ -1148,7 +1148,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
- 		val->intval = chg->fcc_stepper_enable;
- 		break;
- 	default:
--		pr_err("batt power supply prop %d not supported\n", psp);
-+		pr_debug("batt power supply prop %d not supported\n", psp);
- 		return -EINVAL;
- 	}
- 
-diff --git a/fs/proc/Kconfig b/fs/proc/Kconfig
-index 08dce22af..967de6417 100644
---- a/fs/proc/Kconfig
-+++ b/fs/proc/Kconfig
-@@ -88,3 +88,14 @@ config PROC_UID
- 	depends on PROC_FS && RT_MUTEXES
- 	help
- 	Provides aggregated per-uid information under /proc/uid.
-+
-+config PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
-+	bool "Append androidboot.force_normal_boot=1 to cmdline if skip_initramfs is present"
-+	default n
-+	help
-+	  If `skip_initramfs` is present in the kernel cmdline, then append
-+	  `androidboot.force_normal_boot=1` to the cmdline string that we present
-+	  in /proc/cmdline.
-+
-+	  This is a workaround to allow recovery-as-boot A/B devices that
-+	  launched with Android 9 to use two-stage init.
-diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
-index 403cbb12a..18c32e2b4 100644
---- a/fs/proc/cmdline.c
-+++ b/fs/proc/cmdline.c
-@@ -3,10 +3,51 @@
- #include <linux/init.h>
- #include <linux/proc_fs.h>
- #include <linux/seq_file.h>
-+#include <asm/setup.h>
-+
-+#if defined(CONFIG_INITRAMFS_IGNORE_SKIP_FLAG) || \
-+    defined(CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT)
-+#define INITRAMFS_STR_FIND "skip_initramf"
-+#endif
-+
-+#ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
-+#define INITRAMFS_STR_REPLACE "want_initramf"
-+#define INITRAMFS_STR_LEN (sizeof(INITRAMFS_STR_FIND) - 1)
-+#endif
-+
-+#ifdef CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
-+#define ANDROID_FORCE_NORMAL_BOOT_STR "androidboot.force_normal_boot=1"
-+#endif
-+
-+static char proc_command_line[COMMAND_LINE_SIZE];
-+
-+static void proc_command_line_init(void) {
-+	char *offset_addr;
-+	char *proc_command_line_tail;
-+
-+	strcpy(proc_command_line, saved_command_line);
-+
-+#ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
-+	offset_addr = strstr(proc_command_line, INITRAMFS_STR_FIND);
-+	if (offset_addr)
-+		memcpy(offset_addr, INITRAMFS_STR_REPLACE, INITRAMFS_STR_LEN);
-+#endif
-+
-+
-+#ifdef CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
-+	if (strstr(saved_command_line, INITRAMFS_STR_FIND)) {
-+		// point proc_command_line_tail to the null terminator of the cmdline
-+		proc_command_line_tail = proc_command_line + strlen(proc_command_line);
-+		memcpy(proc_command_line_tail, " ", 1);
-+		memcpy(proc_command_line_tail + 1, ANDROID_FORCE_NORMAL_BOOT_STR,
-+                        sizeof(ANDROID_FORCE_NORMAL_BOOT_STR));
-+	}
-+#endif
-+}
- 
- static int cmdline_proc_show(struct seq_file *m, void *v)
- {
--	seq_printf(m, "%s\n", saved_command_line);
-+	seq_printf(m, "%s\n", proc_command_line);
- 	return 0;
- }
- 
-@@ -24,6 +65,8 @@ static const struct file_operations cmdline_proc_fops = {
- 
- static int __init proc_cmdline_init(void)
- {
-+	proc_command_line_init();
-+
- 	proc_create("cmdline", 0, NULL, &cmdline_proc_fops);
- 	return 0;
- }
-diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
-index 709a1f6cf..8402cf4b3 100644
---- a/include/uapi/linux/nl80211.h
-+++ b/include/uapi/linux/nl80211.h
-@@ -4273,6 +4273,7 @@ enum nl80211_mfp {
- enum nl80211_wpa_versions {
- 	NL80211_WPA_VERSION_1 = 1 << 0,
- 	NL80211_WPA_VERSION_2 = 1 << 1,
-+	NL80211_WPA_VERSION_3 = 1 << 2,
- };
- 
- /**
-diff --git a/init/initramfs.c b/init/initramfs.c
-index 33fdbdc19..431ea8fa6 100644
---- a/init/initramfs.c
-+++ b/init/initramfs.c
-@@ -614,7 +614,7 @@ static int __init skip_initramfs_param(char *str)
- {
- 	if (*str)
- 		return 0;
--	do_skip_initramfs = 1;
-+	do_skip_initramfs = !IS_ENABLED(CONFIG_INITRAMFS_IGNORE_SKIP_FLAG);
- 	return 1;
- }
- __setup("skip_initramfs", skip_initramfs_param);
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 51ce59fec..270161f59 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -7153,8 +7153,15 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
- 	}
- 
- 	// Restrict boot process writes on boot time (120s)
--	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC)
-+	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC) {
-+		/*
-+		 * Report success so the write is silently ignored. Leaving
-+		 * ret unset returned a stale register value as the byte count,
-+		 * and init.qcom.post_boot.sh aborted on its first write here.
-+		 */
-+		ret = 0;
- 		goto unlock_mutex;
-+	}
- 
- 	/*
- 	 * Cache the old values so that they can be restored
-diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
-index bdddc2ec3..ee6263bf7 100644
---- a/net/wireless/nl80211.c
-+++ b/net/wireless/nl80211.c
-@@ -8238,7 +8238,8 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
- static bool nl80211_valid_wpa_versions(u32 wpa_versions)
- {
- 	return !(wpa_versions & ~(NL80211_WPA_VERSION_1 |
--				  NL80211_WPA_VERSION_2));
-+				  NL80211_WPA_VERSION_2 |
-+				  NL80211_WPA_VERSION_3));
- }
- 
- static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
-diff --git a/scripts/extract-cert.c b/scripts/extract-cert.c
-index dd1a4bd70..1f5bacf6e 100644
---- a/scripts/extract-cert.c
-+++ b/scripts/extract-cert.c
-@@ -119,6 +119,9 @@ int main(int argc, char **argv)
- 		fclose(f);
- 		exit(0);
- 	} else if (!strncmp(cert_src, "pkcs11:", 7)) {
-+#ifdef OPENSSL_NO_ENGINE
-+		ERR(1, "PKCS#11 needs the OpenSSL ENGINE API");
-+#else
- 		ENGINE *e;
- 		struct {
- 			const char *cert_id;
-@@ -141,6 +144,7 @@ int main(int argc, char **argv)
- 		ENGINE_ctrl_cmd(e, "LOAD_CERT_CTRL", 0, &parms, NULL, 1);
- 		ERR(!parms.cert, "Get X.509 from PKCS#11");
- 		write_cert(parms.cert);
-+#endif
- 	} else {
- 		BIO *b;
- 		X509 *x509;
-diff --git a/scripts/sign-file.c b/scripts/sign-file.c
-index 12acc70e5..d8861cd00 100644
---- a/scripts/sign-file.c
-+++ b/scripts/sign-file.c
-@@ -144,6 +144,9 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
- 	EVP_PKEY *private_key;
- 
- 	if (!strncmp(private_key_name, "pkcs11:", 7)) {
-+#ifdef OPENSSL_NO_ENGINE
-+		ERR(1, "PKCS#11 needs the OpenSSL ENGINE API");
-+#else
- 		ENGINE *e;
- 
- 		ENGINE_load_builtin_engines();
-@@ -159,6 +162,7 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
- 			    "Set PKCS#11 PIN");
- 		private_key = ENGINE_load_private_key(e, private_key_name,
- 						      NULL, NULL);
-+#endif
- 		ERR(!private_key, "%s", private_key_name);
- 	} else {
- 		BIO *b;
-diff --git a/usr/Kconfig b/usr/Kconfig
-index 8b4826de1..de9d04f2c 100644
---- a/usr/Kconfig
-+++ b/usr/Kconfig
-@@ -32,6 +32,17 @@ config INITRAMFS_FORCE
- 	  and is useful if you cannot or don't want to change the image
- 	  your bootloader passes to the kernel.
- 
-+config INITRAMFS_IGNORE_SKIP_FLAG
-+	bool "Force initramfs even when skip_initramfs is set"
-+	default n
-+	help
-+	  Ignore skip_initramfs cmdline flag.
-+
-+	  This should only be used if you have no control over cmdline
-+	  passed by your bootloader yet you can't use CMDLINE_FORCE.
-+
-+	  If unsure say N.
-+
- config INITRAMFS_ROOT_UID
- 	int "User ID to map to 0 (user root)"
- 	depends on INITRAMFS_SOURCE!=""
-diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-index 0bd1dd1..876bd5b 100644
---- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-+++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_core.c
-@@ -960,6 +960,11 @@ static int fts_input_init(struct fts_ts_data *ts_data)
-     __set_bit(EV_KEY, input_dev->evbit);
-     __set_bit(BTN_TOUCH, input_dev->keybit);
-     __set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
-+#if FTS_GESTURE_EN
-+    /* The double tap is reported as KEY_WAKEUP on this device; input drops a
-+     * key that is not in keybit. See fts_gesture_readdata(). */
-+    __set_bit(KEY_WAKEUP, input_dev->keybit);
-+#endif
- 
-     if (pdata->have_key) {
-         FTS_INFO("set key capabilities");
-@@ -1846,6 +1851,17 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
-         FTS_ERROR("create fts workqueue fail");
-     }
- 
-+#if FTS_GESTURE_EN
-+    /*
-+     * Gesture suspend is gated on should_enable_gesture, and the only writer of
-+     * that flag is the Moto "dt-gesture" sensor class (fts_sensor_set_enable).
-+     * This tree has neither a Moto gesture service nor a Lineage touch HAL, so
-+     * the panel was powered down at every suspend and a double tap could never
-+     * be seen (doha #76). Default the gesture on; a userspace consumer can
-+     * still disable it by writing 0 to that sensor's enable node.
-+     */
-+    ts_data->should_enable_gesture = true;
-+#endif
-     spin_lock_init(&ts_data->irq_lock);
-     mutex_init(&ts_data->report_mutex);
-     mutex_init(&ts_data->bus_lock);
 diff --git a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
-index 92bcf55..43f2e02 100644
+index d153ada52967..b7ad349eab0e 100755
 --- a/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
 +++ b/drivers/input/touchscreen/focaltech_0flash_mmi_doha/focaltech_gesture.c
-@@ -558,9 +558,25 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
+@@ -649,9 +649,25 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
  
      /* report gesture to OS */
  #if FOCALTECH_DT2W_ENABLE
@@ -341,53 +126,249 @@ index 92bcf55..43f2e02 100644
  
      return 0;
  }
-diff --git a/arch/arm64/configs/vendor/amogus_defconfig b/arch/arm64/configs/vendor/amogus_defconfig
---- a/arch/arm64/configs/vendor/amogus_defconfig
-+++ b/arch/arm64/configs/vendor/amogus_defconfig
-@@ -4618,7 +4618,7 @@
- CONFIG_SETUP_SSR_NOTIF_TIMEOUTS=y
- CONFIG_SSR_SYSMON_NOTIF_TIMEOUT=20000
- CONFIG_SSR_SUBSYS_NOTIF_TIMEOUT=20000
--CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT=y
-+# CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT is not set
- CONFIG_MSM_BOOT_STATS=y
- # CONFIG_MSM_BOOT_TIME_MARKER is not set
- # CONFIG_MSM_CORE_HANG_DETECT is not set
-diff --git a/drivers/rpmsg/qcom_glink_native.c b/drivers/rpmsg/qcom_glink_native.c
-index fcb46a843e47..06d90b89f876 100644
---- a/drivers/rpmsg/qcom_glink_native.c
-+++ b/drivers/rpmsg/qcom_glink_native.c
-@@ -2047,12 +2047,7 @@ struct qcom_glink *qcom_glink_native_probe(struct device *dev,
- 	if (vm_support)
- 		irqflags = IRQF_TRIGGER_RISING;
- 	else
--		/*
--		 * enable_irq_wake() below arms this IRQ as a wake source.
--		 * IRQF_NO_SUSPEND as well makes the IRQ core log
--		 * "misconfigured IRQ" and breaks wakeup accounting.
--		 */
--		irqflags = IRQF_SHARED;
-+		irqflags = IRQF_NO_SUSPEND | IRQF_SHARED;
- 
- 	ret = devm_request_irq(dev, irq,
- 			       qcom_glink_native_intr,
-diff --git a/drivers/soc/qcom/smp2p.c b/drivers/soc/qcom/smp2p.c
-index a5e0cf3b85c3..afb64a86aae4 100644
---- a/drivers/soc/qcom/smp2p.c
-+++ b/drivers/soc/qcom/smp2p.c
-@@ -677,14 +677,9 @@ static int qcom_smp2p_probe(struct platform_device *pdev)
- 		goto unwind_interfaces;
+diff --git a/drivers/power/supply/qcom/qpnp-smb2.c b/drivers/power/supply/qcom/qpnp-smb2.c
+index c0e59cec26a6..36867d5cbc66 100644
+--- a/drivers/power/supply/qcom/qpnp-smb2.c
++++ b/drivers/power/supply/qcom/qpnp-smb2.c
+@@ -1148,7 +1148,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
+ 		val->intval = chg->fcc_stepper_enable;
+ 		break;
+ 	default:
+-		pr_err("batt power supply prop %d not supported\n", psp);
++		pr_debug("batt power supply prop %d not supported\n", psp);
+ 		return -EINVAL;
  	}
  
--	/*
--	 * enable_irq_wake() below arms this IRQ as a wake source.
--	 * IRQF_NO_SUSPEND as well makes the IRQ core log
--	 * "misconfigured IRQ" and breaks wakeup accounting.
--	 */
- 	ret = devm_request_threaded_irq(&pdev->dev, smp2p->irq,
- 					qcom_smp2p_isr, qcom_smp2p_intr,
--					IRQF_ONESHOT,
-+					IRQF_NO_SUSPEND | IRQF_ONESHOT,
- 					"smp2p", (void *)smp2p);
- 	if (ret) {
- 		dev_err(&pdev->dev, "failed to request interrupt\n");
+diff --git a/drivers/power/supply/qcom/qpnp-smb5.c b/drivers/power/supply/qcom/qpnp-smb5.c
+index 082a4bfd17f5..95ee43b1e782 100644
+--- a/drivers/power/supply/qcom/qpnp-smb5.c
++++ b/drivers/power/supply/qcom/qpnp-smb5.c
+@@ -1615,9 +1615,6 @@ static int smb5_batt_get_prop(struct power_supply *psy,
+ 	case POWER_SUPPLY_PROP_PRESENT:
+ 		rc = smblib_get_prop_batt_present(chg, val);
+ 		break;
+-	case POWER_SUPPLY_PROP_ONLINE:
+-		rc = smblib_get_prop_batt_present(chg, val);
+-		break;
+ 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+ 		rc = smblib_get_prop_input_suspend(chg, val);
+ 		break;
+diff --git a/fs/proc/Kconfig b/fs/proc/Kconfig
+index 08dce22afec1..967de641703d 100644
+--- a/fs/proc/Kconfig
++++ b/fs/proc/Kconfig
+@@ -88,3 +88,14 @@ config PROC_UID
+ 	depends on PROC_FS && RT_MUTEXES
+ 	help
+ 	Provides aggregated per-uid information under /proc/uid.
++
++config PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
++	bool "Append androidboot.force_normal_boot=1 to cmdline if skip_initramfs is present"
++	default n
++	help
++	  If `skip_initramfs` is present in the kernel cmdline, then append
++	  `androidboot.force_normal_boot=1` to the cmdline string that we present
++	  in /proc/cmdline.
++
++	  This is a workaround to allow recovery-as-boot A/B devices that
++	  launched with Android 9 to use two-stage init.
+diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
+index 403cbb12a6e9..c3efa14f3522 100644
+--- a/fs/proc/cmdline.c
++++ b/fs/proc/cmdline.c
+@@ -1,12 +1,60 @@
+ // SPDX-License-Identifier: GPL-2.0
+ #include <linux/fs.h>
+ #include <linux/init.h>
++#include <linux/printk.h>
+ #include <linux/proc_fs.h>
+ #include <linux/seq_file.h>
++#include <asm/setup.h>
++
++#if defined(CONFIG_INITRAMFS_IGNORE_SKIP_FLAG) || \
++    defined(CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT)
++#define INITRAMFS_STR_FIND "skip_initramf"
++#endif
++
++#ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
++#define INITRAMFS_STR_REPLACE "want_initramf"
++#define INITRAMFS_STR_LEN (sizeof(INITRAMFS_STR_FIND) - 1)
++#endif
++
++#ifdef CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
++#define ANDROID_FORCE_NORMAL_BOOT_STR "androidboot.force_normal_boot=1"
++#endif
++
++static char proc_command_line[COMMAND_LINE_SIZE];
++
++static void proc_command_line_init(void)
++{
++	char *offset_addr;
++
++	strcpy(proc_command_line, saved_command_line);
++
++#ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
++	offset_addr = strstr(proc_command_line, INITRAMFS_STR_FIND);
++	if (offset_addr)
++		memcpy(offset_addr, INITRAMFS_STR_REPLACE, INITRAMFS_STR_LEN);
++#endif
++
++
++#ifdef CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT
++	if (strstr(saved_command_line, INITRAMFS_STR_FIND)) {
++		size_t used = strlen(proc_command_line);
++		/* One byte for the space, then the flag including its NUL. */
++		if (used + 1 + sizeof(ANDROID_FORCE_NORMAL_BOOT_STR) <=
++		    sizeof(proc_command_line)) {
++			proc_command_line[used] = ' ';
++			memcpy(proc_command_line + used + 1,
++			       ANDROID_FORCE_NORMAL_BOOT_STR,
++			       sizeof(ANDROID_FORCE_NORMAL_BOOT_STR));
++		} else {
++			pr_warn("proc: cmdline full, not appending force_normal_boot");
++		}
++	}
++#endif
++}
+ 
+ static int cmdline_proc_show(struct seq_file *m, void *v)
+ {
+-	seq_printf(m, "%s\n", saved_command_line);
++	seq_printf(m, "%s\n", proc_command_line);
+ 	return 0;
+ }
+ 
+@@ -24,6 +72,8 @@ static const struct file_operations cmdline_proc_fops = {
+ 
+ static int __init proc_cmdline_init(void)
+ {
++	proc_command_line_init();
++
+ 	proc_create("cmdline", 0, NULL, &cmdline_proc_fops);
+ 	return 0;
+ }
+diff --git a/include/uapi/linux/nl80211.h b/include/uapi/linux/nl80211.h
+index 709a1f6cf8c9..8402cf4b3554 100644
+--- a/include/uapi/linux/nl80211.h
++++ b/include/uapi/linux/nl80211.h
+@@ -4273,6 +4273,7 @@ enum nl80211_mfp {
+ enum nl80211_wpa_versions {
+ 	NL80211_WPA_VERSION_1 = 1 << 0,
+ 	NL80211_WPA_VERSION_2 = 1 << 1,
++	NL80211_WPA_VERSION_3 = 1 << 2,
+ };
+ 
+ /**
+diff --git a/init/initramfs.c b/init/initramfs.c
+index 69ab7b09a03a..88c20bd8c8ad 100644
+--- a/init/initramfs.c
++++ b/init/initramfs.c
+@@ -614,7 +614,7 @@ static int __init skip_initramfs_param(char *str)
+ {
+ 	if (*str)
+ 		return 0;
+-	do_skip_initramfs = 1;
++	do_skip_initramfs = !IS_ENABLED(CONFIG_INITRAMFS_IGNORE_SKIP_FLAG);
+ 	return 1;
+ }
+ __setup("skip_initramfs", skip_initramfs_param);
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 51ce59fec545..b71686c4623c 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -7152,9 +7152,12 @@ static int __sched_updown_migrate_handler(struct ctl_table *table, int write,
+ 		goto unlock_mutex;
+ 	}
+ 
+-	// Restrict boot process writes on boot time (120s)
+-	if (ktime_to_us(ktime_get()) < 120 * USEC_PER_SEC)
+-		goto unlock_mutex;
++	/*
++	 * Writes are applied from the first userspace write on. The vendor
++	 * gate used to drop every write in the first 120 s, which silently
++	 * discarded the trinket capacity margins that
++	 * init.qcom.post_boot.legacy.sh writes at sys.boot_completed.
++	 */
+ 
+ 	/*
+ 	 * Cache the old values so that they can be restored
+diff --git a/net/wireless/nl80211.c b/net/wireless/nl80211.c
+index bdddc2ec3311..ee6263bf79fd 100644
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -8238,7 +8238,8 @@ static int nl80211_dump_survey(struct sk_buff *skb, struct netlink_callback *cb)
+ static bool nl80211_valid_wpa_versions(u32 wpa_versions)
+ {
+ 	return !(wpa_versions & ~(NL80211_WPA_VERSION_1 |
+-				  NL80211_WPA_VERSION_2));
++				  NL80211_WPA_VERSION_2 |
++				  NL80211_WPA_VERSION_3));
+ }
+ 
+ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
+diff --git a/scripts/extract-cert.c b/scripts/extract-cert.c
+index dd1a4bd706a2..1f5bacf6ee7b 100644
+--- a/scripts/extract-cert.c
++++ b/scripts/extract-cert.c
+@@ -119,6 +119,9 @@ int main(int argc, char **argv)
+ 		fclose(f);
+ 		exit(0);
+ 	} else if (!strncmp(cert_src, "pkcs11:", 7)) {
++#ifdef OPENSSL_NO_ENGINE
++		ERR(1, "PKCS#11 needs the OpenSSL ENGINE API");
++#else
+ 		ENGINE *e;
+ 		struct {
+ 			const char *cert_id;
+@@ -141,6 +144,7 @@ int main(int argc, char **argv)
+ 		ENGINE_ctrl_cmd(e, "LOAD_CERT_CTRL", 0, &parms, NULL, 1);
+ 		ERR(!parms.cert, "Get X.509 from PKCS#11");
+ 		write_cert(parms.cert);
++#endif
+ 	} else {
+ 		BIO *b;
+ 		X509 *x509;
+diff --git a/scripts/sign-file.c b/scripts/sign-file.c
+index 12acc70e5a7a..d8861cd00cdc 100644
+--- a/scripts/sign-file.c
++++ b/scripts/sign-file.c
+@@ -144,6 +144,9 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
+ 	EVP_PKEY *private_key;
+ 
+ 	if (!strncmp(private_key_name, "pkcs11:", 7)) {
++#ifdef OPENSSL_NO_ENGINE
++		ERR(1, "PKCS#11 needs the OpenSSL ENGINE API");
++#else
+ 		ENGINE *e;
+ 
+ 		ENGINE_load_builtin_engines();
+@@ -159,6 +162,7 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
+ 			    "Set PKCS#11 PIN");
+ 		private_key = ENGINE_load_private_key(e, private_key_name,
+ 						      NULL, NULL);
++#endif
+ 		ERR(!private_key, "%s", private_key_name);
+ 	} else {
+ 		BIO *b;
+diff --git a/usr/Kconfig b/usr/Kconfig
+index 8b4826de1189..de9d04f2c0be 100644
+--- a/usr/Kconfig
++++ b/usr/Kconfig
+@@ -32,6 +32,17 @@ config INITRAMFS_FORCE
+ 	  and is useful if you cannot or don't want to change the image
+ 	  your bootloader passes to the kernel.
+ 
++config INITRAMFS_IGNORE_SKIP_FLAG
++	bool "Force initramfs even when skip_initramfs is set"
++	default n
++	help
++	  Ignore skip_initramfs cmdline flag.
++
++	  This should only be used if you have no control over cmdline
++	  passed by your bootloader yet you can't use CMDLINE_FORCE.
++
++	  If unsure say N.
++
+ config INITRAMFS_ROOT_UID
+ 	int "User ID to map to 0 (user root)"
+ 	depends on INITRAMFS_SOURCE!=""

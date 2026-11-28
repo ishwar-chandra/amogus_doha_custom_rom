@@ -18,8 +18,10 @@
 #   nr_requests     128              init.amogus.rc, kernel default
 #   SwapTotal       ~4096 MB         patches/device/motorola/amogus.patch (fstab zramsize)
 #                                    override with ZRAM_MB=<n> when the kit value changes
-#   swappiness      100              post_boot.legacy.sh configure_memory_parameters
-#   page-cluster    0                init.aospa.perf.common.rc on post-fs-data
+#   /data           nodiscard        patches/device/motorola/amogus.patch (fstab)
+#   swappiness, page-cluster, watermark_scale_factor
+#                   vendor-owned     reported as information, never graded as ROM regressions
+#   zram0 comp_algorithm             reported when readable; unreadable is SKIP
 set -uo pipefail
 
 READAHEAD_KB=${READAHEAD_KB:-128}
@@ -57,13 +59,36 @@ val() {
 # exist PATH -> 0 if the node can be read
 exist() { [ -n "$(val "$1")" ]; }
 
+# node_exists PATH -> 0 if the path exists, including directories such as
+# /sys/module/sched_walt (never cat a directory through val()).
+node_exists() {
+  if [ -n "$FAKE_ROOT" ]; then
+    [ -e "$FAKE_ROOT$1" ]
+  else
+    [ "$(adb shell "[ -e $1 ] && echo yes" 2>/dev/null | tr -d '\r')" = yes ]
+  fi
+}
+
 # blocked PATH -> 0 if the node exists but this shell cannot read it (root-only)
 blocked() {
-  [ -z "$FAKE_ROOT" ] || return 1
+  if [ -n "$FAKE_ROOT" ]; then
+    [ -e "$FAKE_ROOT$1" ] || return 1
+    [ -r "$FAKE_ROOT$1" ] || return 0
+    return 1
+  fi
   case "$(adb shell "[ -e $1 ] && echo e; [ -r $1 ] || echo d" 2>/dev/null | tr -d '\r')" in
     *d*) return 0 ;;
   esac
   return 1
+}
+
+# dumpsys_text SERVICE -> text, or a fake fixture for PERF_AUDIT_ROOT testing.
+dumpsys_text() {
+  if [ -n "$FAKE_ROOT" ]; then
+    [ -f "$FAKE_ROOT/dumpsys/$1" ] && cat "$FAKE_ROOT/dumpsys/$1"
+  else
+    adb shell dumpsys "$1" 2>/dev/null | tr -d '\r'
+  fi
 }
 
 # expect PATH WANT LABEL [tolerance-style: exact]
@@ -112,7 +137,7 @@ for p in "$POL0" "$POL4"; do
   info "$(basename "$(dirname "$p")") governor=$g min=$(val "$p/scaling_min_freq") max=$(val "$p/scaling_max_freq")" \
        "hispeed=$(val "$p/schedutil/hispeed_freq") hispeed_load=$(val "$p/schedutil/hispeed_load")"
 done
-if [ -n "$(val /sys/module/sched_walt)" ]; then
+if node_exists /sys/module/sched_walt; then
   warn "sched_walt module present; WALT is not compiled in this kernel"
 else
   skip "walt/core_ctl tuning paths absent (CONFIG_SCHED_WALT/CORE_CTL are off)"
@@ -127,22 +152,36 @@ if [ -n "$(val /sys/block/mmcblk0/queue/scheduler)" ]; then
        "rotational=$(val /sys/block/mmcblk0/queue/rotational)" \
        "iostats=$(val /sys/block/mmcblk0/queue/iostats)"
 fi
+DATA_OPTS=$(val /proc/mounts | awk '$2=="/data"{print $4; exit}')
+if [ -z "$DATA_OPTS" ]; then
+  skip "/data mount options not readable"
+else
+  case ",$DATA_OPTS," in
+    *,nodiscard,*) pass "/data mounted nodiscard" ;;
+    *) fail "/data mount options '$DATA_OPTS' lack nodiscard (fstab not applied?)" ;;
+  esac
+fi
 if [ -n "$FAKE_ROOT" ]; then
   DM_LIST=$(ls -d "$FAKE_ROOT"/sys/block/dm-* 2>/dev/null | sed "s|$FAKE_ROOT||")
 else
   DM_LIST=$(adb shell 'ls -d /sys/block/dm-* 2>/dev/null' | tr -d '\r')
 fi
-DM_OK=0 DM_BAD=()
+DM_OK=0 DM_BAD=() DM_UNREAD=()
 for d in $DM_LIST; do
   ra=$(val "$d/queue/read_ahead_kb")
-  [ -n "$ra" ] || continue
+  if [ -z "$ra" ]; then
+    blocked "$d/queue/read_ahead_kb" && DM_UNREAD+=("$d")
+    continue
+  fi
   if [ "$ra" = "$READAHEAD_KB" ]; then DM_OK=$((DM_OK+1)); else DM_BAD+=("$d=$ra"); fi
 done
-if [ ${#DM_BAD[@]} -eq 0 ]; then
-  [ "$DM_OK" -gt 0 ] && pass "all $DM_OK mapped devices read_ahead_kb=$READAHEAD_KB" \
-                     || skip "no dm-* queue nodes visible"
-else
+if [ ${#DM_BAD[@]} -gt 0 ]; then
   fail "dm-* read_ahead_kb mismatch: ${DM_BAD[*]} (want $READAHEAD_KB)"
+else
+  [ "$DM_OK" -gt 0 ] && pass "all $DM_OK readable mapped devices read_ahead_kb=$READAHEAD_KB"
+  [ ${#DM_UNREAD[@]} -gt 0 ] && \
+    skip "${#DM_UNREAD[@]} mapped device queue nodes unreadable (needs root): ${DM_UNREAD[*]}"
+  [ "$DM_OK" -eq 0 ] && [ ${#DM_UNREAD[@]} -eq 0 ] && skip "no dm-* queue nodes visible"
 fi
 
 # ------------------------------------------------------------------ memory
@@ -166,11 +205,22 @@ else
   fail "no swap — zram is not enabled"
 fi
 val /proc/swaps | sed -n '2,5p' | while read -r line; do [ -n "$line" ] && info "swap: $line"; done
-expect /proc/sys/vm/swappiness 100 "vm.swappiness"
-expect /proc/sys/vm/page-cluster 0 "vm.page-cluster"
-expect /proc/sys/vm/watermark_scale_factor 1 "vm.watermark_scale_factor"
+for p in swappiness page-cluster watermark_scale_factor; do
+  v=$(val "/proc/sys/vm/$p")
+  if [ -n "$v" ]; then
+    info "vm.$p=$v (vendor/post-boot owned; informational, not a ROM regression)"
+  else
+    skip "vm.$p not readable"
+  fi
+done
 DS=$(val /sys/block/zram0/disksize)
 [ -n "$DS" ] && info "zram0 disksize $((DS/1024/1024)) MB"
+CA=$(val /sys/block/zram0/comp_algorithm)
+if [ -n "$CA" ]; then
+  info "zram0 comp_algorithm=$CA"
+else
+  skip "zram0 comp_algorithm not readable"
+fi
 MM=$(val /sys/block/zram0/mm_stat)
 if [ -n "$MM" ]; then
   set -- $MM
@@ -183,8 +233,11 @@ P=$(val /proc/pressure/memory | awk '/^some/{print $2}' | sed 's/avg10=//')
   skip "/proc/pressure/memory not readable (CONFIG_PSI is on, needs a live shell)"
 for p in ro.lmk.psi_partial_stall_ms ro.lmk.swap_free_low_percentage ro.lmk.thrashing_limit \
          ro.lmk.thrashing_limit_decay ro.lmk.psi_complete_stall_ms; do
-  v=$(val "/dev/__props__" 2>/dev/null) # placeholder to keep val() shape uniform
-  [ -n "$FAKE_ROOT" ] || v=$(adb shell getprop "$p" 2>/dev/null | tr -d '\r')
+  if [ -n "$FAKE_ROOT" ]; then
+    v=$(cat "$FAKE_ROOT/props/$p" 2>/dev/null | tr -d '\r')
+  else
+    v=$(adb shell getprop "$p" 2>/dev/null | tr -d '\r')
+  fi
   [ -n "$v" ] && info "$p=$v"
 done
 
@@ -218,6 +271,28 @@ else
   skip "no skin*/quiet_therm* zone readable — skin headroom unknown"
 fi
 [ "$MAXT" -gt 0 ] && info "hottest zone ${MAXZ} $((MAXT/1000))C (bus/cpu limiter, not the skin threshold)"
+TH=$(dumpsys_text thermalservice)
+if [ -n "$TH" ]; then
+  TSTAT=$(printf '%s\n' "$TH" | awk 'tolower($1)=="thermal" && tolower($2)=="status:"{print $3; exit}')
+  if [ -n "$TSTAT" ]; then
+    if [ "$TSTAT" -gt 0 ] 2>/dev/null; then
+      warn "framework Thermal Status: $TSTAT (throttling)"
+    else
+      info "framework Thermal Status: $TSTAT"
+    fi
+  else
+    skip "framework Thermal Status not reported by dumpsys thermalservice"
+  fi
+  FWSKIN=$(printf '%s\n' "$TH" | \
+    sed -n '/mName=skin/!d; s/.*mValue=\([0-9.]*\).*/\1/p' | tail -1)
+  if [ -n "$FWSKIN" ]; then
+    info "framework skin temperature ${FWSKIN}C"
+  else
+    skip "framework skin temperature not reported by dumpsys thermalservice"
+  fi
+else
+  skip "dumpsys thermalservice not readable"
+fi
 if [ -z "$FAKE_ROOT" ]; then
   for svc in thermal-engine android.hardware.thermal@2.0-service.qti \
              android.hardware.thermal-service.qti; do

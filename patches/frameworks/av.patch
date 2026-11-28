@@ -1,0 +1,43 @@
+diff --git a/services/audioflinger/AudioFlinger.cpp b/services/audioflinger/AudioFlinger.cpp
+index 5b4188e..20fdad7 100644
+--- a/services/audioflinger/AudioFlinger.cpp
++++ b/services/audioflinger/AudioFlinger.cpp
+@@ -2120,8 +2120,11 @@ void AudioFlinger::registerClient(const sp<media::IAudioFlingerClient>& client)
+             ALOGW_IF(status != NO_ERROR, "%s: linkToDeath returned %d",
+                     __func__, status);
+             status = binder->addFrozenStateChangeCallback(notificationClient);
+-            ALOGW_IF(status != NO_ERROR, "%s: addFrozenStateChangeCallback returned %d",
+-                    __func__, status);
++            // The frozen-state callback is optional. The doha 4.14 kernel has no
++            // binder frozen-state support and returns INVALID_OPERATION (-ENOSYS);
++            // only unexpected failures are worth a warning.
++            ALOGW_IF(status != NO_ERROR && status != INVALID_OPERATION,
++                    "%s: addFrozenStateChangeCallback returned %d", __func__, status);
+         }
+     }
+ 
+diff --git a/services/oboeservice/AAudioClientTracker.cpp b/services/oboeservice/AAudioClientTracker.cpp
+index 26a54f6..9e48725 100644
+--- a/services/oboeservice/AAudioClientTracker.cpp
++++ b/services/oboeservice/AAudioClientTracker.cpp
+@@ -90,8 +90,9 @@ aaudio_result_t AAudioClientTracker::registerClient(pid_t pid,
+         ALOGW_IF(status != NO_ERROR, "registerClient() linkToDeath = %d\n", status);
+         if (com::android::media::audioserver::mmap_freezer_awareness()) {
+             status = binder->addFrozenStateChangeCallback(notificationClient);
+-            ALOGW_IF(status != NO_ERROR, "registerClient() addFrozenStateChangeCallback = %d\n",
+-                     status);
++            // Optional API; the doha 4.14 kernel returns INVALID_OPERATION (-ENOSYS).
++            ALOGW_IF(status != NO_ERROR && status != INVALID_OPERATION,
++                     "registerClient() addFrozenStateChangeCallback = %d\n", status);
+         }
+         return AAudioConvert_androidToAAudioResult(status);
+     } else {
+@@ -105,7 +106,7 @@ aaudio_result_t AAudioClientTracker::registerClient(pid_t pid,
+             } else {
+                 if (com::android::media::audioserver::mmap_freezer_awareness()) {
+                     status = binder->addFrozenStateChangeCallback(notificationClient);
+-                    if (status != NO_ERROR) {
++                    if (status != NO_ERROR && status != INVALID_OPERATION) {
+                         ALOGE("registerClient() addFrozenStateChangeCallback status = %d\n",
+                               status);
+                     }

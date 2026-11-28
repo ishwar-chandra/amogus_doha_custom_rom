@@ -9,16 +9,20 @@ set of patch files, and a script that syncs the upstream sources, applies
 the patches, and builds an unofficial ROM for the Motorola Moto G8 Plus
 (`doha`, device name `amogus_doha`, Snapdragon 665, 4.14 kernel).
 
-- Current work is on branch `crdroid-android-17`: **crDroid 13**
-  (Android 17), built from crDroid's manifest branch `17.0`.
-- `lineage-24.0` is the LineageOS 24.0 (Android 17) build of the same
-  device work; `main` is LineageOS 23.2 (Android 16). Both are kept for
-  reference. Changes made on `main` were merged forward into
-  `lineage-24.0`; do not assume the reverse, and do not merge crDroid
-  work back into them.
+- `crdroid-android-17` is the **crDroid 13** (Android 17) integration branch,
+  built from crDroid's manifest branch `17.0`; `performance-tuning` is the
+  daily-work branch. Merges go `performance-tuning` -> `crdroid-android-17`
+  after device testing.
+- `lineage-24.0` is the LineageOS 24.0 (Android 17) build of the same device
+  work. There is no `main`; do not merge crDroid work back into the LineageOS
+  lines.
 - `README.md` is the authoritative, detailed document: install/update
   steps, known issues, and — importantly — one section per fix explaining
-  why it exists. Read the relevant section before changing a patch.
+  why it exists. `AGENTS.md` is the compact repo mechanics guide.
+- `tools/gcp-build.sh` discovers the project/VM from `gcloud config`;
+  `logs [--full]` formats the tail or streams the raw log. The 2026-11-28
+  build carries the DAX3 Dolby Atmos stack from the pinned
+  `vendor/motorola-dolby` project and removes AudioFX; see README.
 
 The Android sources themselves are never committed here. Even the device
 trees and vendor blobs are third-party (Aldair402, moto-common); the value
@@ -148,8 +152,8 @@ inherits it first, so the mechanism works unchanged. Never distribute an
 
 Kernel work is split: doha's kernel is our fork
 `ishwar-chandra/android_kernel_motorola_msm-4.14`. `lts` carries the
-4.14.357 baseline; the build currently pins `73b7957` on
-`doha-kernel-fixes-2026-11-19`. Either add the change to
+4.14.357 baseline; the build currently pins `def1be59` on
+`lts`. Either add the change to
 `patches/kernel/motorola/msm-4.14.patch` or land it in the fork and bump
 the kernel project's revision in `snippets/doha.xml`.
 
@@ -171,8 +175,11 @@ the kernel project's revision in `snippets/doha.xml`.
   `crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`.
 - A `repo sync` (without `SKIP_SYNC=1`) overwrites local changes in every
   project, patched or not.
-- The released build is `userdebug`, unsigned (AOSP test keys), no GApps, and
-  no longer carries the docker-lineage-cicd SafetyNet patch: crDroid's
+- The released build is `userdebug`, unsigned (AOSP test keys), no GApps.
+  crDroid sets `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so both `userdebug` and
+  `user` report `ro.build.type=user`/`ro.debuggable=0`; there is no `adb root`
+  or shell `dmesg`, and pstore is read from recovery. It also no longer carries
+  the docker-lineage-cicd SafetyNet patch: crDroid's
   `system/core` spoofs SafetyNet itself (`SPOOF_SAFETYNET=1` in
   `init/Android.bp`). That spoof does not make Play Integrity pass on doha;
   the vendor keymaster refuses attestation (`-10003`). See the README section

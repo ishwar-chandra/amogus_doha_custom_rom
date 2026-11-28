@@ -16,7 +16,7 @@ The manifest is built on crDroid's own
 ([`crdroidandroid/android`](https://github.com/crdroidandroid/android),
 branch `17.0`): `snippets/crdroid.xml` and `snippets/lineage.xml` are
 copied from there unchanged, `default.xml` is their `default.xml` with
-our remotes and an extra include, and `snippets/doha.xml` holds the 27
+our remotes and an extra include, and `snippets/doha.xml` holds the 28
 doha projects (device, vendor, kernel, HALs and the AOSPA trees the port
 uses). crDroid's vendor tree is checked out at `vendor/lineage`, so the
 device trees' `vendor/lineage/config/*.mk` inheritance works as-is.
@@ -27,15 +27,16 @@ patches that get that port building and booting on Android 17.
 
 The kernel is our fork of Christiaan's `android_kernel_motorola_msm-4.14`:
 [`ishwar-chandra/android_kernel_motorola_msm-4.14`](https://github.com/ishwar-chandra/android_kernel_motorola_msm-4.14),
-currently pinned to `73b7957` on branch `doha-kernel-fixes-2026-11-19`; `lts` carries the
-4.14.357 baseline. Aldair402's kernel is Motorola's 4.14.190. Ours merges the
+currently pinned to `def1be59` on branch `lts`, which carries the
+4.14.357 baseline on top of the `fix` work. Aldair402's kernel is Motorola's 4.14.190. Ours merges the
 4.14 LTS updates up to 4.14.357 (OpenELA) on top of it, so it carries
 several years of upstream security and stability fixes. `uname -r` shows
 `4.14.357-openela+`.
 
 The LineageOS 24.0 (Android 17) version of this ROM, with the same
-device work, is on the `lineage-24.0` branch. The LineageOS 23.2
-(Android 16) version is on `main`. This branch is `crdroid-android-17`.
+device work, is on the `lineage-24.0` branch. There is no `main` branch:
+this checkout is `crdroid-android-17` (integration) or `performance-tuning`
+(daily work), depending on what is checked out.
 
 New here? [`docs/GUIDE.md`](docs/GUIDE.md) walks through a build end to end: local and
 GCP, flashing, GApps, releasing and troubleshooting.
@@ -95,6 +96,15 @@ docker run --rm -it \
 
 Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 
+For GCP, `tools/gcp-build.sh` reads the project from `gcloud config` and
+discovers the running VM (preferring `labels.doha-build=1`; `create` sets
+it). `NAME`/`ZONE` select one when two VMs are active; no instance name is
+hardcoded.
+
+Both `build.sh` and `tools/gcp-build.sh` build the branch checked out in the
+clone: from `performance-tuning` they build that branch, and from
+`crdroid-android-17` they build the release line. There is no silent default.
+
 `build.sh` does the following:
 
 1. Runs `repo init` against `default.xml` on the branch checked out in this
@@ -111,13 +121,14 @@ Without Docker, run `./build.sh ~/android/crdroid-17.0` from the clone.
 3. Creates the empty file `device/motorola/amogus_doha/kernel-headers`
    (see [the kernel headers fix](#kernel-headers)).
 4. Runs `breakfast amogus_doha userdebug` and `mka bacon`.
-5. Copies the zip, `boot.img`, `dtbo.img` and `vbmeta.img` into
-   `~/doha/zips`, with a `.sha256sum` file.
+5. Copies the zip and its `-boot.img`, `-dtbo.img` and `-vbmeta.img`
+   (prefixed with the zip name) into `~/doha/zips`, with a `.sha256sum`
+   file.
 
 The output is
 `~/doha/zips/crDroidAndroid-17.0-<date>-amogus_doha-v13.1.zip`, next to
-plain `boot.img`, `dtbo.img` and `vbmeta.img`, plus the zip's
-`.sha256sum` file. The
+`crDroidAndroid-17.0-<date>-amogus_doha-v13.1-boot.img`, `-dtbo.img` and
+`-vbmeta.img`, plus the zip's `.sha256sum` file. The
 copies are worth keeping: crDroid's `bacon` renames the OTA zip in `out/`
 to that `crDroidAndroid-*.zip` name and deletes the target-files
 intermediates it was built from, so `build.sh` takes the images straight
@@ -139,6 +150,17 @@ reads `standard/doha.json`, a debloat build reads `debloat/doha.json`. The feed
 is generated automatically by `tools/gcp-build.sh finish`; it requires the
 public `ishwar-chandra/doha-ota` repo and a token with write access to it. Until
 that one-time setup exists, the Updater has nothing to download.
+
+A third feed, `test/`, is the maintainer channel. `OTA_CHANNEL=test` bakes it
+into a standard build (`DEBLOAT=0`) and `finish` writes `test/doha.json`; only a
+device that installed that build once follows it. Install the first one from
+System Update -> **Install local update** (same `UpdateEngine` path as an OTA,
+so GApps survive), not by recovery sideload (they do not). After testing,
+`tools/gcp-build.sh promote <tag>` copies the tested entry into
+`standard/doha.json` without rebuilding, so stable devices receive exactly the
+artifact that was tested; their Updater ignores it once it is already installed.
+The `-debloat` suffix guard is unchanged, which is why the test channel carries
+standard builds only.
 
 The debloat variant also hides the settings entries that pointed at the removed
 apps. `packages/apps/crDroidSettings.patch` walks the preference tree once it is
@@ -164,7 +186,10 @@ reports throttling (the default is 40). With Docker, pass these as
 `-e NAME=value`.
 
 The build is `userdebug`, unsigned (it uses the AOSP test keys) and has no
-GApps; you can add them yourself (see Installing).
+GApps; you can add them yourself (see Installing). crDroid sets
+`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so both `userdebug` and `user` report
+`ro.build.type=user` and `ro.debuggable=0`: there is no `adb root` or shell
+`dmesg`; read pstore from recovery.
 
 ### Pinning the sources
 
@@ -224,8 +249,8 @@ boot/dtbo/vbmeta and sideloads the zip.
 ./tools/flash.sh --dry-run  # print the fastboot/adb commands
 ```
 
-1. `fastboot flash boot <boot.img>` and `fastboot flash dtbo
-   <dtbo.img>`. This is only needed when you're coming from stock or a
+1. `fastboot flash boot <zip-name>-boot.img` and `fastboot flash dtbo
+   <zip-name>-dtbo.img`. This is only needed when you're coming from stock or a
    different ROM, including the LineageOS builds of this device. Recovery
    runs with the dtbo of the current slot, and with stock's, the
    touchscreen doesn't work in recovery on phones with the Tianma
@@ -295,7 +320,7 @@ Magisk app and flash it:
 
 1. Install the Magisk app (31.1 or newer) from
    [its GitHub releases](https://github.com/topjohnwu/Magisk/releases).
-2. Copy `boot.img` from the release you have installed to the phone. In
+2. Copy the release's `<zip-name>-boot.img` to the phone. In
    Magisk, tap **Install**, choose **Patch firmware / image** and select
    that file. The app saves `magisk_patched-*.img` in Downloads.
 3. Copy the patched image to your computer and flash it to the active
@@ -352,7 +377,9 @@ device; those items still have to be re-run on the crDroid releases:
 
 NFC, the sensors and GNSS start but haven't been tried by hand. Not
 tested: the Himax and Novatek touch panels, the Egistec fingerprint
-sensor and the dual-SIM XT2019-2.
+sensor and the dual-SIM XT2019-2. The 2026-11-27 build adds the Dolby
+Atmos stack below; it is device-untested, and AudioFX is removed from
+that product.
 
 Known issues:
 
@@ -389,17 +416,28 @@ Known issues:
 ./tools/device-check.sh                 # PASS/WARN/FAIL health check over adb, exit code = failures
 adb bugreport ./br.zip                  # from the phone, while the problem is happening
 ./tools/bugreport-scan.py ./br.zip      # crash signatures + errors grouped by tag
+./tools/bugreport-scan.py ./br.zip --area drm  # DRM, Widevine, and keymaster evidence
 ./tools/app-trace.sh com.anthropic.claude # one app: its logs, screenshot, activity state
 ./tools/perf-audit.sh                   # are the kit's perf knobs actually in effect?
-./tools/perf-multitask.sh               # 8-app cycle: resident count + reload times
+./tools/perf-multitask.sh --repeat 3    # 8-app cycle: resident count + reload times
 ./tools/dexopt-all.sh                   # compile all apps now (speed-profile)
 ./tools/gms-trim.sh --list              # GMS background work, grouped; --restore undoes it
 ./tools/integrity-setup.sh status       # Play Integrity: GApps, PIF, keybox, boot props
 ```
 
+`tools/gcp-build.sh logs` formats the remote build log while it streams: phase
+lines are cyan, warnings yellow, failures red, ninja percentages become a
+progress bar, and the TARGET_*/SOONG_* environment dump is hidden. Color is
+automatic on a TTY; use `FORCE_COLOR=1` when piping, or `NO_COLOR=1` to keep
+the layout without ANSI.
+
+`tools/gcp-build.sh logs --full` (also `--raw`/`-f`) prints the entire raw log
+from the beginning, with no filtering, dedupe, or wrapping.
+
 `bugreport-scan.py` drops the tags dumpstate itself produces and groups the rest, so the output is the
 handful of lines worth reading instead of 40 MB of dumpsys; it also flags dump artifacts (resource-id
-noise that only appears inside the dump). `docs/BUGREPORT.md` is the record of what that sweep found.
+noise that only appears inside the dump). Use `--area drm`, `--area performance`, or `--area power`
+for the focused evidence groups. `docs/BUGREPORT.md` is the record of what that sweep found.
 
 ## Differences from an official crDroid device
 
@@ -411,11 +449,12 @@ requirements](https://github.com/LineageOS/charter/blob/main/device-support-requ
 (which crDroid builds on), it differs in these ways:
 
 - **OTA is self-hosted.** The build does not use crDroid's OTA repo; it reads
-  `ishwar-chandra/doha-ota` at `<channel>/doha.json`. `tools/gcp-build.sh
-  finish` publishes the release and updates that feed, so a standard build
-  only offers standard zips and a debloat build only debloat zips. The feed
-  repo and its write token are a one-time setup; without them, update with
-  `adb sideload` as described under Installing.
+  `ishwar-chandra/doha-ota` at `<channel>/doha.json` (`standard`, `debloat`, or
+  the maintainer-only `test`). `tools/gcp-build.sh finish` publishes the release
+  and updates that feed, so a standard build only offers standard zips and a
+  debloat build only debloat zips; `promote <tag>` moves a tested test build into
+  standard without a rebuild. The feed repo and its write token are a one-time
+  setup; without them, update with `adb sideload` as described under Installing.
 - **Firmware is not managed for you.** The zip doesn't contain Motorola
   firmware, and the install steps don't copy it to the second slot. Both
   slots should run the latest stock firmware for doha (Android 10)
@@ -444,7 +483,7 @@ first section.
 ### crDroid 13
 
 - **The manifest is crDroid's.** `default.xml` is crDroid's own manifest
-  with our remotes, plus `snippets/doha.xml`, which holds the 27 doha
+  with our remotes, plus `snippets/doha.xml`, which holds the 28 doha
   projects. `snippets/crdroid.xml` and `snippets/lineage.xml` are
   crDroid's, unmodified. crDroid maps `vendor/lineage` and
   `device/lineage/sepolicy` to its own forks at those paths, so the
@@ -664,6 +703,13 @@ releases reverted that bionic commit. Our kernel fork now backports
 unpatched again and every other caller of the syscall works too. clatd
 (464XLAT on IPv6-only mobile networks) is started the same way.
 
+**`/proc/cmdline` bounds** (`kernel/motorola/msm-4.14`). The
+`CONFIG_PROC_CMDLINE_APPEND_ANDROID_FORCE_NORMAL_BOOT` helper appended
+`androidboot.force_normal_boot=1` to a fixed `COMMAND_LINE_SIZE` (4 KiB) buffer
+without checking the remaining space. It now verifies the space first and logs
+instead of overflowing. Doha's bootloader cmdline is far below the limit, so
+this was latent; the source is firmware-controlled and must not be trusted.
+
 ### Hardware fixes
 
 **Mobile network / SIM** (`vendor/motorola/amogus`, `device/motorola/amogus`).
@@ -737,6 +783,112 @@ app restarted every 15 seconds waiting for it. The patch stops installing
 the HAL, its libraries and the app, and removes its VINTF entry. GPS and
 XTRA downloads work without it.
 
+**Widevine L1 library** (`vendor/motorola/common`). The vendor tree ships the
+1.4 DRM service, `libwvhidl.so`, and the signed OEMCrypto library, but the
+inherited `hardware/qcom/qcom-vendor.mk` installs only the first two.
+`WVCdm` then reports `Could not load liboemcrypto.so. Falling back to L3`, so
+L1-capable apps see an L3 device. The patch copies the existing
+`hardware/qcom/proprietary/vendor/lib64/liboemcrypto.so` blob to
+`/vendor/lib64/liboemcrypto.so`; it adds no key material and no property spoof.
+`tools/device-check.sh` fails if the installed file is missing, but installation
+alone is not proof of L1: the DRM info app and an L1 stream still have to be
+tested on hardware. The current kit change is device-untested.
+
+### Dolby Atmos (`snippets/doha.xml` vendor project, `patches/device/motorola/amogus_doha.patch`, `patches/device/motorola/targets.patch`, `patches/vendor/qcom/opensource/audio/sm8150.patch`)
+
+Dolby Audio Processing is the `dap` effect (`libswdap.so`, UUID
+`9d4921da-8225-4f29-aefa-39537a04bcaa`) plus the
+`vendor.dolby.hardware.dms` HIDL service. The stock doha 10 firmware
+(`QPIS30.28`) carries both, and earlier builds ported those blobs verbatim
+from the stock image.
+
+That 2019 port does not survive Android 17. The `daxService` (targetSdk 29)
+and `libswdap` load, the effect attaches, but every DAP parameter query
+returns `-3` (EINVAL) inside the effect: `DolbyAudioEffect.getNumOfProfiles()`
+is the first call in its constructor, so `dolbyprovider` fails and Moto Audio
+(`com.motorola.dolby.dolbyui`) crashes reading
+`content://com.dolby.daxservice.dolbyprovider/3/status`. No SELinux denial is
+involved; it is the old blob's parameter store failing to initialise under
+the Android 17 audioserver.
+
+The stack is therefore replaced by the DAX3 3.6 Motorola Dolby package from
+`userariii/vendor_motorola-dolby` (branch `v1.2`), pinned in
+`snippets/doha.xml` at `vendor/motorola-dolby`. It is built for Android 13+,
+talks `vendor.dolby.hardware.dms@2.0` instead of `@1.0`, and ships:
+
+- `DaxUI` (`com.dolby.daxappui`) and `daxService`
+  (`com.dolby.daxservice`), installed to `/system_ext/priv-app` and
+  **re-signed with the platform key** (`android_app_import`,
+  `certificate: "platform"`). That is what lets `daxService` hold
+  `INTERACT_ACROSS_USERS_FULL`: the permission stays `signature`-only, so the
+  earlier `frameworks/base` rewrite of its protection level, and the privapp
+  allowlist it forced for every other holder, are both gone;
+- the `dms@2.0` HAL, `/vendor/etc/dolby/dax-default.xml`, the DAP effect
+  libraries, and the `privapp`/`sysconfig` permission and hidden-API files.
+
+`patches/device/motorola/amogus_doha.patch` installs only the audio subset:
+the two APKs, the dms 2.0 HAL and its libraries, the effect, the tuning XML
+and the permission files. The donor's AC4/DD+ decoding pieces
+(`libstagefrightdolby`, `libstagefright_soft_{ac4,ddp}dec`,
+`media_codecs_dolby_audio.xml`) and its `dms360` ODM service are not carried,
+so Dolby *decoding* of AC-4/E-AC-3 is not enabled by this change.
+`libdlbdsservice` links `libstagefright_foundation-v33.so`, so the VNDK v33
+stage is copied from `prebuilts/vndk/v33` (still present in lineage-24.0).
+`DEVICE_MANIFEST_FILE` gets a device-tree HIDL 2.0 fragment
+(`dolby/manifest.xml`; the donor's copy declares `target-level="5"`, a stale
+level that trips the VINTF check when merged on Android 17) and
+`DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE` gets the donor's framework
+matrix. The donor's `sepolicy/vendor` joins `BOARD_VENDOR_SEPOLICY_DIRS` (it defines
+`hal_dms`/`hal_dms_client`/`hal_dms_server`, `hal_dms_hwservice`, and labels
+`/data/vendor/dolby` as `vendor_data_file`). The stock stack's `dolby.te`,
+contexts, VINTF files, permission XMLs and APKs are removed from the device
+patch.
+
+The `dap` effect entry stays in the audio HAL's `audio_effects.xml`
+(`vendor/qcom/opensource/audio/sm8150`) because the effect is loaded by
+audioserver. `device.mk` installs `persist.vendor.audio_fx.current=dolby`,
+`ro.vendor.audio.dolby.dax.support`, the DAX3 version property and the
+`vendor.audio.dolby.ds2.*` overrides, and sets `TARGET_EXCLUDES_AUDIOFX`
+alongside the existing `AudioFX` filter in the `targets` patch so the ROM
+does not ship two audio-effect UIs.
+
+Verified on the 2026-11-28 debloat build (`1795817209`): `dms@2.0-service`
+and `daxservice` run, DaxUI (`com.dolby.daxappui`) renders with the
+Dynamic/Movie/Music/Custom presets, `DolbyManagerService` logs
+`doOnDapParamUpdate`, and the HAL's `DlbDapEndpointParamCache` commits its
+parameter sets (`Committed 63 parameters out of 63`). No
+`DolbyAudioEffect: set/get parameter error` appears - that EINVAL killed the
+old stack. Speaker/headphone output is still to be confirmed by ear.
+
+Check the effect through the **policy**, not AudioFlinger: the DAP effect's
+`dump()` blocks, so `dumpsys media.audio_flinger` ends with
+`SERVICE 'media.audio_flinger' DUMP TIMEOUT (10000ms) EXPIRED` and never
+prints its effect list (the same truncated dump reaches
+`tools/bugreport-scan.py`).
+
+```sh
+adb shell dumpsys media.audio_policy | grep -i -A2 '"DAP"'
+#   "DAP"; Music Effect? yes; <Enabled|Disabled>; Active
+adb shell cmd package resolve-activity --brief com.dolby.daxappui
+adb shell lshal | grep -i dms
+```
+
+The effect reads `Disabled` while the phone is idle; the power button in
+DaxUI toggles it for playback. The vendor APK cannot be used as-is: while
+Dolby is off, `MainActivity.dsPowerChanged(false)` swaps the UI for a
+full-screen "Dolby is off" image and disables every control, so the app's
+own power button cannot turn it back on (only the Quick Settings tile can).
+The device tree therefore ships `dolby/DaxUI.apk` - the same APK with the
+`if-eqz v13, +0x122` at dex offset `0x16ac72` (the branch into the off
+state) replaced by two nops - and `dolby/Android.bp` imports it as
+`DaxUI-patched` (`certificate: "platform"`, `system_ext_specific: true`).
+After any dex edit the header must be fixed in this order, or ART rejects
+the dex and every class fails to load: `sha1(dexd[32:])` into
+`dexd[12:32]`, then `adler32(dexd[12:])` into `dexd[8:12]`.
+`android_app_import` re-signs the APK, so the copy in the patch can carry
+any signature. If the effect never registers, the dms@2.0 HAL did not
+start; check `lshal` and `avc` denials for `hal_dms_default`.
+
 ### Play Integrity
 
 Measured on the 2026-11-20 build (bugreport `2026-11-20-07-07-57`, phone
@@ -790,8 +942,15 @@ which probes attested key generation once per build and — when it fails and no
 keybox is installed — posts a single notification saying so. Tapping it opens
 Settings > Misc > TrickyStore, where the user picks their keybox file; the
 screen validates it, stores it, restarts the GMS family and re-checks the
-chain. Nothing is imported without that pick, and the prompt appears once per
-build, not on every boot.
+chain. Nothing is imported without that pick. The prompt is keyed to
+`Build.TIME`, not the often-identical `Build.VERSION.INCREMENTAL`, and turning
+keybox alerts off also removes a pending prompt.
+
+`tools/integrity-setup.sh import` uses the same Settings.Secure contract as the
+UI. It preserves custom target entries and mode suffixes; when it finds the old
+tool-written three-entry list, it lets crDroid's `AxSpoofManagerService` seed its
+full default set and then verifies that `com.google.android.gms` is present.
+It refuses to write a shortened list if seeding fails.
 
 What a user can do, in order of effect:
 
@@ -849,6 +1008,90 @@ source (platform/GApps enum mismatch), Find My Device's Google-signature check,
 Motorola launcher badge provider (app-side query), and the Wi-Fi/Bluetooth/USB
 HAL/framework errors from the same captures.
 
+### 2026-11-26 bugreport follow-ups
+
+**Malformed SMS SCTS** (`patches/frameworks/base.patch`). Both SIMs' SMSCs sent PDUs whose
+service-centre timestamp has month 0; `SmsMessage.getSCTimestampMillis()` threw
+`DateTimeException`, logged a stack trace per PDU (96 lines in one 17:17:12 burst) and
+returned 0, which dates the message to 1970. The parser now falls back to the receive time
+and logs one warning; the PDU stays malformed, the message keeps a sane date.
+Device-untested.
+
+**Not patched, by design.** The cgroup2 line
+`cgroup: cgroup2: unknown option "memory_recursiveprot"` is diagnostic only:
+`system/core`'s `MountV2CgroupController()` (`libprocessgroup/setup/cgroup_map_write.cpp`)
+already retries without the option, so cgroups mount; 4.14 simply predates the 5.7
+`memory_recursiveprot` feature, and a backport is not justified for a log line. `wifirtt`
+is D8 (the vendor Wi-Fi HAL has no RTT service). `icnss_pm_suspend_noirq ... returns -11`
+(one event) and `sensors-hal: mot_disprot_event ... status=3` are vendor driver/HAL
+behaviour with no kit-side lever.
+
+### 0.5x animations by default (`patches/frameworks/base.patch`)
+
+Sync animations ship at 0.5x (window, transition, animator) so a fresh install and an
+update both feel quicker without visiting Developer options. Three mechanisms are
+needed because the scale is a stored setting, not a build property:
+
+- `SettingsProvider/res/values/defaults.xml` carries the three fractions at 50%.
+- `DatabaseHelper.loadGlobalSettings()` seeds the three `Settings.Global` rows, since the
+  readers (`WindowManagerService`, the animator handler) fall back to `1.0f` when a row is
+  missing — a resource change alone does nothing.
+- `SETTINGS_VERSION` 236 → 237 adds a one-time upgrade step in `onUpgradeLocked()`, because
+  an existing device already has `1.0` stored and would otherwise keep it forever. The step
+  rewrites only the untouched default (`1.0`/`1`) and inserts where nothing was stored, so a
+  scale the user picked (off, 0.25x, 0.75x, 1.5x) survives the update. Device-untested.
+
+### Pre-reboot dexopt on a symlinked system_ext (`patches/art.patch`)
+
+Every OTA in the 2026-11-27 archive left five tombstones from
+`/apex/com.android.art/bin/dexopt_chroot_setup`, all `SIGABRT` with
+`Check failed: !OR_RETURN(IsSelfOrParentSymlink(target)) /mnt/pre_reboot_dexopt/chroot/system_ext/lib`.
+This device has no separate `system_ext`/`product` partition, so the build ships
+`/system_ext -> /system/system_ext` and `/product -> /system/product`; the dexopt chroot inherits
+those symlinks from the root mount, and `BindMount()`/`BindMountDirect()` abort rather than
+follow a symlinked target. Result: `dalvik.vm.enable_pr_dexopt=true` was set but pre-reboot
+dexopt never ran, so the first boot after an update recompiled on demand. The patch skips the
+mount and logs a warning instead — the symlink resolves inside the same chroot, so dexopt sees
+the files it would have bind-mounted. Device-untested.
+
+### Frozen-state callback warning (`patches/frameworks/av.patch`)
+
+`AudioFlinger` and `AAudioClientTracker` register the optional frozen-state callback on each
+client binder. The doha 4.14 kernel's binder has no frozen-state support, so
+`IBinder::addFrozenStateChangeCallback` returns `INVALID_OPERATION` (-ENOSYS), logged 200x as
+"returned -38" in the 2026-11-27 bugreport. The patch ignores exactly that code in both files and
+still warns on every other failure. No HAL is involved: the call is on the client binder, not the
+audio HAL. Device-untested.
+
+### 2026-11-27 bugreport follow-ups
+
+**Pre-reboot dexopt and frozen-state callback.** See the two sections above:
+`patches/art.patch` and `patches/frameworks/av.patch`.
+
+**Vendor daemons, no source in the manifest.** `xtra-daemon` (`DgnssNtripSourc`) took one
+`SIGSEGV`; it is a stock proprietary binary under `vendor/qcom/common/vendor/gps-legacy`, and it
+restarts with a new pid. `gatekeeper@1.0` and `keymaster@4.1` took one `SIGABRT` each at boot:
+the stock QSEE daemons double-own a `RefBase` at `QSEECom_shutdown_app`; both restart and serve.
+Keymaster attestation is refused separately (see Play Integrity below).
+
+**Moto telephony extension.** `moto_ext_telephony.registry` is missing. The
+`moto-telephony.jar` is installed, but the registering service belongs to the stock Moto
+framework, which this ROM does not carry; `vendor_qtelephony` logs the miss and continues.
+
+**Expected on this ROM.** Google service-missing lines (no GApps), `keystore2` attestation
+errors (the vendor keymaster refuses attestation; TrickyStore plus a user keybox is the supported
+route), the vendor supplicant's `setBtCoexistenceMode` service-specific exception (the stock
+supplicant lacks the Android 17 AIDL method), and Passpoint null-OSU/DHCP logs (network
+conditions, not errors).
+
+### Wi-Fi Display property (`patches/device/motorola/amogus_doha.patch`)
+
+`/vendor/build_doha.prop` sets `persist.debug.wfd.enable=1`, but that file is loaded as
+`vendor_init`, which SELinux denies for a `persist.debug.*` (system) property, so the flag never
+took effect. It is now written from `device.mk` as `PRODUCT_PROPERTY_OVERRIDES`, i.e. into
+`/system/build.prop` where `init` owns the property. The same file carried a `ro.product.bevice`
+typo that was always rejected; it is removed. Device-untested.
+
 ### Performance profile (`performance-tuning` branch)
 
 The tuning is small because most of the obvious knobs are already written by the
@@ -863,21 +1106,32 @@ value actually survives. On this device (4.14, `init.qcom.post_boot.sh` is the
    read-ahead, then sets `vendor.post_boot.parsed=1` on its last line.
 3. `init.aospa.perf.common.rc` (`device/qcom/common`) —
    `on property:vendor.post_boot.parsed=1` rewrites `read_ahead_kb` for
-   `mmcblk0`, `sda`…`sdf` and `dm-0`…`dm-49`.
+   `mmcblk0`. The earlier `sda`...`sdf` and `dm-0`...`dm-49` writes were
+   removed: those block devices do not exist on doha, and their failed writes
+   only obscured which value actually reached the eMMC queue.
 
 Because (3) runs after (2), it is the **last** writer of read-ahead. The 2048 →
 4096 KB raise this branch originally carried in `init.amogus.rc` was therefore
 overwritten a few seconds after boot and never reached the kernel. What the
 branch does now:
 
-- **read-ahead has one owner.** The value lives in
-  `patches/device/qcom/common.patch` (`init.aospa.perf.common.rc`, the file that
-  wins), rendered from the build setting `READAHEAD_KB` (default `128`, AOSPA's
-  own value and what the phone already ran). The dead copies in
-  `init.amogus.rc` are gone, so the intended and effective values cannot drift
-  apart again. A/B test with `READAHEAD_KB=512 ./build.sh …`.
+- **read-ahead has one value source.** Both the early `init.amogus.rc` write and
+  the late `init.aospa.perf.common.rc` write use the `READAHEAD_KB` build setting
+  (default `128`, AOSPA's own value and what the phone already ran), and both
+  target only the real `mmcblk0` queue. The nonexistent `dm-*`/`sd*` targets are
+  gone, including the copies in `init.amogus.rc`, so the intended and effective
+  values cannot drift apart again. A/B test with `READAHEAD_KB=512 ./build.sh ...`.
 - **`nr_requests` back to 128** (the kernel default). It was 256; nothing
   measured justified a deeper eMMC queue, and CFQ on eMMC gains nothing from it.
+- **Boot-time scheduler margins are applied, not dropped**
+  (`patches/kernel/motorola/msm-4.14.patch`). The downstream
+  `sched_updown_migrate_handler` ignored every write in the first 120 s; that
+  silently discarded the trinket block in `init.qcom.post_boot.legacy.sh`
+  (`sched_downmigrate` 67, `sched_upmigrate` 77 at `sys.boot_completed`). The
+  gate is removed, and the values now reach the scheduler; validation
+  (`up <= down`) still runs. Read back with
+  `adb shell cat /proc/sys/kernel/sched_upmigrate` (77; default 70) and
+  `sched_downmigrate` (67; default 65). Device-untested.
 - **zram 1 GB → 4 GB** in `rootdir/fstab.qcom` (`fstab_dynamic.qcom` 70% → 50%
   for consistency; doha builds non-dynamic, so `fstab.qcom` is the live file).
   4 GB is a deliberate over-commit on a 3.6 GB device: zram holds *compressed*
@@ -903,6 +1157,16 @@ branch does now:
   `KPDPWR_N` / `hardware_reset`). Restoring the stock Motorola/Qualcomm flags
   (`IRQF_NO_SUSPEND | IRQF_SHARED` for glink, `IRQF_NO_SUSPEND | IRQF_ONESHOT`
   for smp2p) matches the 2026-11-18 kernel that survived 22 h / 108 wakes.
+  The kit now keeps that IRQ enabled **without** calling `enable_irq_wake()`
+  on the non-GVM glink path. Doing both was the configuration CAF explicitly
+  reverted for Trinket in `d8d7d2423328`. Fork commits `4ab637fa`/`bfe8abcb`
+  restored `IRQF_NO_SUSPEND` on glink and smp2p after pin `73b7957` proved
+  fatal: 6 of 6 non-reboot boots froze after the susceptible build. The kit
+  patch reconstructs that required flag at build time and must never remove
+  it. The 2026-11-23 capture still exits suspend with `Resume caused by
+  misconfigured IRQ 20 glink-native`, recording 2,564 suspend attempts and
+  675 failures over 22h26m. GVM keeps wake arming; smp2p keeps
+  `IRQF_NO_SUSPEND` plus wake because its sleep-state handshake needs it.
 - **`CONFIG_PANIC_ON_SSR_NOTIF_TIMEOUT` off** in the kernel defconfig (carried by
   `patches/kernel/motorola/msm-4.14.patch`). The 2026-11-20 bugreport shows a clean
   shutdown reaching `sysrq: Terminate All Tasks` and then panicking with
@@ -914,18 +1178,24 @@ branch does now:
 - **app transition scale 0.8** in `patches/device/motorola/amogus_doha.patch`
   (still user-adjustable in Developer options).
 
-- **One full `speed-profile` compile of every installed package at first boot**
-  (`rootdir/vendor/bin/doha-dexopt-once.sh`, started from `init.amogus.rc` on
-  `sys.boot_completed=1`). A fresh flash otherwise leaves apps in verify/JIT mode
-  until the platform's idle `bg-dexopt-job` runs, which wants charging, idle and no
-  reboot — on this phone that can be days. init starts it from the `late_start`
-  class (not `disabled` plus a `sys.boot_completed` trigger: that pair never
-  started on the 2026-11-19 build), the script waits for `sys.boot_completed` and
-  two more minutes, then compiles at `nice -n 19`, once per build: it records
-  `persist.doha.dexopt_status` as `<ro.build.date.utc>:<running|done|failed>`, so an
-  OTA re-runs the compile instead of leaving the new system apps unoptimised, and
-  `persist.doha.dexopt_once=0` disables it. `tools/dexopt-all.sh` is the manual
-  equivalent.
+- **Doze motion detection disabled** by the framework overlay in
+  `patches/device/motorola/amogus_doha.patch`
+  (`config_autoPowerModeUseMotionSensor=false`). `AnyMotionDetector` held a
+  partial wake lock for 4m45s across 33 screen-off transitions in the
+  2026-11-23 capture, and motion sensing delayed entry into deep idle. The
+  tradeoff is deliberate: moving the phone or its significant-motion sensor
+  no longer resets the idle transition; screen-on and alarm-driven wakeups
+  are unchanged. This is device-untested.
+
+- **No automatic first-boot dexopt.** The former
+  `rootdir/vendor/bin/doha-dexopt-once.sh` service never ran in the shipped build:
+  init reported no `doha-dexopt-once` service instance, `persist.doha.dexopt_status`
+  stayed unset, and the service had no usable sepolicy domain for its persistent
+  properties. It has been removed rather than adding a second dexopt framework.
+  A fresh flash otherwise leaves apps in verify/JIT mode until the platform's idle
+  `bg-dexopt-job` runs, which wants charging, idle and no reboot — on this phone
+  that can be days. After installing apps, run
+  `tools/dexopt-all.sh -m speed-profile --wait` once while charging.
 - **`discard` turned off on the f2fs `/data` mount** (`rootdir/fstab.qcom`,
   `fstab_dynamic.qcom`, option `nodiscard`). With discard f2fs trims on every
   delete, which on this eMMC shows up as I/O stalls while apps are being evicted —
@@ -935,6 +1205,17 @@ branch does now:
   fstab did nothing, because this Motorola 4.14 kernel's f2fs calls
   `set_opt(sbi, DISCARD)` in `default_options()` (`fs/f2fs/super.c`), so discard is
   on unless a mount option clears it.
+- **`vm.min_free_kbytes` raised to 16 MB** (`patches/device/motorola/amogus.patch`,
+  `init.amogus.rc`, `on init`). The 2026-11-26 capture has 11
+  `binder: <pid>_N: page allocation failure: order:0` splats (16:21:42 and 16:52:35)
+  each followed by `BINDER_WRITE_READ ... returned -14` (EFAULT): under GApps
+  pressure the fault path could not get one page for the binder copy-to-user, with
+  `Normal free: 1516kB` against `min:2012kB`. In the same window appear
+  `binder_alloc_buf, no vma`, `DeadObjectException` and a crashed Chrome sandboxed
+  process. The write changes no other knob (read-ahead, `nr_requests`, zram or LMK
+  props); the only side effect is a slightly larger kernel reserve, so the LMK
+  comparison below is part of the verification. It is **not**
+  `config_extraFreeKbytesAdjust` (that overlay is dead, see below). Device-untested.
 
 Not changed, deliberately: CPU/GPU frequencies and governors (`post_boot` already
 selects `schedutil` with `hispeed_freq` 1305600/1401600), thermal thresholds

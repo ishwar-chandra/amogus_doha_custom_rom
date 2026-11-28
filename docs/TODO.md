@@ -9,6 +9,44 @@ kernel `4.14.357-openela+ #16`).
 ## Open, being investigated
 
 
+- [ ] **Binder allocation failure fix is device-untested.** After the next flash,
+  replay the 2026-11-26 16:52 load (camera + Chrome + Maps) and take a bugreport:
+  `KERNEL LOG` must contain zero `binder: ... page allocation failure` and zero
+  `ioctl c0306201 ... returned -14`; `am_kill`/`lowmemorykiller` counts and
+  screen-off drain must not regress against the 2026-11-23 baseline.
+- [ ] **SMS SCTS fallback is device-untested.** Receive SMS from the sender that
+  produced month 0 on 2026-11-26; `logcat -b radio` must show one warning, not a
+  `DateTimeException` stack, and the message must carry its receive date instead
+  of 1970.
+- [ ] **Widevine L1 packaging is device-untested.** After the next flash,
+  `tools/device-check.sh --verbose` must find `/vendor/lib64/liboemcrypto.so`,
+  `logcat -b all` must not repeat `Could not load liboemcrypto.so. Falling back
+  to L3`, and a DRM-info app must report L1 before this is called fixed.
+- [ ] **Glink suspend wake fix is device-untested.** After the next flash,
+  `logcat -b all` must not repeat `Resume caused by misconfigured IRQ 20
+  glink-native`; compare `SuspendControl.TotalSuspendDelay` and
+  `FailedSuspendDelay` plus screen-off mAh/h against the 2026-11-23 baseline
+  (2,564 attempts, 675 failures, 46.2 mAh/h).
+- [ ] **Doze motion disable is device-untested.** Confirm
+  `dumpsys deviceidle` reports `mUseMotionSensor=false`, `AnyMotionDetector`
+  stops holding wakelocks after screen-off, and normal wake methods still
+  work. The overlay intentionally stops movement from resetting the idle
+  transition.
+- [ ] **TrickyStore target migration is device-untested.** After import,
+  `settings get secure spoof_trickystore_target` must contain
+  `com.google.android.gms` with no literal `null`, and disabling keybox alerts
+  must remove a pending prompt. A real Play verdict still requires a
+  Google-rooted keybox supplied by the user.
+- [ ] **DaxUI's in-app power button is unreliable.** Presses reach
+  `DolbyManagerService.doOnDapParamUpdate`, and one press did flip the DAP
+  effect `Disabled`/`Enabled` in `dumpsys media.audio_policy` on the
+  2026-11-28 build, but in practice the button often does nothing
+  (uiautomator reports `clickable=false`), the power icon never repaints
+  live, and the effect state does not consistently follow the press. The
+  Quick Settings tile remains the reliable toggle. The shipped APK is the
+  vendor one with `dsPowerChanged`'s off-state branch nop'd
+  (`dolby/DaxUI.apk`, `dolby/Android.bp`), so the remaining work is in
+  `FragPower.onCreateView`/`dsPowerChanged` interaction, not resources.
 - [ ] **VoLTE / IMS.** Evidence from the device:
   - the IMS PDN connects, then drops and rebuilds every 5–11 minutes
     (17 transitions in one window, e.g. 20:14 → 20:41 on 11-15), and
@@ -75,8 +113,10 @@ kernel `4.14.357-openela+ #16`).
 
 ## GCP build machine
 
-`tools/gcp-build.sh` does the whole cycle. Project `customrom-514215`
-(asia-south1), 12 vCPU / 48 GB (`n2-custom-12-49152`) with a 50 GB boot disk
+`tools/gcp-build.sh` does the whole cycle. The project comes from
+`gcloud config` (`customrom-514215` here) and the running VM is discovered,
+preferring `labels.doha-build=1`; `NAME`/`ZONE` select one when two are
+active. The 12 vCPU / 48 GB (`n2-custom-12-49152`) shape has a 50 GB boot disk
 and two 375 GB local NVMe devices: the first holds the tree and `out/`, the
 second holds ccache and swap. `SSD_COUNT=0` switches to a single boot disk;
 `DISK_MODE=pd` uses a separate data disk instead. Quota preferences
@@ -92,6 +132,7 @@ export GH_TOKEN=...                  # token with Contents write on the ROM
 tools/gcp-build.sh create
 tools/gcp-build.sh setup
 tools/gcp-build.sh build             # starts the build in tmux on the VM
+tools/gcp-build.sh logs [--full]     # formatted tail / raw log from byte 0
 AUTO_FINISH=1 tools/gcp-build.sh build  # wait, release, update OTA, delete
 tools/gcp-build.sh finish            # or wait on an already-started build
 ```
@@ -107,8 +148,9 @@ uses `NO_DELETE=1`, the second deletes the VM. Both use the same `TAG` and
 update only their own OTA channel.
 
 `build` runs inside tmux on the VM, so a dropped SSH connection or this
-machine going to sleep does not touch it; `att` attaches, `logs` follows the
-log, `state` says whether it is still running and what it exited with.
+machine going to sleep does not touch it; `att` attaches, `logs [--full]`
+shows the formatted tail or the raw log, `state` says whether it is still
+running and what it exited with.
 Nothing is deleted on a timeout during a build: the only automatic deletion
 is the `HOURS` hard stop (default 48, `HOURS=0` disables it), and `finish`
 normally ends a session: wait for the build, verify the zip and images
@@ -121,18 +163,19 @@ token crosses over (written to a file, removed after the upload); `gh` is
 installed there, and the local machine needs nothing but this script.
 `NO_RELEASE=1`, `NO_OTA=1` and `NO_DELETE=1` skip those steps.
 
-There is no Drive/GCS/rclone backup and no restore step. The VM is
+The build/release chain does not use Drive; `tools/drive-backup.sh` is an
+optional separate backup/restore (GUIDE §4.5). The VM is
 disposable: `.repo`, ccache and `out/` do not survive deletion. A later
 build re-syncs and rebuilds; `finish` is what preserves the release and OTA
 feed.
 
-Build variant: `build.sh` builds **userdebug** by default (override with
-`VARIANT=user`), which is what the debugging here needs — `adb root`,
-dmesg and `/sys/fs/pstore` only work when `ro.debuggable=1`. Worth
-knowing: the v2.0.0/v2.0.1 zips on GitHub were `user` builds
-(`ro.build.type=user` on the phone), which is why the panic log could not
-be read from the device. Keep userdebug for test builds; decide
-separately whether a public crDroid release should be `user`.
+Build variant: `build.sh` defaults to **userdebug**; crDroid sets
+`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`, so both `userdebug` and `user` report
+`ro.build.type=user` and `ro.debuggable=0`. There is no `adb root`, shell
+`dmesg`, or live pstore; read `/sys/fs/pstore` from recovery. The
+v2.0.0/v2.0.1 zips were `user` builds, but userdebug does not change the
+props. Keep userdebug for the build label only; decide separately whether a
+public crDroid release should be `user`.
 
 Caveats worth remembering:
 
@@ -147,12 +190,14 @@ Caveats worth remembering:
 
 ## Build and tooling
 
-- [ ] **The release is a `user` build, not `userdebug`.**
-  `ro.build.type=user`, `ro.debuggable=0`, so `adb root`, `dmesg`,
-  `/sys/fs/pstore` and most of `/sys/class/power_supply` are denied to
-  shell. `build.sh` builds userdebug, so this image came from a plain
-  `brunch`. A userdebug build would let panics be read live instead of
-  from recovery.
+- [x] **Both variants report user.** crDroid sets
+  `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG`; `userdebug` and `user` both report
+  `ro.build.type=user`/`ro.debuggable=0`, so `adb root`, shell `dmesg` and
+  live pstore are unavailable. Read pstore from recovery. (The v2.0.0/v2.0.1
+  images were plain `brunch` builds, but userdebug would not restore debug.)
+- [x] **GCP VM discovery and formatted logs.** `tools/gcp-build.sh` reads the
+  project from gcloud, discovers the instance, and `logs [--full]` formats the
+  tail (color, wrapping, dedupe) or prints the raw log.
 - Note: PSTORE is compiled in (`CONFIG_PSTORE_CONSOLE/RAM/PMSG`,
   `CONFIG_IKCONFIG_PROC=y`), so kernel panics *are* captured. Read them
   from recovery, which runs as root:
@@ -209,6 +254,12 @@ the number of knobs the phone is not actually running.
   Gate: `perf-audit.sh` read_ahead PASS for `mmcblk0` and every `dm-*`.
 - [x] **`nr_requests` 256 → 128** (kernel default; eMMC + CFQ gains nothing from
   a deeper queue and nothing measured justified 256).
+- [ ] **Verify the boot-time scheduler margins were applied.** The kernel's
+  `sched_updown_migrate_handler` dropped every write in the first 120 s, so the
+  trinket block's `sched_downmigrate` 67 / `sched_upmigrate` 77 never reached the
+  scheduler. The gate is removed in `patches/kernel/motorola/msm-4.14.patch`;
+  after a flash, `adb shell cat /proc/sys/kernel/sched_upmigrate` must read 77
+  (default 70) and `sched_downmigrate` 67 (default 65). Device-untested.
 - [ ] **Governor not verified on device.** `post_boot.legacy.sh` selects
   `schedutil` only for trinket `soc_id` 394/467/468 with
   `hispeed_freq` 1305600/1401600 and `hispeed_load` 85. If the phone boots on
@@ -223,6 +274,62 @@ the number of knobs the phone is not actually running.
   dead — `CONFIG_SCHED_WALT`, `CONFIG_SCHED_CORE_CTL`, `CONFIG_IOSCHED_BFQ` are
   off in `arch/arm64/configs/vendor/amogus_doha_defconfig`. KSM and THP are off
   too. `SKIN_THROTTLE_C` stays at 40 until thermal headroom is measured.
+
+## Dolby Atmos (2026-11-27)
+
+- [x] Carry the stock 10 DMS HIDL 1.0 service, `libswdap`, `dax-default.xml`,
+  Moto Audio and `daxService` under `device/motorola/amogus_doha/dolby`.
+- [x] 2026-11-28: that stack cannot work under Android 17 - every DAP
+  parameter returns EINVAL inside the 2019 effect and Moto Audio crashes
+  reading `dolbyprovider`. Replaced with the `vendor/motorola-dolby` DAX3
+  3.6 stack (DaxUI + `daxService`, dms@2.0 HAL, DAP effect), re-signed with
+  the platform key; the `frameworks/base` protection-level override and its
+  privapp allowlist are removed with it. Checked on device 2026-11-28
+  (`1795817209`): DaxUI renders the presets and the HAL commits its DAP
+  parameters; `dumpsys media.audio_flinger` now times out in the effect dump,
+  so use `dumpsys media.audio_policy` for the effect state.
+- [x] Register the `dap` effect in the audio HAL's trinket `audio_effects.xml`
+  (`vendor/qcom/opensource/audio/sm8150/configs/trinket`, which becomes
+  `/vendor/etc/audio_effects.xml`; the `device/motorola/common` rootdir copy is
+  only a fallback). Add the HAL to `DEVICE_MANIFEST_FILE` and the device
+  framework compatibility matrix; add the `hal_dms` domain.
+- [x] Runtime fixes from the 2026-11-27 20:21 bugreport: daxService's
+  `INTERACT_ACROSS_USERS_FULL` privapp grant, `hidl_base_hwservice` add for the
+  DMS HAL, `priv_app_36`/`hal_audio_default` DMS clients, and the
+  `DolbyManagerService` service_contexts + post-fs-data `/data/vendor/dolby`.
+- [x] Filter `AudioFX` from `PRODUCT_PACKAGES`
+  (`patches/device/motorola/targets.patch:68-70`); `build.sh` runs one
+  `mka installclean` when the stale APK is still staged, so the image is clean
+  while later builds stay incremental. The system/vendor partitions are fixed;
+  this frees blocks inside them, not partition size.
+- [x] Prebuilt APKs are `BUILD_PREBUILT` (`PRESIGNED`, `daxService` privileged);
+  Android 17 rejects APKs in `PRODUCT_COPY_FILES`.
+- [x] Android 17 permission: `INTERACT_ACROSS_USERS_FULL` is
+  `signature|installer|module|role`; add `privileged` in
+  `patches/frameworks/base.patch` so the privapp whitelist grants it without
+  re-signing the stock app.
+- [x] Explicit `hal_dms_hwservice`/`hal_dms` SELinux rules for
+  `priv_app_36`/`hal_audio_default`; the `hal_client_domain` macro did not
+  cover the versioned domains.
+- [ ] Device-test: Moto Audio opens; `dumpsys media.audio_flinger | grep -i -A2 dap`
+  lists the effect; `pm list packages | grep -i audiofx` is empty; test
+  speaker and headphones.
+
+## Bugreport follow-ups (2026-11-27)
+
+- [x] `art`: pre-reboot dexopt aborted on the symlinked `system_ext`/`product`
+  layout (`patches/art.patch`); five tombstones in the archive.
+- [x] `frameworks/av`: ignore `INVALID_OPERATION` (-ENOSYS) from the optional
+  frozen-state callback in `AudioFlinger`/`AAudioClientTracker`.
+- [ ] Vendor-only, no source in the manifest: `xtra-daemon` SIGSEGV,
+  `gatekeeper@1.0`/`keymaster@4.1` SIGABRT at `QSEECom_shutdown_app`; the
+  daemons restart. Not patched.
+- [ ] `moto_ext_telephony.registry` needs the stock Moto framework; the
+  `moto-telephony.jar` alone does not register it. `vendor_qtelephony` logs the
+  miss and continues.
+- [ ] Google service-missing (no GApps), `keystore2` attestation (vendor
+  keymaster; TrickyStore + user keybox), Wi-Fi/BT coex (vendor supplicant lacks
+  `setBtCoexistenceMode`), Passpoint/DHCP logs: expected.
 
 ## Debloat leftovers (2026-11-20)
 
@@ -247,12 +354,12 @@ the number of knobs the phone is not actually running.
   | grep PANIC_ON_SSR` must show it unset, and a reboot must no longer leave the
   screen dark with `Kernel panic - not syncing: Subsys notifier chain for modem taking
   too long` in the next boot's `last_kmsg`.
-- [ ] `doha-dexopt-once` still did not start on build `1795135461` (`nodiscard` and
-  4 GB zram are verified live in `bugreport-...-07-07-57.zip`): a `/vendor/etc/init`
-  service running `/system/bin/sh` without a `seclabel`/domain transition is rejected
-  by init, and Treble neverallows forbid vendor domains from calling `system_server`'s
-  `package` binder service. Either remove the dead vendor service (rely on
-  `tools/dexopt-all.sh`) or move it to `system_ext`/`product` init.
+- [x] Remove `doha-dexopt-once` instead of moving it to another partition. It never
+  started on build `1795135461` (`nodiscard` and 4 GB zram are verified live in
+  `bugreport-...-07-07-57.zip`): the vendor init service had no usable domain/sepolicy,
+  and Treble neverallows forbid its intended `system_server` `package` calls. The
+  script and service are removed; use `tools/dexopt-all.sh -m speed-profile --wait`
+  after installing apps.
 - [ ] Verify `tools/gms-trim.sh` on the next flash: does `pm disable` of a GMS
   component succeed while `ro.debuggable=0` (shell is uid 2000)? The tool prints
   `denied` per component and exits non-zero if the platform refuses, so a failure
@@ -262,5 +369,5 @@ the number of knobs the phone is not actually running.
   `tools/gms-trim.sh` (default groups) so the owner's impression has numbers
   behind it, and `tools/dexopt-all.sh` timed right after a flash.
 
-- [ ] `AGENTS.md`'s patch-map row for this patch still needs the owner's approval
-  to write (the file is protected).
+- [x] `AGENTS.md`'s patch-map row for this patch is written; the patch map includes
+  the debloat gating and the Dolby/audio changes.

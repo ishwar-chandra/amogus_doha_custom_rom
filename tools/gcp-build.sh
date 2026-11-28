@@ -17,6 +17,9 @@
 #                            tag or adding to it if it already exists
 #   ota <tag> <owner/repo>   write <channel>/doha.json to the OTA feed repo
 #                            (--dry-run prints the JSON, publishes nothing)
+#   promote <tag>            copy the tested test/doha.json entry into
+#                            standard/doha.json -- same artifact, no rebuild
+#                            (--dry-run prints it, publishes nothing)
 #
 # Typical session:  create; setup; build; finish
 #
@@ -32,6 +35,10 @@
 #
 # Environment (all optional):
 #   PROJECT, ZONE, NAME
+#   VUSER         VM account that owns the build state -- build.log,
+#                 build.exit, build.channel, the tmux socket and the gh
+#                 token all live in its $HOME (default: the account `setup`
+#                 recorded in instance metadata, else $USER)
 #   MACHINE       compile machine      (default: n2-custom-12-49152)
 #   SYNC_MACHINE  separate sync box    (default: MACHINE)
 #   DISK, DISK_TYPE                    boot disk (default: 50GB pd-standard)
@@ -41,6 +48,10 @@
 #   VARIANT       userdebug|user|eng   (default: userdebug)
 #   DEBLOAT       1 = same ROM without the optional crDroid extras; zip gets a
 #                 -debloat suffix and needs its own TAG/channel (default: 0)
+#   OTA_CHANNEL   standard|debloat|test: the feed baked into the build and
+#                 written by finish/ota (default: debloat when DEBLOAT=1, else
+#                 standard). test is the maintainer feed; promote moves a
+#                 tested test build into standard without rebuilding.
 #   ADB_KEY       path to an adb public key on this machine; `build` copies
 #                 it to the VM and bakes it in (build.sh's ADB_KEY), so adb
 #                 works from the phone's first boot. Test builds only: the
@@ -48,15 +59,16 @@
 #   JOBS          compile jobs         (default: MACHINE's vCPUs)
 #   SYNC_JOBS     repo sync jobs       (default: nproc)
 #   REPO_DEPTH    shallow clone depth  (default: 1; empty = full history)
-#   REPO, BRANCH, OUT, GH_REPO, OTA_REPO, TAG
+#   REPO, OUT, GH_REPO, OTA_REPO, TAG
+#   BRANCH        branch to build (default: the branch checked out in this repo)
 #   NO_RELEASE=1 / NO_OTA=1 / NO_DELETE=1   for `finish`
 #   AUTO_FINISH=1                       `build` waits for success, releases,
 #                                       updates OTA and deletes in one command
 set -euo pipefail
 
-PROJECT=${PROJECT:-customrom-514215}
-ZONE=${ZONE:-asia-south1-a}
-NAME=${NAME:-crdroid-build}
+PROJECT=${PROJECT:-$(gcloud config get-value project 2>/dev/null)}
+ZONE=${ZONE:-}
+NAME=${NAME:-}
 HOURS=${HOURS:-48}
 VARIANT=${VARIANT:-userdebug}
 # Same axis as build.sh's DEBLOAT: 1 leaves the optional crDroid extras out
@@ -64,6 +76,16 @@ VARIANT=${VARIANT:-userdebug}
 # own OTA channel picked with OTA_CHANNEL.
 DEBLOAT=${DEBLOAT:-0}
 case $DEBLOAT in 0|1) ;; *) echo "DEBLOAT must be 0 or 1" >&2; exit 1 ;; esac
+# The channel is compiled into the Updater, so a build and its feed must agree;
+# test currently carries standard (DEBLOAT=0) artifacts only.
+case ${OTA_CHANNEL:-} in
+  '') ;;
+  standard|test)
+    [ "$DEBLOAT" = 0 ] || { echo "OTA_CHANNEL=$OTA_CHANNEL needs DEBLOAT=0" >&2; exit 1; } ;;
+  debloat)
+    [ "$DEBLOAT" = 1 ] || { echo "OTA_CHANNEL=debloat needs DEBLOAT=1" >&2; exit 1; } ;;
+  *) echo "OTA_CHANNEL must be standard, debloat or test" >&2; exit 1 ;;
+esac
 # 12 vCPU is the project's CPUS_ALL_REGIONS cap. 48 GB RAM + 32 GB swap
 # covers Soong's ~100 GB analysis peak; RAM is the expensive resource
 # ($0.005/GB/h), so the swap file covers the top of the peak. The single
@@ -88,10 +110,20 @@ SWAP_GB=${SWAP_GB:-32}
 SYNC_JOBS=${SYNC_JOBS:-nproc}
 REPO_DEPTH=${REPO_DEPTH-1}
 REPO=${REPO:-https://github.com/ishwar-chandra/amogus_doha_custom_rom.git}
-BRANCH=${BRANCH:-crdroid-android-17}
 # Repo root, not $PWD: the script may be started from anywhere (tools/, or an
 # absolute path), and the defaults must still point at this checkout.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Build the branch that is checked out here. performance-tuning carries untested
+# work and crdroid-android-17 is the release line, so silently building the
+# other one is wrong in both directions. BRANCH is only for a detached checkout
+# or a deliberate override.
+if [ -z "${BRANCH:-}" ]; then
+  BRANCH=$(git -C "$ROOT" symbolic-ref -q --short HEAD || true)
+fi
+[ -n "$BRANCH" ] || {
+  echo "BRANCH is unset and $ROOT has a detached HEAD; set BRANCH=<branch>" >&2
+  exit 1
+}
 OUT=${OUT:-$ROOT/gcp-out}
 SESSION=doha
 GH_REPO=${GH_REPO:-ishwar-chandra/amogus_doha_custom_rom}
@@ -106,6 +138,71 @@ JOBS=${JOBS:-12}
 # --project/--zone must follow the subcommand. Commands taking a
 # `-- <cmd>` tail (ssh, scp) cannot use this and spell the flags out.
 gcloud_() { gcloud "$@" --project "$PROJECT" --zone "$ZONE"; }
+
+# gcloud compute ssh logs in as the *local* username, but the whole build state
+# -- build.log, build.exit, build.channel, the tmux socket, ~/.gh_token -- lives
+# in that account's $HOME. When the local username differs from the one that ran
+# `setup` (new login, renamed account, a different terminal uid), `logs` tails a
+# build.log that is not there and `finish` polls a build.exit that will never
+# appear: an idle build and a dead one look the same. `setup` records the account
+# in the instance metadata, so resolve it once and address the VM as $VM.
+VUSER=${VUSER:-}
+VM=$NAME
+
+# Resolve the instance from the authenticated gcloud project instead of
+# hardcoding one machine. NAME/ZONE still win when set, so two running
+# builds can be addressed independently (`NAME=vm-a ...`, `NAME=vm-b ...`);
+# with neither set, a single running instance is used. Instances created by
+# this script carry labels.doha-build=1, which keeps the discovery stable
+# when unrelated VMs share the project.
+resolve_instance() {
+  case ${PROJECT:-} in ''|'(unset)')
+    PROJECT=$(gcloud config get-value project 2>/dev/null) ;;
+  esac
+  case ${PROJECT:-} in ''|'(unset)')
+    echo "no gcloud project; run 'gcloud auth login' and 'gcloud config set project <id>', or set PROJECT=..." >&2
+    exit 1 ;;
+  esac
+  if [ -n "${NAME:-}" ]; then
+    if [ -z "${ZONE:-}" ]; then
+      ZONE=$(gcloud compute instances list --project "$PROJECT" \
+               --filter="name=${NAME}" --format='value(zone)' 2>/dev/null | head -1)
+      ZONE=${ZONE##*/}
+    fi
+    [ -n "${ZONE:-}" ] || {
+      echo "instance $NAME not found in project $PROJECT" >&2
+      exit 1
+    }
+    return 0
+  fi
+  local rows n
+  rows=$(gcloud compute instances list --project "$PROJECT" \
+           --filter='labels.doha-build=1 AND status=RUNNING' \
+           --format='value(name,zone)' 2>/dev/null)
+  [ -n "$rows" ] || rows=$(gcloud compute instances list --project "$PROJECT" \
+           --filter='status=RUNNING' --format='value(name,zone)' 2>/dev/null)
+  n=$(printf '%s\n' "$rows" | sed '/^$/d' | wc -l)
+  case $n in
+    0) echo "no running instance in $PROJECT; set NAME or create one" >&2; exit 1 ;;
+    1) ;;
+    *) echo "multiple running instances in $PROJECT; set NAME (and optionally ZONE) to choose one:" >&2
+       printf '%s\n' "$rows" | sed 's/^/  /' >&2
+       exit 1 ;;
+  esac
+  NAME=${rows%%$'\t'*}
+  ZONE=${rows##*$'\t'}
+  ZONE=${ZONE##*/}
+}
+
+resolve_vuser() {
+  [ -n "$VUSER" ] ||
+    VUSER=$(gcloud compute instances describe "$NAME" --project "$PROJECT" --zone "$ZONE" \
+              --format='flattened(metadata.items)' 2>/dev/null |
+            awk -F': *' '$1 ~ /\.key$/ {k=$2; next}
+                         $1 ~ /\.value$/ && k=="doha-build-user" {print $2; exit}' || true)
+  case ${VUSER:-} in ''|*[!A-Za-z0-9._-]*) VUSER=$(id -un) ;; esac
+  VM=$VUSER@$NAME
+}
 instance_status() {
   gcloud compute instances describe "$NAME" --project "$PROJECT" --zone "$ZONE" \
     --format='value(status)' 2>/dev/null || echo MISSING
@@ -145,10 +242,22 @@ ota_channel() {
   fi
 }
 
+# The channel the running VM was actually built with. OTA_CHANNEL wins; else
+# the marker build wrote, so a manual `finish`/`ota` after a test build cannot
+# publish it to standard by omission.
+channel_for_vm() {
+  if [ -n "${OTA_CHANNEL:-}" ]; then printf '%s\n' "$OTA_CHANNEL"; return; fi
+  local ch
+  ch=$(gcloud_ compute ssh "$VM" --command 'cat $HOME/build.channel 2>/dev/null || true' 2>/dev/null |
+         grep -E '^(standard|debloat|test)$' | tail -1)
+  if [ -n "$ch" ]; then printf '%s\n' "$ch"; return; fi
+  ota_channel
+}
+
 # The VM gets the token, uses it, and deletes it again -- one place, so
 # `finish` and `release` cannot drift apart.
 publish_release() {
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
   remote_exec release "$TAG" "$GH_REPO"
 }
 
@@ -161,7 +270,7 @@ remote_exec() {
   local mode=$1 extra="" a
   shift
   for a in "$@"; do extra+=" '$a'"; done
-  gcloud_ compute ssh "$NAME" --command \
+  gcloud_ compute ssh "$VM" --command \
     "bash -s -- '$mode' '$REPO' '$BRANCH' '$VARIANT' '$SESSION' '$SYNC_JOBS' '$SWAP_GB' '$JOBS' '$REPO_DEPTH' '$DEBLOAT'$extra" \
     <<'REMOTE'
 set -euo pipefail
@@ -263,6 +372,27 @@ install_deps() {
   touch "$HOME/.deps-installed"
 }
 
+# out/ is 135 GB (112 GB of it Soong intermediates) and the tree plus .repo is
+# another 230 GB: on one 369 GB disk a clean build dies at 93% with "No space
+# left on device" while add_img_to_target_files stages target_files. Keep out/
+# on the second device. The move itself is a one-off (mv + bind mount); this
+# only re-establishes the mount, because a reboot drops it while the data stays
+# on the cache disk.
+ensure_out_on_cache() {
+  local out=$SRC/out cache_out=$CACHE/out
+  [ "$CACHE" = "$BUILD/cache" ] && return 0     # no second disk to move onto
+  mountpoint -q "$CACHE" || return 0
+  [ -d "$cache_out" ] || return 0                # nothing migrated yet
+  mountpoint -q "$out" && return 0               # already bound
+  if [ -d "$out" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
+    echo "WARN: $out is not empty and $cache_out exists; leaving it alone" >&2
+    return 0
+  fi
+  sudo mkdir -p "$out"
+  sudo mount --bind "$cache_out" "$out"
+  echo "out/ on $CACHE ($(df -h --output=avail "$out" | tail -1 | tr -d ' ') free) -- one disk cannot hold tree + out/"
+}
+
 # One place for both tools: install on first use, no-op afterwards.
 install_gh() {
   command -v gh >/dev/null && return
@@ -344,17 +474,30 @@ setup)  install_deps
         grow_root
         mkdir -p "$SRC" "$ZIPS" "$CCACHE"
         ensure_swap
+        ensure_out_on_cache
         [ -d "$MANIFEST/.git" ] || git clone -b "$BRANCH" "$REPO" "$MANIFEST"
         echo "setup done: $(nproc) cpus, $(free -g | awk 'NR==2{print $2}') GiB RAM, swap $(swapon --show=SIZE --noheadings | tr -d ' ')" ;;
 
 build)
         ADB_KEY_BUILD=${1:-0}
+        # Feed baked into this build (build.sh's OTA_CHANNEL): handed in by a
+        # normal `build`, derived from the variant when auto-finish starts it.
+        CHANNEL=${2:-}
+        [ -n "$CHANNEL" ] || {
+          if [ "$DEBLOAT_BUILD" = 1 ]; then CHANNEL=debloat; else CHANNEL=standard; fi
+        }
+        case $CHANNEL in standard|debloat|test) ;;
+          *) echo "bad OTA channel: $CHANNEL" >&2; exit 1 ;; esac
+        # `finish`/`ota` default to this, so a manual run cannot publish a test
+        # build into standard just because it did not repeat OTA_CHANNEL.
+        printf '%s\n' "$CHANNEL" > "$HOME/build.channel"
+        ensure_out_on_cache
         # The VM builds from its own clone of this recipe, so a change that was
         # not pushed never reaches it. Pull the branch first and say which
         # commit is being built; the caller checks for uncommitted work.
         if [ -d "$MANIFEST/.git" ]; then
           if git -C "$MANIFEST" fetch -q origin "$BRANCH" 2>/dev/null &&
-             git -C "$MANIFEST" reset -q --hard "origin/$BRANCH" 2>/dev/null; then
+             git -C "$MANIFEST" checkout -q -B "$BRANCH" FETCH_HEAD 2>/dev/null; then
             echo "manifest: $(git -C "$MANIFEST" log -1 --format='%h %s')"
           else
             echo "manifest: fetch/reset failed, building the clone as it is" >&2
@@ -398,7 +541,7 @@ EOS
         adb_env=
         [ "$ADB_KEY_BUILD" = 1 ] && adb_env="ADB_KEY='$HOME/adbkey.pub' "
         tmux new-session -d -s "$SESSION" \
-          "$adb_env VARIANT='$VARIANT' DEBLOAT='$DEBLOAT_BUILD' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
+          "$adb_env VARIANT='$VARIANT' DEBLOAT='$DEBLOAT_BUILD' OTA_CHANNEL='$CHANNEL' SYNC_JOBS='$SYNC_JOBS' JOBS='$JOBS_BUILD' REPO_DEPTH='$REPO_DEPTH' '$HOME/run-build.sh' 2>&1 | tee '$LOG'"
         sleep 3; tmux ls
         echo "started in tmux '$SESSION'; log: $LOG" ;;
 
@@ -462,7 +605,7 @@ ota)  TAG=${1:?usage: ota <tag> <owner/repo> [--dry-run]}
       [ -n "$channel" ] || {
         if [ "${DEBLOAT_BUILD:-0}" = 1 ]; then channel=debloat; else channel=standard; fi
       }
-      case $channel in standard|debloat) ;; *) echo "bad OTA channel: $channel" >&2; exit 1 ;; esac
+      case $channel in standard|debloat|test) ;; *) echo "bad OTA channel: $channel" >&2; exit 1 ;; esac
       # A run that publishes both variants at once builds them one after the other,
       # so $SRC/out only holds the last variant's props. auto-finish saves each
       # variant's build.prop as ~/build.prop.<channel> right after its build.
@@ -514,6 +657,17 @@ esac
 REMOTE
 }
 
+# create/delete never log in (and create is the first call on a fresh VM, so
+# there is no metadata to read yet); everything that talks to the VM does.
+case "${1:-}" in
+  setup|build|state|verify|release|ota|att|logs|ssh|fetch|finish|auto-finish|delete)
+    resolve_instance; resolve_vuser ;;
+  create)
+    # create is the first call on a fresh project, so it needs a name and zone.
+    NAME=${NAME:-crdroid-build}
+    ZONE=${ZONE:-asia-south1-a} ;;
+esac
+
 case "${1:-}" in
 create)
   extra=()
@@ -555,6 +709,7 @@ create)
   esac
   gcloud_ compute instances create "$NAME" \
     --machine-type "$SYNC_MACHINE" \
+    --labels=doha-build=1 \
     --image-family ubuntu-2404-lts-amd64 --image-project ubuntu-os-cloud \
     --boot-disk-size "$DISK" --boot-disk-type "$DISK_TYPE" \
     "${ssd[@]}" \
@@ -607,22 +762,88 @@ release)  publish_release ;;
 ota)
   # Writes the feed entry, so the ROM's Updater finds this release. Runs after
   # the release exists: the JSON points at its download URL.
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(ota_channel)" ;;
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
+  remote_exec ota "${TAG:-}" "$OTA_REPO" "${OTA_DRY:-}" "$GH_REPO" "$(channel_for_vm)" ;;
+promote)
+  # Promote the artifact already tested on the test channel: the exact zip the
+  # test feed points at becomes the standard one, with no rebuild. Refuses a
+  # debloat/adbkey artifact, a tag mismatch, or a build that is not newer than
+  # what standard already advertises.
+  PTAG=${2:-${TAG:-}}
+  case $PTAG in -*|'') echo "usage: promote <tag> [--dry-run]" >&2; exit 1 ;; esac
+  PDRY=${3:-}
+  case $PDRY in ''|--dry-run) ;; *) echo "usage: promote <tag> [--dry-run]" >&2; exit 1 ;; esac
+  tok=$(resolve_token) || exit 1
+  api="https://api.github.com/repos/$OTA_REPO/contents"
+  hdr=(-H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json")
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  code=$(curl -sS -o "$tmp/test.json" -w '%{http_code}' "${hdr[@]}" "$api/test/doha.json")
+  [ "$code" = 200 ] || { echo "promote: no test/doha.json in $OTA_REPO (HTTP $code)" >&2; exit 1; }
+  scode=$(curl -sS -o "$tmp/std.json" -w '%{http_code}' "${hdr[@]}" "$api/standard/doha.json")
+  case $scode in
+    200) ;;
+    404) rm -f "$tmp/std.json" ;;
+    *) echo "promote: GET standard/doha.json -> $scode" >&2; exit 1 ;;
+  esac
+  python3 - "$tmp/test.json" "$tmp/std.json" "$PTAG" "$tmp/body.b64" "$tmp/meta" "$tmp/stdsha" <<'PY'
+import base64, json, sys
+testp, stdp, tag, body_out, meta_out, sha_out = sys.argv[1:7]
+d = json.load(open(testp))
+body = json.loads(base64.b64decode(d["content"]))
+u = body["response"][0]
+name, ts, url = u["filename"], int(u["timestamp"]), u["download"]
+if f"/download/{tag}/" not in url:
+    sys.exit(f"promote: test feed points at {url}, not tag {tag}")
+if "-debloat" in name or "-adbkey" in name:
+    sys.exit(f"promote: refusing {name}: not a standard artifact")
+stdsha = ""
+try:
+    s = json.load(open(stdp))
+except FileNotFoundError:
+    pass
+else:
+    old = json.loads(base64.b64decode(s["content"]))["response"][0]
+    ots = int(old["timestamp"])
+    if ots > ts:
+        sys.exit(f"promote: standard already offers a newer build ({old['filename']})")
+    if ots == ts:
+        if old["filename"] == name:
+            sys.exit(f"promote: {name} is already the standard build")
+        sys.exit(f"promote: standard already has a build with timestamp {ts}")
+    stdsha = s["sha"]
+open(body_out, "w").write(base64.b64encode(json.dumps(body).encode()).decode())
+open(meta_out, "w").write(f"{name} {ts}")
+open(sha_out, "w").write(stdsha)
+print(f"promote: {name} (timestamp {ts})")
+PY
+  if [ "$PDRY" = --dry-run ]; then
+    python3 -c 'import base64,sys; print(base64.b64decode(open(sys.argv[1]).read()).decode())' "$tmp/body.b64"
+    exit 0
+  fi
+  python3 - "$tmp/body.b64" "$PTAG" "$(cat "$tmp/stdsha")" > "$tmp/put.json" <<'PY'
+import json, sys
+b64, tag, sha = sys.argv[1], sys.argv[2], sys.argv[3]
+d = {"message": f"ota: promote {tag} to standard", "content": open(b64).read().strip()}
+if sha:
+    d["sha"] = sha
+print(json.dumps(d))
+PY
+  curl -fsS -X PUT "${hdr[@]}" -d @"$tmp/put.json" "$api/standard/doha.json" >/dev/null
+  echo "promoted $(cat "$tmp/meta") to standard/doha.json" ;;
 finish)
   echo "waiting for the build (hours; Ctrl-C is safe, the build keeps running)"
-  while [ -z "$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
+  while [ -z "$(gcloud_ compute ssh "$VM" --command "cat \$HOME/build.exit 2>/dev/null || true" 2>/dev/null | tr -d '[:space:]')" ]; do
     sleep 60
   done
-  code=$(gcloud_ compute ssh "$NAME" --command "cat \$HOME/build.exit" | tr -d '[:space:]')
+  code=$(gcloud_ compute ssh "$VM" --command "cat \$HOME/build.exit" | tr -d '[:space:]')
   echo "build.sh exited $code"
-  [ "$code" = 0 ] || { echo "build failed: VM kept, log at $NAME:~/build.log" >&2; exit 1; }
+  [ "$code" = 0 ] || { echo "build failed: VM kept, log at $VM:~/build.log" >&2; exit 1; }
   remote_exec verify
   [ "${NO_RELEASE:-0}" = 1 ] || publish_release
   if [ "${NO_OTA:-0}" != 1 ] && [ "${NO_RELEASE:-0}" != 1 ]; then
     # The feed entry points at the release URL, so it has to come after it.
-    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token'
-    if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(ota_channel)"; then
+    printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token'
+    if ! remote_exec ota "${TAG:-}" "$OTA_REPO" "" "$GH_REPO" "$(channel_for_vm)"; then
       echo "OTA feed not updated: check $OTA_REPO and token write access." >&2
       echo "VM kept: fix the feed/token and rerun 'tools/gcp-build.sh finish'." >&2
       exit 1
@@ -646,11 +867,11 @@ build)
     [ -f "$ADB_KEY" ] || { echo "ADB_KEY: no such file: $ADB_KEY" >&2; exit 1; }
     [ "$(head -c 5 "$ADB_KEY")" = QAAAA ] ||
       { echo "ADB_KEY must be an adb public key (adbkey.pub): $ADB_KEY" >&2; exit 1; }
-    gcloud_ compute scp "$ADB_KEY" "$NAME:adbkey.pub" >/dev/null
+    gcloud_ compute scp "$ADB_KEY" "$VM:adbkey.pub" >/dev/null
     adb_arg=1
     echo "ADB_KEY: copied $(basename "$ADB_KEY") to $NAME, build gets -adbkey suffix"
   fi
-  remote_exec build "$adb_arg"
+  remote_exec build "$adb_arg" "$(ota_channel)"
   if [ "${AUTO_FINISH:-0}" = 1 ]; then
     echo "AUTO_FINISH=1: waiting for the build and releasing it"
     "$0" finish
@@ -714,7 +935,7 @@ run verify "$FIRST" || { echo "first variant verify FAILED"; exit 1; }
 
 rm -f "$HOME/build.exit"
 git -C /mnt/build/manifest fetch -q origin "$BRANCH" &&
-  git -C /mnt/build/manifest reset -q --hard "origin/$BRANCH"
+  git -C /mnt/build/manifest checkout -q -B "$BRANCH" FETCH_HEAD
 echo "manifest for second build: $(git -C /mnt/build/manifest log -1 --format='%h %s')"
 run build "$SECOND" 0 || { echo "second build failed to start"; exit 1; }
 wait_build && save_prop "$(chan "$SECOND")" || { echo "second build failed, nothing published"; exit 1; }
@@ -730,19 +951,104 @@ shred -u "$HOME/.gh_token_master" 2>/dev/null || rm -f "$HOME/.gh_token_master"
 rm -f "$HOME/.gh_token"
 echo "chain done $(date -u): both variants published together under $TAG, VM kept"
 CHAIN
-  gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$NAME:doha-remote.sh" >/dev/null
-  gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$NAME:doha-chain.sh" >/dev/null
-  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$NAME" --command 'umask 077; cat > ~/.gh_token_master'
-  gcloud_ compute ssh "$NAME" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
-  echo "auto-finish: chain runs in tmux 'publish' on $NAME; log: $NAME:~/doha-chain.log"
+  gcloud_ compute scp --quiet "$tmpd/doha-remote.sh" "$VM:doha-remote.sh" >/dev/null
+  gcloud_ compute scp --quiet "$tmpd/doha-chain.sh" "$VM:doha-chain.sh" >/dev/null
+  printf '%s' "$(resolve_token)" | gcloud_ compute ssh "$VM" --command 'umask 077; cat > ~/.gh_token_master'
+  gcloud_ compute ssh "$VM" --command "chmod +x \$HOME/doha-chain.sh; tmux kill-session -t publish 2>/dev/null; tmux new-session -d -s publish \"REPO='$REPO' BRANCH='$BRANCH' VARIANT='$VARIANT' SESS='$SESSION' SYNC='$SYNC_JOBS' SWAP='$SWAP_GB' JOBS_='$JOBS' DEPTH='${REPO_DEPTH:-}' TAG='${TAG:-}' GHR='$GH_REPO' OTAR='$OTA_REPO' FIRST='$first' \$HOME/doha-chain.sh\"; sleep 2; tmux ls; tail -n 3 \$HOME/doha-chain.log 2>/dev/null || true"
+  echo "auto-finish: chain runs in tmux 'publish' on $VM; log: $VM:~/doha-chain.log"
   echo "auto-finish: builds $([ "$first" = 1 ] && echo debloat || echo standard), then $([ "$first" = 1 ] && echo standard || echo debloat), and publishes both in one release; the VM is not deleted" ;;
 
-setup|state|verify) remote_exec "$1" ;;
+setup)
+  remote_exec setup
+  # Remember which account owns the build state: `logs`, `state` and `finish`
+  # then keep working after the local username changes (see resolve_vuser).
+  gcloud_ compute instances add-metadata "$NAME" --metadata=doha-build-user="$VUSER" >/dev/null
+  echo "build state owner: $VUSER (recorded in $NAME metadata; VUSER=... overrides)" ;;
+state|verify) remote_exec "$1" ;;
 
-att)    gcloud compute ssh "$NAME" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
-logs)   gcloud_ compute ssh "$NAME" --command "tail -f \$HOME/build.log" ;;
-ssh)    gcloud_ compute ssh "$NAME" ;;
-fetch)  mkdir -p "$OUT"; gcloud_ compute scp --recurse "$NAME:/mnt/build/zips/*" "$OUT/"; echo "fetched into $OUT" ;;
+att)    gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" -- tmux attach -t "$SESSION" ;;
+# Two traps here, both of which look like "the build died": a wrong account has
+# an empty home, so the file is simply not there; and ssh only flushes a remote
+# command's output when that command exits, so `tail -f` prints nothing while the
+# build runs. Read by byte offset with short-lived commands instead, and say
+# which account was tried when the log is missing.
+logs)
+  full=0
+  case ${2:-} in
+    --full|-f|--raw) full=1 ;;
+    '') ;;
+    *) echo "usage: $0 logs [--full]" >&2; exit 1 ;;
+  esac
+  tmp=$(mktemp)
+  size=$(gcloud_ compute ssh "$VM" --command 'wc -c < $HOME/build.log 2>/dev/null || echo x' 2>/dev/null | tr -d '[:space:]')
+  case ${size:-} in ''|*[!0-9]*)
+    rm -f "$tmp"
+    echo "no build.log in the home of $VUSER on $NAME: run with VUSER=<account that ran setup>" >&2
+    exit 1 ;;
+  esac
+  if [ "$full" = 1 ]; then
+    printf -- '-- full build log: %s (%s KiB), from the start --\n' "$NAME" "$((size / 1024))" >&2
+    trap 'rm -f "$tmp"' EXIT
+    off=0
+    first=0
+    while :; do
+      gcloud_ compute ssh "$VM" --command "tail -c +$((off + 1)) \$HOME/build.log" > "$tmp" 2>/dev/null || true
+      n=$(wc -c < "$tmp")
+      if [ "$n" -gt 0 ]; then
+        # Count what was copied, not what is printed: the log grows during the
+        # copy, so the next offset comes from the bytes received.
+        off=$(( off + n ))
+        if [ "$first" = 1 ] && [ "$off" -gt "$n" ]; then
+          sed '1d' "$tmp"
+        else
+          cat "$tmp"
+        fi
+        first=0
+      fi
+      sleep 5
+    done
+  fi
+  pending=$(mktemp); state=$(mktemp); seen=$(mktemp)
+  LOGFMT="$ROOT/tools/logfmt.py"
+  case ${FORCE_COLOR:-0} in
+    1|true|yes|always) log_color=always ;;
+    *) if [ -t 1 ]; then log_color=auto; else log_color=never; fi ;;
+  esac
+  cleanup() {
+    python3 "$LOGFMT" --flush --pending "$pending" --state "$state" --seen "$seen" \
+      --color "$log_color" 2>/dev/null || true
+    rm -f "$tmp" "$pending" "$state" "$seen"
+    printf '\n' >&2
+    exit 0
+  }
+  trap cleanup INT TERM
+  if [ "$log_color" = never ]; then
+    printf -- '-- build log: %s (%s KiB) --\n' "$NAME" "$((size / 1024))" >&2
+  else
+    printf '\033[2m┌─\033[0m \033[1;36mbuild log\033[0m \033[2m· %s · %s KiB\033[0m\n' "$NAME" "$((size / 1024))" >&2
+    printf '\033[2m│\033[0m \033[2m✖ error   ▲ warning   ▸ phase   ✔ success   ▰ progress\033[0m\n' >&2
+    printf '\033[2m└─\033[0m following; Ctrl-C stops this view, the build keeps running\n' >&2
+  fi
+  # Start ~8 KB back so there is context, without dumping a 12 MB log.
+  off=$(( size > 8192 ? size - 8192 : 0 ))
+  first=1
+  while :; do
+    gcloud_ compute ssh "$VM" --command "tail -c +$((off + 1)) \$HOME/build.log" > "$tmp" 2>/dev/null || true
+    n=$(wc -c < "$tmp")
+    if [ "$n" -gt 0 ]; then
+      # Count what was copied, not what is printed: the log grows during the
+      # copy, so the next offset comes from the bytes received.
+      off=$(( off + n ))
+      skip=
+      [ "$first" = 1 ] && [ "$off" -gt "$n" ] && skip=--skip-first
+      python3 "$LOGFMT" --pending "$pending" --state "$state" --seen "$seen" \
+        --color "$log_color" $skip "$tmp" || true
+      first=0
+    fi
+    sleep 5
+  done ;;
+ssh)    gcloud_ compute ssh "$VM" ;;
+fetch)  mkdir -p "$OUT"; gcloud_ compute scp --recurse "$VM:/mnt/build/zips/*" "$OUT/"; echo "fetched into $OUT" ;;
 delete) delete_instance ;;
 
 *)      sed -n '2,26p' "$0"; exit 1 ;;
