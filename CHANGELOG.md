@@ -27,7 +27,13 @@ Baseline: `2026-11-27`.
 
 - Dolby AC-4/E-AC-3 decoding is not enabled (the donor's codec libraries and
   `media_codecs_dolby_audio.xml` are not carried).
-- The new Dolby stack is device-untested until this build is flashed.
+
+### Verified
+
+- Flashed `1795817209` (debloat): the dms@2.0 HAL and `daxservice` run,
+  DaxUI renders the Dynamic/Movie/Music/Custom presets, the HAL commits its
+  DAP parameter sets, and no `DolbyAudioEffect ... -3` appears.
+  Speaker/headphone output still to be confirmed by ear.
 
 ## 2026-11-27 (unreleased)
 

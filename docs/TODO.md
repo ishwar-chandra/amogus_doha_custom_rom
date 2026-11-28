@@ -274,7 +274,10 @@ the number of knobs the phone is not actually running.
   reading `dolbyprovider`. Replaced with the `vendor/motorola-dolby` DAX3
   3.6 stack (DaxUI + `daxService`, dms@2.0 HAL, DAP effect), re-signed with
   the platform key; the `frameworks/base` protection-level override and its
-  privapp allowlist are removed with it.
+  privapp allowlist are removed with it. Checked on device 2026-11-28
+  (`1795817209`): DaxUI renders the presets and the HAL commits its DAP
+  parameters; `dumpsys media.audio_flinger` now times out in the effect dump,
+  so use `dumpsys media.audio_policy` for the effect state.
 - [x] Register the `dap` effect in the audio HAL's trinket `audio_effects.xml`
   (`vendor/qcom/opensource/audio/sm8150/configs/trinket`, which becomes
   `/vendor/etc/audio_effects.xml`; the `device/motorola/common` rootdir copy is

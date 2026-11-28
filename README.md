@@ -852,17 +852,30 @@ audioserver. `device.mk` installs `persist.vendor.audio_fx.current=dolby`,
 alongside the existing `AudioFX` filter in the `targets` patch so the ROM
 does not ship two audio-effect UIs.
 
-Device-untested as of this change. Verify with:
+Verified on the 2026-11-28 debloat build (`1795817209`): `dms@2.0-service`
+and `daxservice` run, DaxUI (`com.dolby.daxappui`) renders with the
+Dynamic/Movie/Music/Custom presets, `DolbyManagerService` logs
+`doOnDapParamUpdate`, and the HAL's `DlbDapEndpointParamCache` commits its
+parameter sets (`Committed 63 parameters out of 63`). No
+`DolbyAudioEffect: set/get parameter error` appears - that EINVAL killed the
+old stack. Speaker/headphone output is still to be confirmed by ear.
+
+Check the effect through the **policy**, not AudioFlinger: the DAP effect's
+`dump()` blocks, so `dumpsys media.audio_flinger` ends with
+`SERVICE 'media.audio_flinger' DUMP TIMEOUT (10000ms) EXPIRED` and never
+prints its effect list (the same truncated dump reaches
+`tools/bugreport-scan.py`).
 
 ```sh
-adb shell dumpsys media.audio_flinger | grep -i -A2 dap
-adb shell pm list packages | grep -iE 'dolby'
+adb shell dumpsys media.audio_policy | grep -i -A2 '"DAP"'
+#   "DAP"; Music Effect? yes; <Enabled|Disabled>; Active
+adb shell cmd package resolve-activity --brief com.dolby.daxappui
 adb shell lshal | grep -i dms
-# open the Dolby UI, toggle it, and play through speaker/headphones
 ```
 
-If the effect is not listed, the dms@2.0 HAL did not register; check the
-HAL's log and `avc` denials for `hal_dms_default`.
+The effect reads `Disabled` while the phone is idle; the power button in
+DaxUI enables it for playback. If it never registers, the dms@2.0 HAL did
+not start; check `lshal` and `avc` denials for `hal_dms_default`.
 
 ### Play Integrity
 
